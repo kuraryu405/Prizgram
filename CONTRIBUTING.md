@@ -2,9 +2,11 @@
 
 Prizgram は現在 MVP フェーズです。変更はできるだけ小さく、レビューしやすくし、具体的なプロダクト上または技術上の目的に紐づけてください。
 
+詳細な GitHub 運用・CI/CD 方針は [`docs/development.md`](docs/development.md) を参照してください。
+
 ## ブランチ
 
-`main` から短命なブランチを切って作業します。
+`main` への直接 push は行わず、`main` から短命なブランチを切って作業します。
 
 推奨 prefix:
 
@@ -12,18 +14,34 @@ Prizgram は現在 MVP フェーズです。変更はできるだけ小さく、
 - `fix/` — バグ修正
 - `docs/` — ドキュメント変更
 - `refactor/` — 振る舞いを変えないリファクタリング
-- `chore/` — ツール・保守作業
+- `test/` — テスト
+- `chore/` — CI・ツール・保守作業
 
 ## Pull Request
 
-Pull Request には、次の内容を含めてください。
+原則として 1 PR = 1 目的とします。Pull Request には、次の内容を含めてください。
 
 - 解決するユーザー課題または技術課題
 - 採用した実装方針
-- 振る舞いが変わる場合のテスト
+- 実行したテスト・検証
 - schema やアーキテクチャを変更する場合の説明
 - 無関係なリファクタリングを含めないこと
 - Prizgram の Human-in-the-loop 境界を維持していること
+
+`main` へマージする前に `CI / Validate monorepo` が成功している必要があります。
+
+## マージ
+
+基本は Squash merge を使用します。
+
+PR タイトルは変更内容が分かるよう、次のような形式を推奨します。
+
+```text
+feat: ペルソナ初期生成APIを追加
+fix: 応募締切の計算を修正
+ci: monorepo validation workflowを追加
+docs: 開発フローを更新
+```
 
 ## プロダクトのガードレール
 

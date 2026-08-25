@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Validate monorepo
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate repository structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files=(
+            README.md
+            CONTRIBUTING.md
+            docs/product.md
+            docs/architecture.md
+          )
+
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "Required file is missing: $file" >&2
+              exit 1
+            fi
+          done
+
+      - name: Detect Node.js workspace
+        id: workspace
+        shell: bash
+        run: |
+          if [[ -f package.json ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Application workspace has not been initialized yet; skipping Node.js validation."
+          fi
+
+      - name: Setup pnpm
+        if: steps.workspace.outputs.enabled == 'true'
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        if: steps.workspace.outputs.enabled == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify lockfile
+        if: steps.workspace.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          test -f pnpm-lock.yaml || {
+            echo "package.json exists but pnpm-lock.yaml is missing." >&2
+            exit 1
+          }
+
+      - name: Install dependencies
+        if: steps.workspace.outputs.enabled == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        if: steps.workspace.outputs.enabled == 'true'
+        run: pnpm lint
+
+      - name: Typecheck
+        if: steps.workspace.outputs.enabled == 'true'
+        run: pnpm typecheck
+
+      - name: Test
+        if: steps.workspace.outputs.enabled == 'true'
+        run: pnpm test
+
+      - name: Build
+        if: steps.workspace.outputs.enabled == 'true'
+        run: pnpm build
