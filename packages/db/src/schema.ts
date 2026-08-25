@@ -55,6 +55,70 @@ export const users = sqliteTable("users", {
     .default(now),
 });
 
+export const userCredentials = sqliteTable(
+  "user_credentials",
+  {
+    userId: text("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    loginId: text("login_id").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    failedAttempts: integer("failed_attempts").notNull().default(0),
+    lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "user_credentials_login_id_normalized",
+      sql`${table.loginId} = lower(${table.loginId})`,
+    ),
+    check(
+      "user_credentials_login_id_shape",
+      sql`length(${table.loginId}) between 3 and 64 and ${table.loginId} not glob '*[^a-z0-9._-]*'`,
+    ),
+    check(
+      "user_credentials_password_hash_shape",
+      sql`length(${table.passwordHash}) between 80 and 200 and ${table.passwordHash} like 'scrypt$%'`,
+    ),
+    check(
+      "user_credentials_failed_attempts_nonnegative",
+      sql`${table.failedAttempts} >= 0`,
+    ),
+    uniqueIndex("user_credentials_login_id_unique").on(table.loginId),
+  ],
+);
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "auth_sessions_token_hash_shape",
+      sql`length(${table.tokenHash}) = 64 and ${table.tokenHash} not glob '*[^0-9a-f]*'`,
+    ),
+    check(
+      "auth_sessions_expiry_after_creation",
+      sql`${table.expiresAt} > ${table.createdAt}`,
+    ),
+    index("auth_sessions_user_idx").on(table.userId),
+    index("auth_sessions_expires_idx").on(table.expiresAt),
+  ],
+);
+
 export const personaVersions = sqliteTable(
   "persona_versions",
   {
@@ -419,6 +483,8 @@ export const reminders = sqliteTable(
 
 export const schema = {
   users,
+  userCredentials,
+  authSessions,
   personaVersions,
   jobs,
   jobVersions,
@@ -431,6 +497,8 @@ export const schema = {
 
 export const tableNames = [
   "users",
+  "user_credentials",
+  "auth_sessions",
   "persona_versions",
   "jobs",
   "job_versions",

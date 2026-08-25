@@ -10,6 +10,7 @@
   "dependencies": {
     "@prizgram/db": "workspace:*",
     "@prizgram/shared": "workspace:*",
+    "drizzle-orm": "0.45.2",
     "next": "16.3.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",

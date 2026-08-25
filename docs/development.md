@@ -59,6 +59,8 @@ pnpm dev
 カレントディレクトリではなく常にリポジトリルートから解決されるため、migration
 CLI と Next.js は同じ SQLite ファイルを使用します。standalone 配布環境では
 workspace root を前提にしないため、絶対パスの `DATABASE_URL` を設定してください。
+`APP_ORIGIN` はブラウザから見えるcanonical originをscheme・port込みで設定し、
+認証mutationのsame-origin検証に使用します。
 
 品質ゲートは次のコマンドです。
 

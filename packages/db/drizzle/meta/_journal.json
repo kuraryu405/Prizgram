@@ -15,6 +15,13 @@
       "when": 1787643815273,
       "tag": "0001_sleepy_silk_fever",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787645473683,
+      "tag": "0002_bouncy_snowbird",
+      "breakpoints": true
     }
   ]
 }

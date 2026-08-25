@@ -29,9 +29,11 @@ docs/               product / architecture / development
 
 ## 所有者境界
 
-認証方式は foundation のスコープ外です。ただし、すべてのユーザー所有テーブルに `user_id` を保持します。子テーブルは可能な限り `(user_id, resource_id)` の複合外部キーを使い、別ユーザーの Job、Persona、Application、Deadline を参照できないよう SQLite 側でも制約します。
+認証は外部サービスに依存せず、正規化した login ID と scrypt password hashを `user_credentials` に保存します。生のpasswordとsession tokenは保存せず、sessionはSHA-256 hash、期限、user IDのみを `auth_sessions` に保持します。認証mutationはsame-originを要求し、session cookieはHttpOnly、SameSite=Lax、本番Secureです。連続失敗はユーザー単位で一時lockします。
 
-後続 Route Handler は認証された user ID を必須入力とし、すべての query に ownership filter を含めます。固定開発ユーザーを本番 fallback として利用してはいけません。
+すべてのユーザー所有テーブルに `user_id` を保持します。子テーブルは可能な限り `(user_id, resource_id)` の複合外部キーを使い、別ユーザーの Job、Persona、Application、Deadline を参照できないよう SQLite 側でも制約します。
+
+後続 Route Handler は認証済みsessionから得たuser IDを必須contextとし、すべてのqueryにownership filterを含めます。request bodyやheaderからuser IDを信用せず、固定開発ユーザーをfallbackにしません。
 
 ## コアデータモデル
 

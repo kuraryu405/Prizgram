@@ -16,8 +16,7 @@ function initializeDatabase(): DatabaseConnection {
   return createDatabase(databaseUrlFromEnvironment());
 }
 
-export const database = globalThis.prizgramDatabase ?? initializeDatabase();
-
-if (process.env.NODE_ENV !== "production") {
-  globalThis.prizgramDatabase = database;
+export function getDatabase(): DatabaseConnection {
+  globalThis.prizgramDatabase ??= initializeDatabase();
+  return globalThis.prizgramDatabase;
 }
