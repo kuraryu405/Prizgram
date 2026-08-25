@@ -32,15 +32,40 @@ PR では最低限、以下を明確にします。
 
 GitHub Actions の `CI / Validate monorepo` をマージ必須チェックとして使用します。
 
-現在はアプリケーション実装前のため、リポジトリ構成を検証します。ルートに `package.json` が追加された時点から、同じチェック名のまま以下を自動実行します。
+同じチェック名のまま以下を自動実行します。
 
 1. `pnpm install --frozen-lockfile`
 2. `pnpm lint`
-3. `pnpm typecheck`
-4. `pnpm test`
-5. `pnpm build`
+3. `pnpm format:check`
+4. `pnpm typecheck`
+5. `pnpm test`
+6. migration の生成差分確認と空DBへの適用
+7. `pnpm build`
 
 CI のチェック名は branch protection から参照するため、理由なく変更しません。
+
+## ローカル開発
+
+Node.js 22 以上と、`packageManager` で固定した pnpm を利用します。
+
+```bash
+cp .env.example .env
+pnpm install --frozen-lockfile
+pnpm db:migrate
+pnpm dev
+```
+
+品質ゲートは次のコマンドです。
+
+```bash
+pnpm lint
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+DB schema を変更する PR は `pnpm db:generate` で migration を生成し、既存 migration を書き換えずに追加します。SQLite migration はデプロイ時に単一プロセスで実行し、本番では事前に DB ファイルをバックアップします。
 
 ## main の保護ルール
 

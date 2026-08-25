@@ -81,25 +81,25 @@ Prizgram は、情報整理、求人スコアリング、リマインド生成�
 
 ## アーキテクチャ
 
-初期の技術構成は次のとおりです。
+MVP の技術構成は次のとおりです。
 
-| レイヤー | 技術 |
-| --- | --- |
-| Web | Next.js / TypeScript / Tailwind CSS |
-| API | NestJS / TypeScript |
-| Database | PostgreSQL |
-| LLM | Claude API |
-| 非同期処理 | キューを用いたイベント処理 |
+| レイヤー  | 技術                                                     |
+| --------- | -------------------------------------------------------- |
+| Web / API | Next.js App Router / React / TypeScript / Route Handlers |
+| Database  | SQLite / Drizzle ORM                                     |
+| LLM       | OpenAI 互換 API / Structured Outputs / Zod               |
+| 定期処理  | cron または node-cron（reminder feature で実装）         |
+| 実行環境  | AWS EC2 / Node.js 22+                                    |
 
-モノレポ構成を想定しています。
+モノレポ構成です。
 
 ```text
 prizgram/
 ├── apps/
-│   ├── web/        # Next.js フロントエンド
-│   └── api/        # NestJS バックエンド
+│   └── web/        # Next.js UI / Route Handlers / server-only services
 ├── packages/
-│   └── shared/     # 共通 schema / type / utility
+│   ├── db/         # Drizzle schema / SQLite client / migration
+│   └── shared/     # Zod schema / domain type / JSON codec
 └── docs/
     ├── product.md
     └── architecture.md
@@ -113,11 +113,34 @@ prizgram/
 4. **情報格差を縮める** — 強い個人ネットワークがなくても体系的な就活支援へアクセスできるようにする。
 5. **効果を測定する** — 作ったこと自体を成果とせず、本当に結果が改善したかを検証する。
 
+## 開発
+
+Node.js 22 以上と pnpm が必要です。
+
+```bash
+cp .env.example .env
+pnpm install --frozen-lockfile
+pnpm db:migrate
+pnpm dev
+```
+
+変更前後に次の品質ゲートを実行します。
+
+```bash
+pnpm lint
+pnpm format:check
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+LLM の API key は server-only の環境変数として設定し、リポジトリや client bundle に含めないでください。DB migration と詳細な設計は [`docs/architecture.md`](docs/architecture.md) を参照してください。
+
 ## 現在のステータス
 
-**初期段階 / MVP 設計中**
+**MVP foundation 開発中**
 
-現在のリポジトリには、初期のプロダクト仕様とアーキテクチャ設計を格納しています。実装は上記 MVP スコープに沿って進めます。
+共通 schema、SQLite、LLM client、API error、CI を foundation として整備し、Persona、Job scoring、Application、Reminder を独立した feature PR として追加します。
 
 ## ドキュメント
 
