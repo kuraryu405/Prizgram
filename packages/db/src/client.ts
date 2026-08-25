@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 import BetterSqlite3 from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type { z } from "zod";
 
@@ -220,10 +219,9 @@ export function migrateDatabase(
   connection: DatabaseConnection,
   migrationsFolder: string,
 ): void {
-  // Refuse to mutate a legacy database whose JSON rows cannot be exposed
-  // through the current domain types after the migration.
-  validateExistingStructuredData(connection.sqlite);
-  const violationsBefore = connection.sqlite.pragma("foreign_key_check") as
+  const { sqlite } = connection;
+
+  const violationsBefore = sqlite.pragma("foreign_key_check") as
     unknown[] | undefined;
   if ((violationsBefore?.length ?? 0) > 0) {
     throw new Error(
@@ -231,20 +229,69 @@ export function migrateDatabase(
     );
   }
 
-  // SQLite ignores PRAGMA foreign_keys changes inside a transaction. Drizzle
-  // wraps each migration in a transaction, so table-rebuild migrations must
-  // disable enforcement before entering the migrator.
-  connection.sqlite.pragma("foreign_keys = OFF");
+  const migrations = bundledMigrations(migrationsFolder);
+
+  // SQLite ignores PRAGMA foreign_keys changes inside a transaction, and
+  // table-rebuild migrations must run with enforcement disabled.
+  sqlite.pragma("foreign_keys = OFF");
   try {
-    migrate(connection.db, { migrationsFolder });
+    // Pending migrations and structured-data validation run inside one
+    // transaction: legacy rows are validated against the current domain
+    // schemas only after conversion migrations had the chance to transform
+    // them, and an invalid database is rolled back completely instead of
+    // being left half-migrated.
+    sqlite.transaction(() => {
+      ensureMigrationJournal(sqlite);
+      applyPendingMigrations(sqlite, migrations);
+      validateExistingStructuredData(sqlite);
+    })();
   } finally {
-    connection.sqlite.pragma("foreign_keys = ON");
+    sqlite.pragma("foreign_keys = ON");
   }
 
-  const violationsAfter = connection.sqlite.pragma("foreign_key_check") as
+  const violationsAfter = sqlite.pragma("foreign_key_check") as
     unknown[] | undefined;
   if ((violationsAfter?.length ?? 0) > 0) {
     throw new Error("Database contains foreign key violations after migration");
   }
-  validateExistingStructuredData(connection.sqlite);
+}
+
+const MIGRATIONS_TABLE = "__drizzle_migrations";
+
+function ensureMigrationJournal(sqlite: BetterSqlite3.Database): void {
+  // Same shape drizzle's migrator creates so readiness checks and future
+  // drizzle upgrades stay compatible.
+  sqlite.exec(`
+    create table if not exists "${MIGRATIONS_TABLE}" (
+      id serial primary key,
+      hash text not null,
+      created_at numeric
+    )
+  `);
+}
+
+function applyPendingMigrations(
+  sqlite: BetterSqlite3.Database,
+  migrations: MigrationMetaList,
+): void {
+  const last = sqlite
+    .prepare(
+      `select created_at from "${MIGRATIONS_TABLE}" order by created_at desc limit 1`,
+    )
+    .get() as { created_at: number | string } | undefined;
+  const lastAppliedAt =
+    last === undefined ? undefined : Number(last.created_at);
+
+  for (const migration of migrations) {
+    if (lastAppliedAt !== undefined && lastAppliedAt >= migration.folderMillis)
+      continue;
+    for (const statement of migration.sql) {
+      sqlite.exec(statement);
+    }
+    sqlite
+      .prepare(
+        `insert into "${MIGRATIONS_TABLE}" ("hash", "created_at") values (?, ?)`,
+      )
+      .run(migration.hash, migration.folderMillis);
+  }
 }
