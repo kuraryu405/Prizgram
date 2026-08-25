@@ -154,6 +154,64 @@ export const personaVersions = sqliteTable(
   ],
 );
 
+export const personaIntakes = sqliteTable(
+  "persona_intakes",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["in_progress", "completed"] })
+      .notNull()
+      .default("in_progress"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "persona_intakes_status_valid",
+      sql`${table.status} in ('in_progress','completed')`,
+    ),
+    index("persona_intakes_user_status_idx").on(table.userId, table.status),
+  ],
+);
+
+export const personaIntakeAnswers = sqliteTable(
+  "persona_intake_answers",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    intakeId: text("intake_id")
+      .notNull()
+      .references(() => personaIntakes.id, { onDelete: "cascade" }),
+    questionId: text("question_id").notNull(),
+    answer: text("answer").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "persona_intake_answers_question_shape",
+      sql`length(${table.questionId}) between 1 and 64 and ${table.questionId} not glob '*[^a-z0-9_]*'`,
+    ),
+    uniqueIndex("persona_intake_answers_question_unique").on(
+      table.intakeId,
+      table.questionId,
+    ),
+    index("persona_intake_answers_user_idx").on(table.userId),
+  ],
+);
+
 export const jobs = sqliteTable(
   "jobs",
   {
@@ -491,6 +549,8 @@ export const schema = {
   users,
   userCredentials,
   authSessions,
+  personaIntakes,
+  personaIntakeAnswers,
   personaVersions,
   jobs,
   jobVersions,
@@ -505,6 +565,8 @@ export const tableNames = [
   "users",
   "user_credentials",
   "auth_sessions",
+  "persona_intakes",
+  "persona_intake_answers",
   "persona_versions",
   "jobs",
   "job_versions",

@@ -96,7 +96,7 @@ export async function apiFetch<T>(
 }
 
 export function jsonRequestInit(
-  method: "POST" | "PATCH",
+  method: "POST" | "PUT" | "PATCH",
   body: unknown,
 ): RequestInit {
   return {
