@@ -192,6 +192,8 @@ export const jobVersions = sqliteTable(
     version: integer("version").notNull(),
     snapshot: jobSnapshotJson("snapshot").notNull(),
     contentHash: text("content_hash").notNull(),
+    model: text("model"),
+    promptVersion: text("prompt_version"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(now),

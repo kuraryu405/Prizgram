@@ -22,6 +22,13 @@
       "when": 1787645473683,
       "tag": "0002_bouncy_snowbird",
       "breakpoints": true
+    },
+    {
+      "breakpoints": true,
+      "idx": 3,
+      "tag": "0004_job_version_provenance",
+      "version": "6",
+      "when": 1801843200000
     }
   ]
 }

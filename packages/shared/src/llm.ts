@@ -3,7 +3,11 @@ import { z } from "zod";
 import {
   createScoringLlmOutputSchema,
   evidenceSourceTypes,
+  employmentTypes,
+  jobDifficultyLevels,
+  jobSnapshotSchema,
   skillLevels,
+  type JobSnapshot,
   type PersonaSnapshot,
   type ScoringOutput,
   personaSnapshotSchema,
@@ -117,5 +121,111 @@ export function createScoringStructuredOutput(
     providerSchema: scoringProviderOutputSchema,
     domainSchema: createScoringLlmOutputSchema(allowedEvidenceRefs),
     normalize: (value) => value,
+  };
+}
+
+const providerJobSignal = z.object({ text: providerString }).strict();
+
+export const jobProviderOutputSchema = z
+  .object({
+    company: providerString,
+    role: providerString,
+    employmentType: z.enum(employmentTypes),
+    description: providerString,
+    requirements: z.array(providerJobSignal).max(100),
+    desiredSkills: z.array(providerJobSignal).max(100),
+    cultureValues: z.array(providerJobSignal).max(50),
+    difficultyLevel: z.enum(jobDifficultyLevels),
+    // The provider references source signals by section and position;
+    // the server assigns stable positional ids so identical extractions
+    // keep identical content hashes.
+    difficultyEvidence: z
+      .array(
+        z
+          .object({
+            section: z.enum(["requirements", "desiredSkills", "cultureValues"]),
+            index: z.number().int().min(0),
+          })
+          .strict(),
+      )
+      .max(100),
+  })
+  .strict();
+
+type JobProviderOutput = z.infer<typeof jobProviderOutputSchema>;
+type JobSignalSection =
+  JobProviderOutput["difficultyEvidence"][number]["section"];
+
+/**
+ * Builds a structured-output contract for user-provided job postings.
+ * Signal ids are assigned deterministically from list positions so that
+ * identical extractions produce identical content hashes, and difficulty
+ * evidence positions are resolved to those ids. Unknown references are
+ * dropped; the domain schema's min(1) then rejects extractions without any
+ * usable evidence instead of persisting an unverifiable snapshot.
+ */
+export function createJobStructuredOutput(source: {
+  kind: JobSnapshot["source"]["kind"];
+  name: string;
+  externalId?: string;
+  url?: string;
+  retrievedAt: string;
+}): StructuredOutputContract<JobProviderOutput, JobSnapshot> {
+  const prefixes: Readonly<Record<JobSignalSection, string>> = {
+    cultureValues: "job:value:",
+    desiredSkills: "job:skill:",
+    requirements: "job:req:",
+  };
+
+  return {
+    providerSchema: jobProviderOutputSchema,
+    domainSchema: jobSnapshotSchema,
+    normalize: (value) => {
+      const sections: Readonly<
+        Record<JobSignalSection, Array<{ id: string; text: string }>>
+      > = {
+        cultureValues: value.cultureValues.map((signal, index) => ({
+          id: `${prefixes.cultureValues}${index + 1}`,
+          text: signal.text,
+        })),
+        desiredSkills: value.desiredSkills.map((signal, index) => ({
+          id: `${prefixes.desiredSkills}${index + 1}`,
+          text: signal.text,
+        })),
+        requirements: value.requirements.map((signal, index) => ({
+          id: `${prefixes.requirements}${index + 1}`,
+          text: signal.text,
+        })),
+      };
+      const requirements = sections.requirements;
+      const desiredSkills = sections.desiredSkills;
+      const cultureValues = sections.cultureValues;
+
+      const signalIds = new Set(
+        [...requirements, ...desiredSkills, ...cultureValues].map(
+          ({ id }) => id,
+        ),
+      );
+      const evidenceRefs: string[] = [];
+      const seen = new Set<string>();
+      for (const evidence of value.difficultyEvidence) {
+        const id = sections[evidence.section][evidence.index]?.id;
+        if (id === undefined || seen.has(id) || !signalIds.has(id)) continue;
+        seen.add(id);
+        evidenceRefs.push(id);
+      }
+
+      return {
+        company: value.company,
+        role: value.role,
+        employmentType: value.employmentType,
+        description: value.description,
+        requirements,
+        desiredSkills,
+        cultureValues,
+        difficulty: { level: value.difficultyLevel, evidenceRefs },
+        source: { ...source },
+      };
+    },
   };
 }
