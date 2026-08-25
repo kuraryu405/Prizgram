@@ -6,9 +6,36 @@ import {
   clearSessionCookie,
   readCredentials,
   sessionCookie,
+  sessionCookieName,
   sessionTokenFromRequest,
   withNoStore,
 } from "./http";
+
+function withEnvironment(
+  overrides: Record<string, string | undefined>,
+  action: () => void,
+): void {
+  const previousValues = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(overrides)) {
+    previousValues.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    action();
+  } finally {
+    for (const [key, value] of previousValues) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function sameOriginRequest(): Request {
+  return new Request("https://prizgram.test/api/auth/login", {
+    headers: { host: "prizgram.test", origin: "https://prizgram.test" },
+  });
+}
 
 describe("auth HTTP boundary", () => {
   it("requires an exact same origin for mutations", () => {
@@ -29,6 +56,53 @@ describe("auth HTTP boundary", () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  it("requires an explicit APP_ORIGIN before trusting any host in production", () => {
+    withEnvironment({ NODE_ENV: "production", APP_ORIGIN: undefined }, () => {
+      let thrown: unknown;
+      try {
+        assertSameOrigin(sameOriginRequest());
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(AppError);
+      expect((thrown as AppError).code).toBe("SERVER_MISCONFIGURED");
+      expect((thrown as AppError).status).toBe(500);
+    });
+  });
+
+  it("enforces the configured APP_ORIGIN instead of the request host in production", () => {
+    withEnvironment(
+      { NODE_ENV: "production", APP_ORIGIN: "https://app.example" },
+      () => {
+        expect(() => assertSameOrigin(sameOriginRequest())).toThrow(AppError);
+        expect(() =>
+          assertSameOrigin(
+            new Request("https://app.example/api/auth/login", {
+              headers: {
+                host: "prizgram.test",
+                origin: "https://app.example",
+              },
+            }),
+          ),
+        ).not.toThrow();
+      },
+    );
+  });
+
+  it("reports a malformed APP_ORIGIN as a server misconfiguration", () => {
+    withEnvironment({ NODE_ENV: "production", APP_ORIGIN: "not-a-url" }, () => {
+      let thrown: unknown;
+      try {
+        assertSameOrigin(sameOriginRequest());
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(AppError);
+      expect((thrown as AppError).code).toBe("SERVER_MISCONFIGURED");
+      expect((thrown as AppError).message).toContain("APP_ORIGIN");
+    });
   });
 
   it("parses and validates bounded credentials", async () => {
@@ -80,11 +154,23 @@ describe("auth HTTP boundary", () => {
     expect(
       sessionTokenFromRequest(
         new Request("https://prizgram.test", {
-          headers: { cookie: `other=x; prizgram_session=token` },
+          headers: { cookie: `other=x; ${sessionCookieName()}=token` },
         }),
       ),
     ).toBe("token");
     expect(clearSessionCookie()).toContain("Max-Age=0");
+  });
+
+  it("uses a __Host-prefixed secure cookie in production", () => {
+    withEnvironment({ NODE_ENV: "production" }, () => {
+      expect(sessionCookieName()).toBe("__Host-prizgram_session");
+      const cookie = sessionCookie("token", new Date("2026-09-01T00:00:00Z"));
+      expect(cookie.startsWith("__Host-prizgram_session=")).toBe(true);
+      expect(cookie).toContain("Secure");
+      expect(clearSessionCookie().startsWith("__Host-prizgram_session=")).toBe(
+        true,
+      );
+    });
   });
 
   it("marks auth responses as non-cacheable", async () => {

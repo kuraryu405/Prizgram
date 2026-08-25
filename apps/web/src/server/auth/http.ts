@@ -4,7 +4,11 @@ import { credentialsSchema } from "@prizgram/shared";
 
 import { AppError, parseRequest } from "../api";
 
-export const SESSION_COOKIE_NAME = "prizgram_session";
+export function sessionCookieName(): string {
+  return process.env.NODE_ENV === "production"
+    ? "__Host-prizgram_session"
+    : "prizgram_session";
+}
 
 export function withNoStore(
   handler: (request: Request) => Response | Promise<Response>,
@@ -17,22 +21,43 @@ export function withNoStore(
 }
 
 export function assertSameOrigin(request: Request): void {
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
-  let expectedOrigin: string | undefined;
-  try {
-    expectedOrigin =
-      process.env.APP_ORIGIN === undefined
-        ? host === null
-          ? new URL(request.url).origin
-          : new URL(`${new URL(request.url).protocol}//${host}`).origin
-        : new URL(process.env.APP_ORIGIN).origin;
-  } catch {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.APP_ORIGIN === undefined
+  ) {
     throw new AppError(
       "SERVER_MISCONFIGURED",
       "Authentication origin is not configured",
       500,
     );
+  }
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+  let expectedOrigin: string | undefined;
+  const configuredOrigin = process.env.APP_ORIGIN;
+  if (configuredOrigin !== undefined) {
+    try {
+      expectedOrigin = new URL(configuredOrigin).origin;
+    } catch {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "APP_ORIGIN must be a valid absolute origin",
+        500,
+      );
+    }
+  } else {
+    try {
+      expectedOrigin =
+        host === null
+          ? new URL(request.url).origin
+          : new URL(`${new URL(request.url).protocol}//${host}`).origin;
+    } catch {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "Authentication origin could not be determined from the request",
+        500,
+      );
+    }
   }
   if (origin === null || origin !== expectedOrigin) {
     throw new AppError("INVALID_ORIGIN", "Request origin is not allowed", 403);
@@ -103,17 +128,17 @@ export function sessionTokenFromRequest(request: Request): string | undefined {
   if (cookie === null) return undefined;
   for (const part of cookie.split(";")) {
     const [name, ...value] = part.trim().split("=");
-    if (name === SESSION_COOKIE_NAME) return value.join("=");
+    if (name === sessionCookieName()) return value.join("=");
   }
   return undefined;
 }
 
 export function sessionCookie(token: string, expiresAt: Date): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Expires=${expiresAt.toUTCString()}${secure}`;
+  return `${sessionCookieName()}=${token}; Path=/; HttpOnly; SameSite=Lax; Expires=${expiresAt.toUTCString()}${secure}`;
 }
 
 export function clearSessionCookie(): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+  return `${sessionCookieName()}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
 }

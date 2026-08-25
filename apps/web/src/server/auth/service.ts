@@ -13,11 +13,12 @@ import {
 import type { AuthenticatedUser, Credentials } from "@prizgram/shared";
 
 import { AppError } from "../api";
-import { hashPassword, verifyPassword } from "./password";
+import { hashPassword, isLegacyPasswordHash, verifyPassword } from "./password";
 
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1_000;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1_000;
+const SESSION_PURGE_INTERVAL_MS = 60 * 1_000;
 const dummyPasswordHash = hashPassword("dummy-password-for-timing-only");
 
 export type AuthSession = Readonly<{
@@ -50,6 +51,8 @@ export function isLoginIdUniqueViolation(error: unknown): boolean {
 }
 
 export class AuthService {
+  private lastExpiredSessionPurgeAt = Number.NEGATIVE_INFINITY;
+
   constructor(
     private readonly connection: DatabaseConnection,
     private readonly now: () => Date = () => new Date(),
@@ -115,11 +118,18 @@ export class AuthService {
       );
     }
 
+    const upgradedHash = isLegacyPasswordHash(credential.passwordHash)
+      ? await hashPassword(credentials.password)
+      : undefined;
     const session = this.newSession(credential.userId, credential.loginId);
     this.connection.db.transaction((transaction) => {
       const reset = transaction
         .update(userCredentials)
-        .set({ failedAttempts: 0, lockedUntil: null })
+        .set({
+          failedAttempts: 0,
+          lockedUntil: null,
+          ...(upgradedHash === undefined ? {} : { passwordHash: upgradedHash }),
+        })
         .where(
           and(
             eq(userCredentials.userId, credential.userId),
@@ -156,6 +166,7 @@ export class AuthService {
   authenticate(token: string | undefined): AuthenticatedUser | undefined {
     if (token === undefined || !/^[A-Za-z0-9_-]{43}$/.test(token))
       return undefined;
+    this.purgeExpiredSessions();
     const row = this.connection.db
       .select({ userId: authSessions.userId, loginId: userCredentials.loginId })
       .from(authSessions)
@@ -202,6 +213,17 @@ export class AuthService {
       expiresAt: new Date(now.getTime() + SESSION_DURATION_MS),
       user: { id: userId, loginId },
     };
+  }
+
+  private purgeExpiredSessions(): void {
+    const nowMs = this.now().getTime();
+    if (nowMs - this.lastExpiredSessionPurgeAt < SESSION_PURGE_INTERVAL_MS)
+      return;
+    this.connection.db
+      .delete(authSessions)
+      .where(lte(authSessions.expiresAt, new Date(nowMs)))
+      .run();
+    this.lastExpiredSessionPurgeAt = nowMs;
   }
 
   private recordFailedAttempt(userId: string, now: Date): void {
