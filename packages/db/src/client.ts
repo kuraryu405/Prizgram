@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import BetterSqlite3 from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import type { z } from "zod";
 
 import {
@@ -15,7 +17,11 @@ import {
   scoreReasonListSchema,
 } from "@prizgram/shared";
 
-import { databasePathFromUrl, type DatabasePathOptions } from "./config";
+import {
+  databasePathFromUrl,
+  findWorkspaceRoot,
+  type DatabasePathOptions,
+} from "./config";
 import { schema, tableNames } from "./schema";
 
 export {
@@ -25,6 +31,40 @@ export {
 } from "./config";
 
 export type DatabaseConnection = ReturnType<typeof createDatabase>;
+
+export interface CreateDatabaseOptions extends DatabasePathOptions {
+  /**
+   * Migration bundle used by readiness checks. Defaults to the workspace
+   * `packages/db/drizzle` folder; standalone deployments should pass the
+   * folder bundled with the deployed artifact explicitly.
+   */
+  migrationsFolder?: string;
+}
+
+type MigrationMetaList = ReturnType<typeof readMigrationFiles>;
+
+const migrationMetaCache = new Map<string, MigrationMetaList>();
+
+function bundledMigrations(migrationsFolder: string): MigrationMetaList {
+  let migrations = migrationMetaCache.get(migrationsFolder);
+  if (migrations === undefined) {
+    migrations = readMigrationFiles({ migrationsFolder });
+    migrationMetaCache.set(migrationsFolder, migrations);
+  }
+  return migrations;
+}
+
+function resolveDefaultMigrationsFolder(startingDirectory: string): string {
+  const workspaceRoot = findWorkspaceRoot(startingDirectory);
+  if (workspaceRoot !== undefined)
+    return path.join(workspaceRoot, "packages", "db", "drizzle");
+  // Native ESM execution (for example the migration CLI) keeps the bundle
+  // next to this module.
+  return path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../drizzle",
+  );
+}
 
 const structuredColumns: ReadonlyArray<{
   table: string;
@@ -94,7 +134,7 @@ function validateExistingStructuredData(sqlite: BetterSqlite3.Database): void {
 
 export function createDatabase(
   databaseUrl: string,
-  options?: DatabasePathOptions,
+  options?: CreateDatabaseOptions,
 ) {
   const filename = databasePathFromUrl(databaseUrl, options);
   if (filename !== ":memory:") {
@@ -112,6 +152,9 @@ export function createDatabase(
     throw new Error("SQLite foreign key enforcement could not be enabled");
   }
 
+  const migrationsFolder =
+    options?.migrationsFolder ?? resolveDefaultMigrationsFolder(process.cwd());
+
   const db = drizzle(sqlite, { schema });
   return {
     db,
@@ -128,6 +171,46 @@ export function createDatabase(
       const missing = tableNames.filter((name) => !existing.has(name));
       if (missing.length > 0)
         throw new Error("Database migrations have not been fully applied");
+
+      // Table presence alone misses column/index/trigger/FK-only changes,
+      // and comparing hash *sets* would miss journal drift. Compare the
+      // applied journal as an ordered sequence (drizzle orders by
+      // created_at) against the bundled sequence: count, order, hash, and
+      // creation timestamp must all line up.
+      let appliedRows: Array<{ hash: string; created_at: number | string }>;
+      try {
+        appliedRows = sqlite
+          .prepare(
+            'select hash, created_at from "__drizzle_migrations" order by created_at asc, rowid asc',
+          )
+          .all() as Array<{ hash: string; created_at: number | string }>;
+      } catch (error) {
+        throw new Error("Database migrations have not been fully applied", {
+          cause: error,
+        });
+      }
+      const expectedMigrations = bundledMigrations(migrationsFolder);
+      const journalMatches =
+        appliedRows.length === expectedMigrations.length &&
+        expectedMigrations.every((migration, index) => {
+          const appliedRow = appliedRows[index];
+          return (
+            appliedRow !== undefined &&
+            appliedRow.hash === migration.hash &&
+            Number(appliedRow.created_at) === migration.folderMillis
+          );
+        });
+      if (!journalMatches) {
+        throw new Error(
+          "Applied database schema does not match the bundled migrations; apply pending migrations before serving traffic",
+        );
+      }
+
+      const foreignKeyViolations = sqlite.pragma("foreign_key_check") as
+        unknown[] | undefined;
+      if ((foreignKeyViolations?.length ?? 0) > 0)
+        throw new Error("Database contains foreign key violations");
+
       return { ready: true as const };
     },
   };
