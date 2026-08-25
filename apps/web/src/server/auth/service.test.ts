@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes, scrypt, type ScryptOptions } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -16,6 +17,37 @@ import {
 
 import { AppError } from "../api";
 import { AuthService, isLoginIdUniqueViolation } from "./service";
+
+function deriveLegacyKey(
+  password: string,
+  salt: Buffer,
+  options: ScryptOptions,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, 32, options, (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+}
+
+async function legacyPasswordHash(password: string): Promise<string> {
+  const salt = randomBytes(16);
+  const key = await deriveLegacyKey(password, salt, {
+    N: 16_384,
+    maxmem: 64 * 1024 * 1024,
+    p: 1,
+    r: 8,
+  });
+  return [
+    "scrypt",
+    "16384",
+    "8",
+    "1",
+    salt.toString("base64url"),
+    key.toString("base64url"),
+  ].join("$");
+}
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(
@@ -161,6 +193,40 @@ describe("AuthService", () => {
     ).toBe(0);
   });
 
+  it("upgrades legacy password hashes after a successful login", async () => {
+    const legacy = await legacyPasswordHash(credentials.password);
+    connection.db.transaction((transaction) => {
+      transaction.insert(users).values({ id: "legacy-user" }).run();
+      transaction
+        .insert(userCredentials)
+        .values({
+          userId: "legacy-user",
+          loginId: credentials.loginId,
+          passwordHash: legacy,
+        })
+        .run();
+    });
+
+    const session = await service.login(credentials);
+    expect(session.user.id).toBe("legacy-user");
+    const upgraded = connection.db
+      .select()
+      .from(userCredentials)
+      .get()?.passwordHash;
+    expect(upgraded?.split("$").slice(0, 4)).toEqual([
+      "scrypt",
+      "131072",
+      "8",
+      "1",
+    ]);
+    expect(upgraded).not.toBe(legacy);
+
+    now = new Date(now.getTime() + 1_000);
+    await expect(service.login(credentials)).resolves.toMatchObject({
+      user: { id: "legacy-user" },
+    });
+  });
+
   it("invalidates only the presented session on logout", async () => {
     const first = await service.register(credentials);
     const second = await service.login(credentials);
@@ -177,5 +243,13 @@ describe("AuthService", () => {
       password: "another correct long password",
     });
     expect(connection.db.select().from(authSessions).all()).toHaveLength(1);
+  });
+
+  it("purges expired sessions during authentication without requiring a login", async () => {
+    const session = await service.register(credentials);
+    now = new Date(now.getTime() + 31 * 24 * 60 * 60 * 1_000);
+
+    expect(service.authenticate(session.token)).toBeUndefined();
+    expect(connection.db.select().from(authSessions).all()).toHaveLength(0);
   });
 });

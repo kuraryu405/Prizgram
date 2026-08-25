@@ -131,4 +131,22 @@ describe("database environment configuration", () => {
       }),
     ).toBe(absolutePath);
   });
+
+  it("rejects non-SQLite URL schemes with an actionable error", () => {
+    expect(() => databasePathFromUrl("postgres://localhost/prizgram")).toThrow(
+      /must be a SQLite path or a file: URL/,
+    );
+    expect(() => databasePathFromUrl("mysql://user:pass@host/db")).toThrow(
+      /must be a SQLite path or a file: URL/,
+    );
+  });
+
+  it("rejects query and fragment components in the SQLite path", () => {
+    expect(() =>
+      databasePathFromUrl("file:./data/prizgram.sqlite?mode=ro"),
+    ).toThrow(/query or fragment components/);
+    expect(() =>
+      databasePathFromUrl("./data/prizgram.sqlite#fragment"),
+    ).toThrow(/query or fragment components/);
+  });
 });

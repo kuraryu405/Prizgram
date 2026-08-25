@@ -22,6 +22,7 @@ import {
   type DatabasePathOptions,
 } from "./config";
 import { schema, tableNames } from "./schema";
+import { ensureTriggers } from "./triggers";
 
 export {
   databasePathFromUrl,
@@ -65,7 +66,7 @@ function resolveDefaultMigrationsFolder(startingDirectory: string): string {
   );
 }
 
-const structuredColumns: ReadonlyArray<{
+export const structuredJsonColumns: ReadonlyArray<{
   table: string;
   column: string;
   schema: z.ZodType;
@@ -114,7 +115,7 @@ const structuredColumns: ReadonlyArray<{
 ];
 
 function validateExistingStructuredData(sqlite: BetterSqlite3.Database): void {
-  for (const { column, schema: columnSchema, table } of structuredColumns) {
+  for (const { column, schema: columnSchema, table } of structuredJsonColumns) {
     const exists = sqlite
       .prepare(
         "select 1 from sqlite_master where type = 'table' and name = ? limit 1",
@@ -215,6 +216,21 @@ export function createDatabase(
   };
 }
 
+function countSourcePairViolations(sqlite: BetterSqlite3.Database): number {
+  const jobsTable = sqlite
+    .prepare(
+      "select 1 from sqlite_master where type = 'table' and name = 'jobs' limit 1",
+    )
+    .get();
+  if (jobsTable === undefined) return 0;
+  const row = sqlite
+    .prepare(
+      "select count(*) as count from jobs where (source_kind is null) != (source_external_id is null)",
+    )
+    .get() as { count: number };
+  return row.count;
+}
+
 export function migrateDatabase(
   connection: DatabaseConnection,
   migrationsFolder: string,
@@ -226,6 +242,11 @@ export function migrateDatabase(
   if ((violationsBefore?.length ?? 0) > 0) {
     throw new Error(
       "Database contains foreign key violations before migration",
+    );
+  }
+  if (countSourcePairViolations(connection.sqlite) > 0) {
+    throw new Error(
+      "Database contains jobs rows whose source_kind and source_external_id are not set together; correct them before migrating",
     );
   }
 
@@ -243,10 +264,14 @@ export function migrateDatabase(
     // against the current domain schemas only after conversion migrations
     // had the chance to transform them, and any failure rolls back schema
     // changes, data changes, and the migration journal together instead of
-    // leaving a half-migrated database behind.
+    // leaving a half-migrated database behind. Trigger statements in
+    // historical migration files are idempotent and drizzle-kit snapshots
+    // cannot record triggers at all, so they are restored inside the same
+    // transaction after every run.
     sqlite.transaction(() => {
       ensureMigrationJournal(sqlite);
       applyPendingMigrations(sqlite, migrations);
+      ensureTriggers(sqlite);
       validateExistingStructuredData(sqlite);
       const violationsInTransaction = sqlite.pragma("foreign_key_check") as
         unknown[] | undefined;

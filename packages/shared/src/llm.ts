@@ -17,7 +17,16 @@ export type StructuredOutputContract<ProviderOutput, DomainOutput> = Readonly<{
 
 const providerString = z.string();
 const providerId = z.string();
-const providerDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const providerDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  });
 
 export const personaProviderOutputSchema = z
   .object({

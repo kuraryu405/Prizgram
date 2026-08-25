@@ -171,6 +171,10 @@ export const jobs = sqliteTable(
       .default(now),
   },
   (table) => [
+    check(
+      "jobs_source_pair_consistency",
+      sql`(${table.sourceKind} is null) = (${table.sourceExternalId} is null)`,
+    ),
     uniqueIndex("jobs_user_id_unique").on(table.userId, table.id),
     uniqueIndex("jobs_source_external_unique").on(
       table.userId,

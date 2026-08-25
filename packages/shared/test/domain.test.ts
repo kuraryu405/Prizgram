@@ -140,6 +140,52 @@ describe("domain schemas", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("reports duplicate job signal ids against their own signal group", () => {
+    const job = {
+      company: "Example",
+      role: "Engineer",
+      employmentType: "internship",
+      description: "Product engineering internship",
+      requirements: [
+        { id: "job:req:1", text: "TypeScript" },
+        { id: "job:req:2", text: "Testing" },
+      ],
+      desiredSkills: [{ id: "job:req:2", text: "Testing" }],
+      cultureValues: [],
+      difficulty: { level: "competitive", evidenceRefs: ["job:req:1"] },
+      source: {
+        kind: "user_provided",
+        name: "User",
+        retrievedAt: "2026-08-25T00:00:00Z",
+      },
+    } as const;
+
+    const result = jobSnapshotSchema.safeParse(job);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.error.issues.find(
+        ({ message }) => message === "job signal ids must be unique",
+      );
+      expect(issue?.path).toEqual(["desiredSkills", 0]);
+    }
+
+    const inFieldDuplicate = jobSnapshotSchema.safeParse({
+      ...job,
+      requirements: [
+        { id: "job:req:1", text: "TypeScript" },
+        { id: "job:req:1", text: "TypeScript again" },
+      ],
+      desiredSkills: [],
+    });
+    expect(inFieldDuplicate.success).toBe(false);
+    if (!inFieldDuplicate.success) {
+      const issue = inFieldDuplicate.error.issues.find(
+        ({ message }) => message === "job signal ids must be unique",
+      );
+      expect(issue?.path).toEqual(["requirements", 1]);
+    }
+  });
 });
 
 describe("JSON column codec", () => {
