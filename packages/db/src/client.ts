@@ -172,30 +172,35 @@ export function createDatabase(
       if (missing.length > 0)
         throw new Error("Database migrations have not been fully applied");
 
-      // Table presence alone misses column/index/trigger/FK-only changes.
-      // Compare the applied migration journal against the bundled one so a
-      // stale or drifted schema is never reported as healthy.
-      let appliedRows: Array<{ hash: string }>;
+      // Table presence alone misses column/index/trigger/FK-only changes,
+      // and comparing hash *sets* would miss journal drift. Compare the
+      // applied journal as an ordered sequence (drizzle orders by
+      // created_at) against the bundled sequence: count, order, hash, and
+      // creation timestamp must all line up.
+      let appliedRows: Array<{ hash: string; created_at: number | string }>;
       try {
         appliedRows = sqlite
-          .prepare('select hash from "__drizzle_migrations"')
-          .all() as Array<{ hash: string }>;
+          .prepare(
+            'select hash, created_at from "__drizzle_migrations" order by created_at asc, rowid asc',
+          )
+          .all() as Array<{ hash: string; created_at: number | string }>;
       } catch (error) {
         throw new Error("Database migrations have not been fully applied", {
           cause: error,
         });
       }
-      const applied = new Set(appliedRows.map(({ hash }) => hash));
-      const expectedHashes = bundledMigrations(migrationsFolder).map(
-        ({ hash }) => hash,
-      );
-      const missingMigrations = expectedHashes.filter(
-        (hash) => !applied.has(hash),
-      );
-      const unexpectedMigrations = [...applied].filter(
-        (hash) => !expectedHashes.includes(hash),
-      );
-      if (missingMigrations.length > 0 || unexpectedMigrations.length > 0) {
+      const expectedMigrations = bundledMigrations(migrationsFolder);
+      const journalMatches =
+        appliedRows.length === expectedMigrations.length &&
+        expectedMigrations.every((migration, index) => {
+          const appliedRow = appliedRows[index];
+          return (
+            appliedRow !== undefined &&
+            appliedRow.hash === migration.hash &&
+            Number(appliedRow.created_at) === migration.folderMillis
+          );
+        });
+      if (!journalMatches) {
         throw new Error(
           "Applied database schema does not match the bundled migrations; apply pending migrations before serving traffic",
         );

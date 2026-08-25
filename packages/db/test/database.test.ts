@@ -507,6 +507,61 @@ describe("SQLite foundation", () => {
     }
   });
 
+  it("reports a duplicated journal entry as not ready even when every hash is present", () => {
+    expect(connection.ready()).toEqual({ ready: true });
+    // A hash-set comparison would accept this journal because the duplicated
+    // entry contributes no unknown hash.
+    connection.sqlite
+      .prepare(
+        `insert into "__drizzle_migrations" ("hash", "created_at")
+         select "hash", "created_at" + 1 from "__drizzle_migrations"
+         order by "created_at" desc limit 1`,
+      )
+      .run();
+    expect(() => connection.ready()).toThrow(
+      /does not match the bundled migrations/,
+    );
+  });
+
+  it("reports reordered journal entries as not ready", () => {
+    expect(connection.ready()).toEqual({ ready: true });
+    const rows = connection.sqlite
+      .prepare(
+        'select rowid as id, hash from "__drizzle_migrations" order by created_at asc',
+      )
+      .all() as Array<{ id: number; hash: string }>;
+    const [first, second] = rows;
+    const updateHash = connection.sqlite.prepare(
+      'update "__drizzle_migrations" set hash = ? where rowid = ?',
+    );
+    if (first !== undefined && second !== undefined) {
+      updateHash.run(second.hash, first.id);
+      updateHash.run(first.hash, second.id);
+    }
+    expect(() => connection.ready()).toThrow(
+      /does not match the bundled migrations/,
+    );
+  });
+
+  it("reports tampered journal timestamps and hashes as not ready", () => {
+    expect(connection.ready()).toEqual({ ready: true });
+    connection.sqlite
+      .prepare('update "__drizzle_migrations" set created_at = created_at + 1')
+      .run();
+    expect(() => connection.ready()).toThrow(
+      /does not match the bundled migrations/,
+    );
+
+    connection.sqlite
+      .prepare(
+        'update "__drizzle_migrations" set created_at = created_at - 1, hash = ? where rowid = (select min(rowid) from "__drizzle_migrations")',
+      )
+      .run("f".repeat(64));
+    expect(() => connection.ready()).toThrow(
+      /does not match the bundled migrations/,
+    );
+  });
+
   it("reports foreign key violations as not ready", () => {
     expect(connection.ready()).toEqual({ ready: true });
     connection.sqlite.pragma("foreign_keys = OFF");
