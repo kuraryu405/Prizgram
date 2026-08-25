@@ -15,7 +15,7 @@ import {
 } from "@prizgram/db";
 
 import { AppError } from "../api";
-import { AuthService } from "./service";
+import { AuthService, isLoginIdUniqueViolation } from "./service";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(
@@ -76,6 +76,59 @@ describe("AuthService", () => {
     );
     expect(connection.db.select().from(users).all()).toHaveLength(1);
     expect(connection.db.select().from(authSessions).all()).toHaveLength(1);
+  });
+
+  it("maps only a unique violation on user_credentials.login_id to LOGIN_ID_TAKEN", () => {
+    expect(
+      isLoginIdUniqueViolation({
+        code: "SQLITE_CONSTRAINT_UNIQUE",
+        message: "UNIQUE constraint failed: user_credentials.login_id",
+      }),
+    ).toBe(true);
+
+    expect(
+      isLoginIdUniqueViolation({
+        code: "SQLITE_CONSTRAINT_UNIQUE",
+        message:
+          "UNIQUE constraint failed: index 'user_credentials_login_id_unique'",
+      }),
+    ).toBe(false);
+    expect(
+      isLoginIdUniqueViolation({
+        code: "SQLITE_CONSTRAINT_PRIMARYKEY",
+        message: "PRIMARY KEY constraint failed: users.id",
+      }),
+    ).toBe(false);
+    expect(
+      isLoginIdUniqueViolation({
+        code: "SQLITE_CONSTRAINT_CHECK",
+        message:
+          "CHECK constraint failed: user_credentials_password_hash_shape",
+      }),
+    ).toBe(false);
+    expect(
+      isLoginIdUniqueViolation({
+        code: "SQLITE_CONSTRAINT_FOREIGNKEY",
+        message: "FOREIGN KEY constraint failed",
+      }),
+    ).toBe(false);
+    expect(
+      isLoginIdUniqueViolation({
+        code: "SQLITE_ERROR",
+        message: "no such table",
+      }),
+    ).toBe(false);
+    expect(isLoginIdUniqueViolation(new Error("plain error"))).toBe(false);
+  });
+
+  it("propagates unexpected database failures instead of reporting a login conflict", async () => {
+    connection.sqlite.exec("drop table users");
+    await expect(service.register(credentials)).rejects.toThrow(
+      /no such table/,
+    );
+    await expect(appErrorCode(service.register(credentials))).rejects.not.toBe(
+      "LOGIN_ID_TAKEN",
+    );
   });
 
   it("uses a generic login failure and locks repeated failures", async () => {

@@ -30,13 +30,22 @@ function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function isUniqueConstraint(error: unknown): boolean {
+const LOGIN_ID_UNIQUE_VIOLATION =
+  /unique constraint failed: user_credentials\.login_id(?:,|\s|$)/i;
+
+/**
+ * Matches only a unique violation on user_credentials.login_id. Every other
+ * constraint failure (primary key, check, foreign key, ...) is a server
+ * defect and must surface instead of being reported as a login conflict.
+ */
+export function isLoginIdUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
   return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code.startsWith("SQLITE_CONSTRAINT")
+    typeof code === "string" &&
+    code.startsWith("SQLITE_CONSTRAINT") &&
+    typeof message === "string" &&
+    LOGIN_ID_UNIQUE_VIOLATION.test(message)
   );
 }
 
@@ -76,7 +85,7 @@ export class AuthService {
           .run();
       });
     } catch (error) {
-      if (isUniqueConstraint(error)) {
+      if (isLoginIdUniqueViolation(error)) {
         throw new AppError("LOGIN_ID_TAKEN", "Login ID is unavailable", 409);
       }
       throw error;
