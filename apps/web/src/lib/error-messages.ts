@@ -17,6 +17,13 @@ const codeMessages: Readonly<Record<string, string>> = {
   ACCESS_DENIED: "アクセスが許可されていません。",
   CONFLICT: "操作が競合しました。画面を更新してから再度お試しください。",
   RATE_LIMITED: "操作が集中しています。しばらく待ってから再度お試しください。",
+  PERSONA_REQUIRED: "先にペルソナを生成してください。",
+  EVIDENCE_UNAVAILABLE:
+    "ペルソナまたは求人票に根拠となる要素がなく評価できません。",
+  UPSTREAM_UNAVAILABLE:
+    "AIサービスが一時的に利用できません。時間をおいて再度お試しください。",
+  UPSTREAM_INVALID_RESPONSE:
+    "AIの応答が処理できませんでした。時間をおいて再度お試しください。",
   INTERNAL_ERROR:
     "サーバーで問題が発生しました。しばらくしてから再度お試しください。",
   NETWORK_ERROR:
