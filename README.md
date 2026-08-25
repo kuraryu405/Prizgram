@@ -1,127 +1,129 @@
 # Prizgram
 
-> **A personal career agent that learns from every selection.**
+> **選考を重ねるたびに、あなたを学習する就活パーソナルエージェント。**
 
-Prizgram is an AI-powered personal career agent for students navigating internships and new-graduate recruiting in Japan.
+Prizgram は、日本のインターン・新卒就活に取り組む学生向けの AI パーソナルキャリアエージェントです。
 
-Instead of stopping at job search or one-shot matching, Prizgram continuously updates a structured career persona from conversations and selection outcomes, then uses that evolving context to improve future recommendations.
+求人検索や一度きりのマッチングで終わるのではなく、対話や選考結果から構造化された「就活ペルソナ」を継続的に更新し、その変化した文脈を次の求人推薦や意思決定に反映します。
 
-## Why Prizgram?
+## なぜ Prizgram なのか
 
-Access to recruiting knowledge is uneven. Students with strong alumni networks, career support, or established recruiting communities can obtain practical advice that others cannot.
+就活ノウハウへのアクセスには格差があります。強い OB/OG ネットワーク、キャリア支援、就活コミュニティを持つ学生は実践的な情報を得やすい一方、そうした環境を持たない学生は同等の支援にアクセスしづらい状況があります。
 
-Prizgram is designed to narrow that gap by turning fragmented experiences into an evolving personal model that helps users understand:
+Prizgram は、断片的な経験や選考結果を継続的に更新される個人モデルへ変換することで、この格差を縮めることを目指します。
 
-- what they are good at,
-- what kind of company or role fits them,
-- where the current gap is,
-- and what they should do next.
+ユーザーが理解できるようにする対象は次のとおりです。
 
-## Core loop
+- 自分は何が得意なのか
+- どのような企業・職種が合うのか
+- 現在どこにギャップがあるのか
+- 次に何をすべきか
+
+## コアループ
 
 ```text
-Interview / conversation
+ヒアリング / 対話
         ↓
-Structured persona
+構造化されたペルソナ
         ↓
-Job & internship scoring
+求人・インターンのスコアリング
         ↓
-Application / selection result
+応募 / 選考結果
         ↓
-Feedback & persona update
+フィードバック & ペルソナ更新
         ↺
 ```
 
-The product is built around this feedback loop: every new result should make the next recommendation more useful.
+Prizgram の中心はこのフィードバックループです。新しい選考結果を得るたびに、次の推薦や支援がより有用になることを目指します。
 
 ## MVP
 
-The initial MVP focuses on three capabilities:
+初期 MVP では、次の3機能に集中します。
 
-1. **Persona generation**  
-   Extract experience, skills, values, preferences, strengths, and weaknesses through conversational interviews.
+1. **ペルソナ生成**  
+   対話形式のヒアリングから、経験・スキル・価値観・志向性・強み・弱みを抽出します。
 
-2. **Explainable opportunity scoring**  
-   Compare the persona with job or internship requirements and show multiple scoring dimensions with reasons rather than a single opaque match percentage.
+2. **説明可能な求人スコアリング**  
+   ペルソナと求人・インターンの要件を比較し、単一のブラックボックスなマッチ率ではなく、複数軸のスコアと根拠を提示します。
 
-3. **Selection tracking & reminders**  
-   Manage applications, stages, interviews, ES deadlines, and offer-response deadlines in one place, then surface the most urgent next actions.
+3. **選考管理とリマインド**  
+   応募企業、選考ステータス、面接日程、ES 締切、内定承諾期限などを一元管理し、優先度の高い次のアクションを提示します。
 
-## Planned capabilities
+## 今後の機能
 
-After validating the MVP:
+MVP 検証後は、以下を追加予定です。
 
-- mock interview transcription and feedback,
-- persona updates from interview feedback,
-- ES / motivation-letter draft generation,
-- automatic re-scoring when the persona or opportunity data changes,
-- event-driven reminders for deadlines and new opportunities.
+- 模擬面接の文字起こし・フィードバック
+- 面接フィードバックを用いたペルソナ更新
+- ES・志望動機の下書き生成
+- ペルソナや求人情報更新時の自動再スコアリング
+- 締切や新着求人をトリガーとしたイベント駆動リマインド
 
-## Explainability by design
+## 説明可能性を前提にした設計
 
-Prizgram avoids reducing users to a single unexplained score. Opportunity matching is intended to expose separate dimensions such as:
+Prizgram は、ユーザーを根拠の分からない単一スコアに還元しません。求人とのマッチングでは、例えば次のような軸を個別に提示します。
 
-- skill requirement fit,
-- culture / values fit,
-- gap between current readiness and selection difficulty,
-- supporting evidence for each score.
+- スキル要件充足度
+- 企業文化・価値観フィット
+- 現在の実力と選考難易度のギャップ
+- 各スコアを支える根拠
 
-## Human-in-the-loop boundaries
+## Human-in-the-loop の境界
 
-Prizgram can autonomously organize information, score opportunities, generate reminders, and prepare drafts. External actions that represent the user require explicit human approval.
+Prizgram は、情報整理、求人スコアリング、リマインド生成、下書き作成などを自律的に行えます。一方、ユーザー本人を代表する対外的な行為には、明示的な人間の承認を必要とします。
 
-In particular:
+特に以下を守ります。
 
-- Prizgram **does not automatically submit applications**.
-- Generated application documents are drafts; the user makes the final edits and submission decision.
-- Interview analysis is intended for mock interviews, not unauthorized recording of real company interviews.
-- Job data should come from official APIs or otherwise permitted sources.
+- Prizgram は**応募を自動送信しません**。
+- 生成された応募書類は下書きであり、最終編集と提出判断はユーザーが行います。
+- 面接分析の対象は模擬面接を想定し、企業本番面接の無断録音は対象外です。
+- 求人データは公式 API や許諾されたデータソースなど、利用可能な方法で取得します。
 
-## Architecture
+## アーキテクチャ
 
-Initial technical direction:
+初期の技術構成は次のとおりです。
 
-| Layer | Stack |
+| レイヤー | 技術 |
 | --- | --- |
 | Web | Next.js / TypeScript / Tailwind CSS |
 | API | NestJS / TypeScript |
 | Database | PostgreSQL |
 | LLM | Claude API |
-| Async jobs | Queue-based event processing |
+| 非同期処理 | キューを用いたイベント処理 |
 
-A monorepo layout is planned:
+モノレポ構成を想定しています。
 
 ```text
 prizgram/
 ├── apps/
-│   ├── web/        # Next.js frontend
-│   └── api/        # NestJS backend
+│   ├── web/        # Next.js フロントエンド
+│   └── api/        # NestJS バックエンド
 ├── packages/
-│   └── shared/     # Shared schemas, types, utilities
+│   └── shared/     # 共通 schema / type / utility
 └── docs/
     ├── product.md
     └── architecture.md
 ```
 
-## Product principles
+## プロダクト原則
 
-1. **Learn continuously** — selection outcomes update the user's model.
-2. **Explain recommendations** — expose reasons, not only scores.
-3. **Keep agency with the user** — the agent assists; the user decides and submits.
-4. **Minimize unfair advantage gaps** — make structured recruiting support accessible beyond strong personal networks.
-5. **Measure impact** — validate whether the product actually improves outcomes rather than assuming usefulness.
+1. **継続的に学習する** — 選考結果をユーザーのモデル更新に反映する。
+2. **推薦理由を説明する** — スコアだけでなく根拠を提示する。
+3. **意思決定権をユーザーに残す** — Agent は支援し、最終判断と提出は本人が行う。
+4. **情報格差を縮める** — 強い個人ネットワークがなくても体系的な就活支援へアクセスできるようにする。
+5. **効果を測定する** — 作ったこと自体を成果とせず、本当に結果が改善したかを検証する。
 
-## Status
+## 現在のステータス
 
-**Early-stage / MVP planning**
+**初期段階 / MVP 設計中**
 
-The current repository contains the initial product and architecture documentation. Implementation will follow the MVP scope above.
+現在のリポジトリには、初期のプロダクト仕様とアーキテクチャ設計を格納しています。実装は上記 MVP スコープに沿って進めます。
 
-## Documentation
+## ドキュメント
 
-- [`docs/product.md`](docs/product.md) — product scope, users, features, and guardrails
-- [`docs/architecture.md`](docs/architecture.md) — initial system design and domain model
+- [`docs/product.md`](docs/product.md) — プロダクトの目的、対象ユーザー、機能、ガードレール
+- [`docs/architecture.md`](docs/architecture.md) — 初期システム設計とドメインモデル
 
-## License
+## ライセンス
 
-No open-source license has been selected yet. Until a license is added, all rights are reserved by the repository owner.
+現時点ではオープンソースライセンスを設定していません。ライセンスを追加するまでは、リポジトリ所有者がすべての権利を保持します。
