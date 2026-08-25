@@ -268,6 +268,13 @@ export class OpenAiCompatibleClient implements StructuredLlmClient {
 
     try {
       if (!response.ok) {
+        // Release the error response so its connection is not pinned by an
+        // unread body. The body is intentionally not surfaced to callers.
+        try {
+          await response.body?.cancel();
+        } catch {
+          // Cancellation failures must not change the HTTP classification.
+        }
         throw new LlmClientError(
           "HTTP_ERROR",
           `The language model returned HTTP ${response.status}`,

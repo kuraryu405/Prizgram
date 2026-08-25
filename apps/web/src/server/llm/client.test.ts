@@ -149,6 +149,59 @@ describe("OpenAiCompatibleClient", () => {
     ).resolves.toBe("TIMEOUT");
   });
 
+  it("cancels non-2xx response bodies without leaking their contents", async () => {
+    async function httpError(
+      status: number,
+    ): Promise<{ code: string; retryable: boolean; message: string }> {
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("provider-secret-body"));
+          // Keep the stream open so only an explicit cancel can end it.
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      const client = new OpenAiCompatibleClient(
+        config,
+        vi.fn<typeof fetch>().mockResolvedValue(new Response(body, { status })),
+      );
+      try {
+        await client.generateStructured({
+          messages: [],
+          output,
+          schemaName: "test",
+        });
+        throw new Error("Expected generateStructured to fail");
+      } catch (error) {
+        if (!(error instanceof LlmClientError)) throw error;
+        expect(cancelled).toBe(true);
+        return {
+          code: error.code,
+          retryable: error.retryable,
+          message: error.message,
+        };
+      }
+    }
+
+    await expect(httpError(429)).resolves.toEqual({
+      code: "HTTP_ERROR",
+      retryable: true,
+      message: "The language model returned HTTP 429",
+    });
+    await expect(httpError(503)).resolves.toEqual({
+      code: "HTTP_ERROR",
+      retryable: true,
+      message: "The language model returned HTTP 503",
+    });
+    await expect(httpError(401)).resolves.toEqual({
+      code: "HTTP_ERROR",
+      retryable: false,
+      message: "The language model returned HTTP 401",
+    });
+  });
+
   it("rejects malformed envelopes, empty content, invalid structured JSON, and schema mismatch", async () => {
     const cases: Array<[Response, string]> = [
       [new Response("not-json"), "INVALID_RESPONSE"],
