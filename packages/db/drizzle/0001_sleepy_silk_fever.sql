@@ -1,6 +1,6 @@
-DROP TRIGGER `users_delete_owned_data`;--> statement-breakpoint
-DROP TRIGGER `persona_versions_immutable`;--> statement-breakpoint
-DROP TRIGGER `job_versions_immutable`;--> statement-breakpoint
+DROP TRIGGER IF EXISTS `users_delete_owned_data`;--> statement-breakpoint
+DROP TRIGGER IF EXISTS `persona_versions_immutable`;--> statement-breakpoint
+DROP TRIGGER IF EXISTS `job_versions_immutable`;--> statement-breakpoint
 CREATE TABLE `__new_job_versions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
@@ -79,47 +79,47 @@ ALTER TABLE `__new_persona_versions` RENAME TO `persona_versions`;--> statement-
 CREATE UNIQUE INDEX `persona_versions_user_version_unique` ON `persona_versions` (`user_id`,`version`);--> statement-breakpoint
 CREATE UNIQUE INDEX `persona_versions_user_id_unique` ON `persona_versions` (`user_id`,`id`);--> statement-breakpoint
 CREATE INDEX `persona_versions_user_created_idx` ON `persona_versions` (`user_id`,`created_at`);--> statement-breakpoint
-CREATE TRIGGER `persona_versions_immutable`
+CREATE TRIGGER IF NOT EXISTS `persona_versions_immutable`
 BEFORE UPDATE ON `persona_versions`
 BEGIN
 	SELECT RAISE(ABORT, 'persona versions are immutable');
 END;--> statement-breakpoint
-CREATE TRIGGER `job_versions_immutable`
+CREATE TRIGGER IF NOT EXISTS `job_versions_immutable`
 BEFORE UPDATE ON `job_versions`
 BEGIN
 	SELECT RAISE(ABORT, 'job versions are immutable');
 END;--> statement-breakpoint
-CREATE TRIGGER `users_updated_at`
+CREATE TRIGGER IF NOT EXISTS `users_updated_at`
 AFTER UPDATE ON `users`
 WHEN NEW.`updated_at` = OLD.`updated_at`
 BEGIN
 	UPDATE `users` SET `updated_at` = max(unixepoch() * 1000, OLD.`updated_at` + 1) WHERE `id` = NEW.`id`;
 END;--> statement-breakpoint
-CREATE TRIGGER `jobs_updated_at`
+CREATE TRIGGER IF NOT EXISTS `jobs_updated_at`
 AFTER UPDATE ON `jobs`
 WHEN NEW.`updated_at` = OLD.`updated_at`
 BEGIN
 	UPDATE `jobs` SET `updated_at` = max(unixepoch() * 1000, OLD.`updated_at` + 1) WHERE `id` = NEW.`id`;
 END;--> statement-breakpoint
-CREATE TRIGGER `applications_updated_at`
+CREATE TRIGGER IF NOT EXISTS `applications_updated_at`
 AFTER UPDATE ON `applications`
 WHEN NEW.`updated_at` = OLD.`updated_at`
 BEGIN
 	UPDATE `applications` SET `updated_at` = max(unixepoch() * 1000, OLD.`updated_at` + 1) WHERE `id` = NEW.`id`;
 END;--> statement-breakpoint
-CREATE TRIGGER `application_deadlines_updated_at`
+CREATE TRIGGER IF NOT EXISTS `application_deadlines_updated_at`
 AFTER UPDATE ON `application_deadlines`
 WHEN NEW.`updated_at` = OLD.`updated_at`
 BEGIN
 	UPDATE `application_deadlines` SET `updated_at` = max(unixepoch() * 1000, OLD.`updated_at` + 1) WHERE `id` = NEW.`id`;
 END;--> statement-breakpoint
-CREATE TRIGGER `reminders_updated_at`
+CREATE TRIGGER IF NOT EXISTS `reminders_updated_at`
 AFTER UPDATE ON `reminders`
 WHEN NEW.`updated_at` = OLD.`updated_at`
 BEGIN
 	UPDATE `reminders` SET `updated_at` = max(unixepoch() * 1000, OLD.`updated_at` + 1) WHERE `id` = NEW.`id`;
 END;--> statement-breakpoint
-CREATE TRIGGER `users_delete_owned_data`
+CREATE TRIGGER IF NOT EXISTS `users_delete_owned_data`
 BEFORE DELETE ON `users`
 BEGIN
 	DELETE FROM `reminders` WHERE `user_id` = OLD.`id`;

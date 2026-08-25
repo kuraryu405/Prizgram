@@ -27,7 +27,7 @@ CREATE TABLE `user_credentials` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `user_credentials_login_id_unique` ON `user_credentials` (`login_id`);
 --> statement-breakpoint
-CREATE TRIGGER `user_credentials_updated_at`
+CREATE TRIGGER IF NOT EXISTS `user_credentials_updated_at`
 AFTER UPDATE ON `user_credentials`
 WHEN NEW.`updated_at` = OLD.`updated_at`
 BEGIN

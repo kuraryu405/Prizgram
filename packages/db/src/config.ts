@@ -7,7 +7,25 @@ import { z } from "zod";
 
 export const DEFAULT_DATABASE_URL = "file:./data/prizgram.sqlite";
 
-const databaseUrlSchema = z.string().trim().min(1);
+const databaseUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(
+    (url) => {
+      const [, schemeName] = /^([a-z][a-z0-9+.-]*):/i.exec(url) ?? [];
+      if (schemeName === undefined) return true;
+      return schemeName.length === 1 || schemeName.toLowerCase() === "file";
+    },
+    {
+      message:
+        "DATABASE_URL must be a SQLite path or a file: URL, not another database scheme",
+    },
+  )
+  .refine((url) => !/[?#]/.test(url.replace(/^([a-z][a-z0-9+.-]*:)/i, "")), {
+    message:
+      "DATABASE_URL must not contain query or fragment components; the path is passed to SQLite verbatim",
+  });
 
 export interface DatabasePathOptions {
   /** Directory from which to locate the monorepo. */

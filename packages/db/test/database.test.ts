@@ -13,6 +13,8 @@ import {
 
 import {
   createDatabase,
+  databaseTriggers,
+  listTriggerNames,
   matchScores,
   migrateDatabase,
   personaVersions,
@@ -21,7 +23,6 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(here, "../drizzle");
-const initialMigrationName = "0000_fast_sabra.sql";
 
 let temporaryDirectory: string;
 let connection: DatabaseConnection;
@@ -98,19 +99,24 @@ function seedInputs(): void {
     .run("job-version-a-1", "user-a", "job-a", "{}", "hash-a");
 }
 
-function createInitialMigrationsFolder(): string {
+function createInitialMigrationsFolder(entryCount = 1): string {
   const oldMigrationsFolder = path.join(temporaryDirectory, "old-migrations");
   fs.mkdirSync(path.join(oldMigrationsFolder, "meta"), { recursive: true });
-  fs.copyFileSync(
-    path.join(migrationsFolder, initialMigrationName),
-    path.join(oldMigrationsFolder, initialMigrationName),
-  );
   const journal = JSON.parse(
     fs.readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8"),
-  ) as { entries: unknown[] };
+  ) as { entries: Array<{ idx: number; tag: string }> };
+  for (const entry of journal.entries.slice(0, entryCount)) {
+    fs.copyFileSync(
+      path.join(migrationsFolder, `${entry.tag}.sql`),
+      path.join(oldMigrationsFolder, `${entry.tag}.sql`),
+    );
+  }
   fs.writeFileSync(
     path.join(oldMigrationsFolder, "meta/_journal.json"),
-    JSON.stringify({ ...journal, entries: journal.entries.slice(0, 1) }),
+    JSON.stringify({
+      ...journal,
+      entries: journal.entries.slice(0, entryCount),
+    }),
   );
   return oldMigrationsFolder;
 }
@@ -820,6 +826,98 @@ describe("SQLite foundation", () => {
       expect(reopened.ready()).toEqual({ ready: true });
     } finally {
       reopened.close();
+    }
+  });
+
+  it("requires source kind and external id on jobs to be set together", () => {
+    seedInputs();
+    const insert = connection.sqlite.prepare(
+      "insert into jobs (id, user_id, source_kind, source_external_id) values (?, ?, ?, ?)",
+    );
+    expect(() =>
+      insert.run("job-kind-only", "user-a", "official_api", null),
+    ).toThrow(/CHECK constraint failed: jobs_source_pair_consistency/);
+    expect(() =>
+      insert.run("job-external-only", "user-a", null, "ext-1"),
+    ).toThrow(/CHECK constraint failed: jobs_source_pair_consistency/);
+
+    insert.run("job-unsourced-a", "user-b", null, null);
+    insert.run("job-unsourced-b", "user-b", null, null);
+    insert.run("job-sourced", "user-b", "official_api", "ext-1");
+    expect(() =>
+      insert.run("job-sourced-duplicate", "user-b", "official_api", "ext-1"),
+    ).toThrow(/UNIQUE constraint failed/);
+  });
+
+  it("migrates a pre-constraint database forward preserving data and triggers", () => {
+    const previousMigrationsFolder = createInitialMigrationsFolder(3);
+    const legacyConnection = createDatabase(
+      path.join(temporaryDirectory, "legacy.sqlite"),
+    );
+    try {
+      migrateDatabase(legacyConnection, previousMigrationsFolder);
+      legacyConnection.sqlite
+        .prepare("insert into users (id) values (?)")
+        .run("user-legacy");
+      legacyConnection.sqlite
+        .prepare(
+          "insert into jobs (id, user_id, source_kind, source_external_id) values (?, ?, ?, ?)",
+        )
+        .run("job-legacy", "user-legacy", "official_api", "ext-legacy");
+
+      migrateDatabase(legacyConnection, migrationsFolder);
+
+      expect(legacyConnection.ready()).toEqual({ ready: true });
+      expect(
+        legacyConnection.sqlite.prepare("select id from jobs").all(),
+      ).toEqual([{ id: "job-legacy" }]);
+      expect(listTriggerNames(legacyConnection.sqlite)).toHaveLength(
+        databaseTriggers.length,
+      );
+      expect(
+        legacyConnection.sqlite.pragma("foreign_keys", { simple: true }),
+      ).toBe(1);
+      expect(() =>
+        legacyConnection.sqlite
+          .prepare(
+            "insert into jobs (id, user_id, source_kind, source_external_id) values ('job-bad', 'user-legacy', 'kind-only', null)",
+          )
+          .run(),
+      ).toThrow(/jobs_source_pair_consistency/);
+    } finally {
+      legacyConnection.close();
+    }
+  });
+
+  it("refuses to migrate when stored jobs rows violate the source pairing rule", () => {
+    const previousMigrationsFolder = createInitialMigrationsFolder(3);
+    const legacyConnection = createDatabase(
+      path.join(temporaryDirectory, "violating.sqlite"),
+    );
+    try {
+      migrateDatabase(legacyConnection, previousMigrationsFolder);
+      legacyConnection.sqlite
+        .prepare("insert into users (id) values (?)")
+        .run("user-x");
+      legacyConnection.sqlite
+        .prepare(
+          "insert into jobs (id, user_id, source_kind) values ('job-x', 'user-x', 'k')",
+        )
+        .run();
+
+      expect(() => migrateDatabase(legacyConnection, migrationsFolder)).toThrow(
+        /not set together/,
+      );
+
+      const applied = legacyConnection.sqlite
+        .prepare("select count(*) as count from __drizzle_migrations")
+        .get() as { count: number };
+      expect(applied.count).toBe(3);
+      expect(
+        legacyConnection.sqlite.prepare("select id from jobs").all(),
+      ).toEqual([{ id: "job-x" }]);
+    } finally {
+      legacyConnection.close();
     }
   });
 });
