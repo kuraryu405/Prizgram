@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 
 import BetterSqlite3 from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type { z } from "zod";
 
@@ -220,10 +219,9 @@ export function migrateDatabase(
   connection: DatabaseConnection,
   migrationsFolder: string,
 ): void {
-  // Refuse to mutate a legacy database whose JSON rows cannot be exposed
-  // through the current domain types after the migration.
-  validateExistingStructuredData(connection.sqlite);
-  const violationsBefore = connection.sqlite.pragma("foreign_key_check") as
+  const { sqlite } = connection;
+
+  const violationsBefore = sqlite.pragma("foreign_key_check") as
     unknown[] | undefined;
   if ((violationsBefore?.length ?? 0) > 0) {
     throw new Error(
@@ -231,20 +229,72 @@ export function migrateDatabase(
     );
   }
 
-  // SQLite ignores PRAGMA foreign_keys changes inside a transaction. Drizzle
-  // wraps each migration in a transaction, so table-rebuild migrations must
-  // disable enforcement before entering the migrator.
-  connection.sqlite.pragma("foreign_keys = OFF");
-  try {
-    migrate(connection.db, { migrationsFolder });
-  } finally {
-    connection.sqlite.pragma("foreign_keys = ON");
-  }
+  const migrations = bundledMigrations(migrationsFolder);
 
-  const violationsAfter = connection.sqlite.pragma("foreign_key_check") as
-    unknown[] | undefined;
-  if ((violationsAfter?.length ?? 0) > 0) {
-    throw new Error("Database contains foreign key violations after migration");
+  // SQLite ignores PRAGMA foreign_keys changes inside a transaction, and
+  // table-rebuild migrations must run with enforcement disabled. The
+  // non-toggling PRAGMA foreign_key_check however works inside a
+  // transaction and sees this transaction's own writes, which is what makes
+  // the atomicity below possible.
+  sqlite.pragma("foreign_keys = OFF");
+  try {
+    // Pending migrations, structured-data validation, and referential
+    // integrity all run inside one transaction: legacy rows are validated
+    // against the current domain schemas only after conversion migrations
+    // had the chance to transform them, and any failure rolls back schema
+    // changes, data changes, and the migration journal together instead of
+    // leaving a half-migrated database behind.
+    sqlite.transaction(() => {
+      ensureMigrationJournal(sqlite);
+      applyPendingMigrations(sqlite, migrations);
+      validateExistingStructuredData(sqlite);
+      const violationsInTransaction = sqlite.pragma("foreign_key_check") as
+        unknown[] | undefined;
+      if ((violationsInTransaction?.length ?? 0) > 0) {
+        throw new Error("Migration produced foreign key violations");
+      }
+    })();
+  } finally {
+    sqlite.pragma("foreign_keys = ON");
   }
-  validateExistingStructuredData(connection.sqlite);
+}
+
+const MIGRATIONS_TABLE = "__drizzle_migrations";
+
+function ensureMigrationJournal(sqlite: BetterSqlite3.Database): void {
+  // Same shape drizzle's migrator creates so readiness checks and future
+  // drizzle upgrades stay compatible.
+  sqlite.exec(`
+    create table if not exists "${MIGRATIONS_TABLE}" (
+      id serial primary key,
+      hash text not null,
+      created_at numeric
+    )
+  `);
+}
+
+function applyPendingMigrations(
+  sqlite: BetterSqlite3.Database,
+  migrations: MigrationMetaList,
+): void {
+  const last = sqlite
+    .prepare(
+      `select created_at from "${MIGRATIONS_TABLE}" order by created_at desc limit 1`,
+    )
+    .get() as { created_at: number | string } | undefined;
+  const lastAppliedAt =
+    last === undefined ? undefined : Number(last.created_at);
+
+  for (const migration of migrations) {
+    if (lastAppliedAt !== undefined && lastAppliedAt >= migration.folderMillis)
+      continue;
+    for (const statement of migration.sql) {
+      sqlite.exec(statement);
+    }
+    sqlite
+      .prepare(
+        `insert into "${MIGRATIONS_TABLE}" ("hash", "created_at") values (?, ?)`,
+      )
+      .run(migration.hash, migration.folderMillis);
+  }
 }

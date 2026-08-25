@@ -115,6 +115,132 @@ function createInitialMigrationsFolder(): string {
   return oldMigrationsFolder;
 }
 
+type MigrationJournal = { entries: Array<Record<string, unknown>> };
+
+/** Appends one synthetic migration to a copy of the current bundle. */
+function appendMigration(
+  folderName: string,
+  tag: string,
+  statements: string[],
+  when: number,
+): string {
+  const extraFolder = path.join(temporaryDirectory, folderName);
+  fs.cpSync(migrationsFolder, extraFolder, { recursive: true });
+  fs.writeFileSync(
+    path.join(extraFolder, `${tag}.sql`),
+    statements.join("--> statement-breakpoint\n"),
+  );
+  const journalPath = path.join(extraFolder, "meta/_journal.json");
+  const journal = JSON.parse(
+    fs.readFileSync(journalPath, "utf8"),
+  ) as MigrationJournal;
+  journal.entries.push({
+    idx: journal.entries.length,
+    version: "6",
+    when,
+    tag,
+    breakpoints: true,
+  });
+  fs.writeFileSync(journalPath, JSON.stringify(journal));
+  return extraFolder;
+}
+
+/**
+ * Builds a migration bundle identical to the current one plus two extra
+ * migrations: one harmless schema change followed by one that inserts a row
+ * violating a foreign key.
+ */
+function createFkViolatingMigrationsFolder(): string {
+  const withSchemaChange = appendMigration(
+    "fk-violating-migrations",
+    "0004_users_probe_column",
+    ["alter table users add column probe text;"],
+    Date.parse("2027-01-03T00:00:00Z"),
+  );
+  const journalPath = path.join(withSchemaChange, "meta/_journal.json");
+  const journal = JSON.parse(
+    fs.readFileSync(journalPath, "utf8"),
+  ) as MigrationJournal;
+  journal.entries.push({
+    idx: journal.entries.length,
+    version: "6",
+    when: Date.parse("2027-01-04T00:00:00Z"),
+    tag: "0005_orphan_persona",
+    breakpoints: true,
+  });
+  fs.writeFileSync(
+    path.join(withSchemaChange, "0005_orphan_persona.sql"),
+    [
+      "insert into persona_versions (id, user_id, version, snapshot, provenance) values (",
+      "'orphan-persona',",
+      "'ghost-user',",
+      "1,",
+      `'${JSON.stringify({
+        confidence: 0,
+        evidence: [],
+        experiences: [],
+        preferences: {
+          industries: [],
+          locations: [],
+          roles: [],
+          workStyles: [],
+        },
+        skills: [],
+        strengths: [],
+        values: [],
+        weaknesses: [],
+      })}',`,
+      `'${JSON.stringify({
+        generatedAt: "2026-08-25T00:00:00Z",
+        source: "user_input",
+        sourceIds: ["legacy"],
+      })}');`,
+    ].join(""),
+  );
+  fs.writeFileSync(journalPath, JSON.stringify(journal));
+  return withSchemaChange;
+}
+
+/**
+ * Builds a migration bundle identical to the current one plus an extra
+ * migration that converts legacy persona rows into the current shape,
+ * following the same drop-trigger / rebuild pattern as past migrations.
+ */
+function createConvertingMigrationsFolder(): string {
+  const convertingFolder = path.join(
+    temporaryDirectory,
+    "converting-migrations",
+  );
+  fs.cpSync(migrationsFolder, convertingFolder, { recursive: true });
+  fs.writeFileSync(
+    path.join(convertingFolder, "0004_convert_legacy_persona.sql"),
+    [
+      "drop trigger persona_versions_immutable;",
+      `update persona_versions
+         set snapshot = '{"skills":[],"strengths":[],"weaknesses":[],"values":[],"preferences":{"roles":[],"industries":[],"workStyles":[],"locations":[]},"experiences":[],"evidence":[],"confidence":0}',
+             provenance = '{"source":"user_input","sourceIds":["legacy"],"generatedAt":"2026-08-25T00:00:00Z"}'
+       where json_extract(snapshot, '$.evidence') is null;`,
+      "create trigger persona_versions_immutable",
+      "before update on persona_versions",
+      "begin",
+      "  select raise(abort, 'persona versions are immutable');",
+      "end;",
+    ].join("\n"),
+  );
+  type Journal = { entries: Array<Record<string, unknown>> };
+  const journalPath = path.join(convertingFolder, "meta/_journal.json");
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as Journal;
+  journal.entries.push({
+    idx: journal.entries.length,
+    version: "6",
+    when: Date.parse("2027-01-02T00:00:00Z"),
+    tag: "0004_convert_legacy_persona",
+    breakpoints: true,
+  });
+  fs.writeFileSync(journalPath, JSON.stringify(journal));
+  return convertingFolder;
+}
+
 /**
  * Builds a migration bundle identical to the current one plus an extra
  * migration that only alters an existing table, so the table set stays the
@@ -242,7 +368,7 @@ describe("SQLite foundation", () => {
     }
   });
 
-  it("refuses to migrate legacy JSON that violates the domain schema", () => {
+  it("refuses to migrate legacy JSON that violates the domain schema without leaving partial changes", () => {
     const legacyConnection = createDatabase(
       path.join(temporaryDirectory, "invalid-upgrade.sqlite"),
     );
@@ -265,8 +391,116 @@ describe("SQLite foundation", () => {
           .prepare("select count(*) as count from __drizzle_migrations")
           .get(),
       ).toEqual({ count: 1 });
+      expect(
+        legacyConnection.sqlite
+          .prepare("select snapshot from persona_versions where id = ?")
+          .get("legacy-persona"),
+      ).toEqual({ snapshot: "{}" });
     } finally {
       legacyConnection.close();
+    }
+  });
+
+  it("converts legacy rows during migration before validating them against the current schema", () => {
+    const convertingFolder = createConvertingMigrationsFolder();
+    const legacyConnection = createDatabase(
+      path.join(temporaryDirectory, "converting-upgrade.sqlite"),
+      { migrationsFolder: convertingFolder },
+    );
+    try {
+      migrateDatabase(legacyConnection, createInitialMigrationsFolder());
+      legacyConnection.sqlite
+        .prepare("insert into users (id) values (?)")
+        .run("legacy-user");
+      legacyConnection.sqlite
+        .prepare(
+          "insert into persona_versions (id, user_id, version, snapshot, provenance) values (?, ?, 1, ?, ?)",
+        )
+        .run("legacy-persona", "legacy-user", "{}", "{}");
+
+      // Legacy rows are invalid under the current schema but the conversion
+      // migration transforms them before validation runs.
+      expect(() =>
+        migrateDatabase(legacyConnection, convertingFolder),
+      ).not.toThrow();
+      expect(
+        legacyConnection.sqlite
+          .prepare("select count(*) as count from __drizzle_migrations")
+          .get(),
+      ).toEqual({ count: 4 });
+
+      const row = legacyConnection.db.select().from(personaVersions).get();
+      expect(row?.snapshot.confidence).toBe(0);
+      expect(row?.provenance.source).toBe("user_input");
+
+      // The immutability trigger is restored by the conversion migration.
+      expect(() =>
+        legacyConnection.sqlite
+          .prepare("update persona_versions set version = 2 where id = ?")
+          .run("legacy-persona"),
+      ).toThrow(/immutable/);
+      expect(legacyConnection.ready()).toEqual({ ready: true });
+    } finally {
+      legacyConnection.close();
+    }
+  });
+
+  it("rolls back migrations that introduce foreign key violations", () => {
+    const violatingFolder = createFkViolatingMigrationsFolder();
+    const victimConnection = createDatabase(
+      path.join(temporaryDirectory, "fk-violation.sqlite"),
+      { migrationsFolder: violatingFolder },
+    );
+    try {
+      migrateDatabase(victimConnection, createInitialMigrationsFolder());
+      victimConnection.sqlite
+        .prepare("insert into users (id) values (?)")
+        .run("legacy-user");
+
+      expect(() => migrateDatabase(victimConnection, violatingFolder)).toThrow(
+        /foreign key violations/,
+      );
+
+      // The migration journal still only contains the initial migration.
+      expect(
+        victimConnection.sqlite
+          .prepare("select count(*) as count from __drizzle_migrations")
+          .get(),
+      ).toEqual({ count: 1 });
+
+      // Pre-existing data is completely intact and no orphan row remains.
+      expect(
+        victimConnection.sqlite.prepare("select id from users").all(),
+      ).toEqual([{ id: "legacy-user" }]);
+      expect(
+        victimConnection.sqlite
+          .prepare("select count(*) as count from persona_versions")
+          .get(),
+      ).toEqual({ count: 0 });
+
+      // No schema change from the failed batch was partially applied: the
+      // auth tables (added by a pending migration) do not exist and the
+      // probe column was not added either.
+      expect(
+        victimConnection.sqlite
+          .prepare(
+            "select name from sqlite_master where type = 'table' and name = 'auth_sessions'",
+          )
+          .get(),
+      ).toBeUndefined();
+      const userColumns = victimConnection.sqlite
+        .prepare("pragma table_info(users)")
+        .all() as Array<{ name: string }>;
+      expect(userColumns.map(({ name }) => name)).not.toContain("probe");
+
+      // The connection stays usable with foreign keys re-enabled.
+      expect(
+        victimConnection.sqlite.pragma("foreign_keys", { simple: true }),
+      ).toBe(1);
+      // Readiness still refuses to report the unmigrated database healthy.
+      expect(() => victimConnection.ready()).toThrow(/migrations/);
+    } finally {
+      victimConnection.close();
     }
   });
 
