@@ -1,118 +1,118 @@
-# Prizgram Product Overview
+# Prizgram プロダクト概要
 
-## Problem
+## 課題
 
-Japan's internship and new-graduate recruiting market has a structural information-access gap.
+日本のインターン・新卒就活市場には、構造的な情報アクセス格差があります。
 
-Students with strong alumni networks, career-support communities, or established recruiting know-how can access practical guidance on company research, selection preparation, and application writing. Students without those networks often cannot access guidance of the same quality.
+強い OB/OG ネットワーク、キャリア支援コミュニティ、蓄積された就活ノウハウへアクセスできる学生は、企業研究・選考対策・応募書類作成について実践的な支援を受けやすい一方、そうしたネットワークを持たない学生は同等の情報を得にくい状況があります。
 
-Many existing services primarily optimize discovery and matching. Prizgram instead focuses on continuously updating the user's self-understanding from real selection outcomes and using that updated model in future decisions.
+既存サービスの多くは、主に求人発見やマッチングを最適化します。Prizgram はそこに留まらず、実際の選考結果からユーザーの自己理解を継続的に更新し、そのモデルを次の意思決定へ反映することに重点を置きます。
 
-## Target users
+## 対象ユーザー
 
-Primary users are students who have limited access to systematic recruiting support, including:
+主な対象は、体系的な就活支援へのアクセスが限られている学生です。
 
-- students at regional universities or outside information-related majors,
-- students going through recruiting or internship selection for the first time,
-- students who have difficulty articulating their experience and strengths,
-- students with limited access to career centers, alumni, or recruiting communities.
+- 地方大学や情報系以外の学部に所属する学生
+- 就活・インターン選考に初めて取り組む学生
+- 経験や強みの言語化に不慣れな学生
+- キャリアセンター、OB/OG、就活コミュニティへのアクセスが弱い学生
 
-## Product concept
+## プロダクトコンセプト
 
-Prizgram creates a provisional structured career persona through conversation, then uses it to score internships and job opportunities.
+Prizgram は、対話を通じて仮の構造化された就活ペルソナを生成し、それを用いてインターン・求人をスコアリングします。
 
-The persona is not static. Application outcomes, mock interview feedback, and new user information update the model over time so that matching and guidance can improve continuously.
+このペルソナは固定ではありません。応募結果、模擬面接のフィードバック、新たに得られたユーザー情報を継続的に反映し、マッチングや支援の精度を時間とともに改善します。
 
-## MVP scope
+## MVP スコープ
 
-### 1. Persona generation
+### 1. ペルソナ生成
 
-Convert conversational interviews into structured data covering:
+対話形式のヒアリングを、次のような構造化データへ変換します。
 
-- experience,
-- skills,
-- values,
-- preferences,
-- strengths,
-- weaknesses.
+- 経験
+- スキル
+- 価値観
+- 志向性
+- 強み
+- 弱み
 
-### 2. Explainable opportunity scoring
+### 2. 説明可能な求人スコアリング
 
-Compare the persona with opportunities using multiple dimensions rather than one opaque overall percentage.
+単一のブラックボックスな総合マッチ率ではなく、複数の軸でペルソナと求人を比較します。
 
-Initial dimensions:
+初期の評価軸は次のとおりです。
 
-- skill requirement fit,
-- culture / values fit,
-- selection difficulty vs. current readiness.
+- スキル要件充足度
+- 企業文化・価値観フィット
+- 現在の実力と選考難易度のギャップ
 
-Every score should retain supporting reasons or evidence.
+各スコアには、その判断を支える理由や根拠を保持します。
 
-### 3. Application tracking and reminders
+### 3. 応募・選考管理とリマインド
 
-Track:
+以下を管理します。
 
-- company / role,
-- application status,
-- ES deadline,
-- interview schedule,
-- offer deadline,
-- next action.
+- 企業 / 職種
+- 応募状況
+- ES 締切
+- 面接日程
+- 内定承諾期限
+- 次に必要なアクション
 
-When deadlines overlap, prioritize notifications by urgency.
+複数の締切が重なる場合は、緊急度に応じて通知の優先順位を付けます。
 
 ## Phase 2
 
-### Mock interview feedback
+### 模擬面接フィードバック
 
-Analyze mock interview transcripts and provide feedback on:
+模擬面接の文字起こしを分析し、次の観点でフィードバックします。
 
-- strengths,
-- improvement points,
-- recurring speaking habits,
-- evidence that may update the persona.
+- 強み
+- 改善点
+- 繰り返し現れる話し方の癖
+- ペルソナ更新に利用できる根拠
 
-Real company interviews are not a target for recording or analysis without proper consent.
+企業本番面接の無断録音・分析は対象外です。
 
-### Application document drafts
+### 応募書類の下書き生成
 
-Generate ES and motivation-letter drafts from the persona and opportunity requirements. The user is responsible for final wording and submission.
+ペルソナと求人要件をもとに、ES や志望動機の下書きを生成します。最終的な文言の確定と提出はユーザー自身が行います。
 
-## Agent behavior
+## Agent としての振る舞い
 
-Prizgram should qualify as an agent through four properties:
+Prizgram は、次の4つの性質によって単なる検索・提示ツールではなく Agent として機能します。
 
-1. **Autonomy** — events such as new opportunities, selection results, and approaching deadlines can trigger processing automatically.
-2. **Multi-step planning** — interview → structuring → matching → feedback ingestion → re-matching.
-3. **Tool use** — opportunity search, transcript analysis, draft generation, reminders, and related tools.
-4. **Persistent state** — persona and selection history are stored and evolve over time.
+1. **自律性** — 新着求人、選考結果、締切接近などのイベントをトリガーに処理を自動実行できる。
+2. **複数ステップ計画** — ヒアリング → 構造化 → マッチング → フィードバック反映 → 再マッチングを行う。
+3. **ツール利用** — 求人検索、文字起こし分析、下書き生成、リマインドなど複数のツールを利用する。
+4. **永続状態** — ペルソナと選考履歴を保存し、時間経過とともに更新する。
 
-## Guardrails
+## ガードレール
 
-### No automatic application submission
+### 応募を自動送信しない
 
-Application submission is an external act representing the user. It must require explicit user approval and manual final action.
+応募の送信は、ユーザー本人を代表する対外的な意思表示です。必ず明示的なユーザー承認と最終操作を必要とします。
 
-### Explainable scoring
+### 説明可能なスコアリング
 
-Do not expose only a black-box match percentage. Store and display score dimensions and supporting reasons.
+ブラックボックスな単一のマッチ率だけを提示しません。評価軸ごとのスコアと、その根拠を保存・表示します。
 
-### Interview recording
+### 面接録音
 
-Mock interview analysis is in scope. Unauthorized recording of actual company interviews is out of scope.
+模擬面接の分析は対象に含みますが、企業本番面接の無断録音・分析は対象外です。
 
-### Data acquisition
+### データ取得
 
-Opportunity data should be obtained only from official APIs, permitted data sources, or other explicitly authorized methods.
+求人データは、公式 API、利用許諾のあるデータソース、その他明示的に認められた方法のみから取得します。
 
-## Success measurement
+## 効果測定
 
-Potential validation metrics include:
+今後の検証指標として、次のようなものを想定しています。
 
-- change in ES screening pass rate,
-- reduction in missed deadlines,
-- improvement in users' ability to articulate strengths,
-- recommendation acceptance / save rate,
-- changes in scoring calibration after feedback loops.
+- ES 通過率の変化
+- 締切忘れの減少
+- 自分の強みを言語化する能力の改善
+- 推薦求人の保存率・受容率
+- フィードバックループ適用後のスコア精度の変化
 
-These metrics are hypotheses for future validation rather than established impact claims.
+これらは現時点で効果を保証する指標ではなく、今後検証するための仮説です。
