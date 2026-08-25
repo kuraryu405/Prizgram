@@ -115,6 +115,32 @@ function createInitialMigrationsFolder(): string {
   return oldMigrationsFolder;
 }
 
+/**
+ * Builds a migration bundle identical to the current one plus an extra
+ * migration that only alters an existing table, so the table set stays the
+ * same while the schema drifts.
+ */
+function createExtendedMigrationsFolder(): string {
+  const extendedFolder = path.join(temporaryDirectory, "extended-migrations");
+  fs.cpSync(migrationsFolder, extendedFolder, { recursive: true });
+  fs.writeFileSync(
+    path.join(extendedFolder, "0003_probe_column.sql"),
+    "alter table users add column probe text;",
+  );
+  type Journal = { entries: Array<Record<string, unknown>> };
+  const journalPath = path.join(extendedFolder, "meta/_journal.json");
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as Journal;
+  journal.entries.push({
+    idx: journal.entries.length,
+    version: "6",
+    when: Date.parse("2027-01-01T00:00:00Z"),
+    tag: "0003_probe_column",
+    breakpoints: true,
+  });
+  fs.writeFileSync(journalPath, JSON.stringify(journal));
+  return extendedFolder;
+}
+
 describe("SQLite foundation", () => {
   it("applies migrations with foreign key enforcement", () => {
     expect(connection.ready()).toEqual({ ready: true });
@@ -443,6 +469,68 @@ describe("SQLite foundation", () => {
       ).toEqual({
         count: 0,
       });
+    }
+  });
+
+  it("reports a stale schema with an unchanged table set as not ready until migrated", () => {
+    const extendedFolder = createExtendedMigrationsFolder();
+    const staleConnection = createDatabase(
+      path.join(temporaryDirectory, "stale.sqlite"),
+      { migrationsFolder: extendedFolder },
+    );
+    try {
+      // The DB is fully migrated for the previous bundle; the pending
+      // migration only alters an existing table, so the table set matches.
+      migrateDatabase(staleConnection, migrationsFolder);
+      expect(() => staleConnection.ready()).toThrow(
+        /does not match the bundled migrations/,
+      );
+      migrateDatabase(staleConnection, extendedFolder);
+      expect(staleConnection.ready()).toEqual({ ready: true });
+    } finally {
+      staleConnection.close();
+    }
+  });
+
+  it("reports a database migrated beyond the bundled migrations as not ready", () => {
+    const extendedFolder = createExtendedMigrationsFolder();
+    const aheadConnection = createDatabase(
+      path.join(temporaryDirectory, "ahead.sqlite"),
+    );
+    try {
+      migrateDatabase(aheadConnection, extendedFolder);
+      expect(() => aheadConnection.ready()).toThrow(
+        /does not match the bundled migrations/,
+      );
+    } finally {
+      aheadConnection.close();
+    }
+  });
+
+  it("reports foreign key violations as not ready", () => {
+    expect(connection.ready()).toEqual({ ready: true });
+    connection.sqlite.pragma("foreign_keys = OFF");
+    try {
+      connection.sqlite
+        .prepare(
+          "insert into persona_versions (id, user_id, version, snapshot, provenance) values ('fk-orphan', 'ghost-user', 1, '{}', '{}')",
+        )
+        .run();
+    } finally {
+      connection.sqlite.pragma("foreign_keys = ON");
+    }
+    expect(() => connection.ready()).toThrow(/foreign key violations/);
+  });
+
+  it("keeps readiness green after a clean migration and a re-opened connection", () => {
+    expect(connection.ready()).toEqual({ ready: true });
+    const reopened = createDatabase(
+      path.join(temporaryDirectory, "test.sqlite"),
+    );
+    try {
+      expect(reopened.ready()).toEqual({ ready: true });
+    } finally {
+      reopened.close();
     }
   });
 });
