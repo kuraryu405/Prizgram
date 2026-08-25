@@ -429,11 +429,19 @@ describe("SQLite foundation", () => {
       expect(() =>
         migrateDatabase(legacyConnection, convertingFolder),
       ).not.toThrow();
+      // The whole bundle (real migrations plus the synthetic conversion) is
+      // applied on top of the single initial migration.
+      const convertingBundle = JSON.parse(
+        fs.readFileSync(
+          path.join(convertingFolder, "meta/_journal.json"),
+          "utf8",
+        ),
+      ) as { entries: unknown[] };
       expect(
         legacyConnection.sqlite
           .prepare("select count(*) as count from __drizzle_migrations")
           .get(),
-      ).toEqual({ count: 4 });
+      ).toEqual({ count: convertingBundle.entries.length });
 
       const row = legacyConnection.db.select().from(personaVersions).get();
       expect(row?.snapshot.confidence).toBe(0);
