@@ -1,6 +1,7 @@
 import {
   assertSameOrigin,
   AuthService,
+  enforceAuthRateLimit,
   readCredentials,
   sessionCookie,
   withNoStore,
@@ -9,6 +10,7 @@ import { apiResult, withApiHandler } from "@/server/api";
 import { getDatabase } from "@/server/database";
 
 const register = withApiHandler(async (request) => {
+  enforceAuthRateLimit(request);
   assertSameOrigin(request);
   const credentials = await readCredentials(request);
   const session = await new AuthService(getDatabase()).register(credentials);

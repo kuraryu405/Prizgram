@@ -227,6 +227,26 @@ describe("AuthService", () => {
     });
   });
 
+  it("survives a burst of unknown login attempts through the scrypt gate", async () => {
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, index) =>
+        service.login({
+          loginId: `unknown.${index}`,
+          password: "irrelevant long password",
+        }),
+      ),
+    );
+    for (const result of results) {
+      expect(result.status).toBe("rejected");
+      if (result.status === "rejected") {
+        expect(result.reason).toBeInstanceOf(AppError);
+        expect((result.reason as AppError).code).toBe("AUTHENTICATION_FAILED");
+      }
+    }
+    // Unknown accounts never gain credential rows or lockout state.
+    expect(connection.db.select().from(userCredentials).all()).toHaveLength(0);
+  });
+
   it("invalidates only the presented session on logout", async () => {
     const first = await service.register(credentials);
     const second = await service.login(credentials);

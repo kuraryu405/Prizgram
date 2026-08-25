@@ -202,4 +202,15 @@ describe("withApiHandler", () => {
       requestIdSource: "client",
     });
   });
+
+  it("propagates AppError response headers such as Retry-After", async () => {
+    const response = await withApiHandler(() => {
+      throw new AppError("RATE_LIMITED", "Too many attempts", 429, undefined, {
+        "retry-after": "42",
+      });
+    })(new Request("https://example.test"));
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+  });
 });
