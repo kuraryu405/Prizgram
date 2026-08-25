@@ -1,37 +1,37 @@
-# Contributing to Prizgram
+# Prizgram へのコントリビューション
 
-Prizgram is currently in the MVP phase. Keep changes small, reviewable, and tied to a concrete product or engineering goal.
+Prizgram は現在 MVP フェーズです。変更はできるだけ小さく、レビューしやすくし、具体的なプロダクト上または技術上の目的に紐づけてください。
 
-## Branches
+## ブランチ
 
-Use short-lived branches from `main`.
+`main` から短命なブランチを切って作業します。
 
-Suggested prefixes:
+推奨 prefix:
 
-- `feat/` — user-facing features
-- `fix/` — bug fixes
-- `docs/` — documentation
-- `refactor/` — behavior-preserving refactors
-- `chore/` — tooling and maintenance
+- `feat/` — ユーザー向け機能
+- `fix/` — バグ修正
+- `docs/` — ドキュメント変更
+- `refactor/` — 振る舞いを変えないリファクタリング
+- `chore/` — ツール・保守作業
 
-## Pull requests
+## Pull Request
 
-A pull request should:
+Pull Request には、次の内容を含めてください。
 
-- describe the user or engineering problem,
-- explain the chosen approach,
-- include tests when behavior changes,
-- document schema or architecture changes,
-- avoid unrelated refactors,
-- preserve Prizgram's human-in-the-loop boundaries.
+- 解決するユーザー課題または技術課題
+- 採用した実装方針
+- 振る舞いが変わる場合のテスト
+- schema やアーキテクチャを変更する場合の説明
+- 無関係なリファクタリングを含めないこと
+- Prizgram の Human-in-the-loop 境界を維持していること
 
-## Product guardrails
+## プロダクトのガードレール
 
-Changes must not silently introduce:
+変更によって、次の機能や挙動を暗黙的に導入しないでください。
 
-- automatic application submission,
-- opaque single-score recommendations without explanation,
-- unauthorized recording or analysis of real company interviews,
-- unapproved scraping or acquisition of job data.
+- 応募の自動送信
+- 根拠を示さない単一スコアだけの求人推薦
+- 企業本番面接の無断録音・分析
+- 許可されていない求人データのスクレイピングや取得
 
-If a feature changes one of these boundaries, discuss and document the decision before implementation.
+これらの境界を変更する機能を実装する場合は、実装前に方針を議論し、その判断をドキュメントへ残してください。
