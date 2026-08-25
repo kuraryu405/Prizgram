@@ -232,27 +232,30 @@ export function migrateDatabase(
   const migrations = bundledMigrations(migrationsFolder);
 
   // SQLite ignores PRAGMA foreign_keys changes inside a transaction, and
-  // table-rebuild migrations must run with enforcement disabled.
+  // table-rebuild migrations must run with enforcement disabled. The
+  // non-toggling PRAGMA foreign_key_check however works inside a
+  // transaction and sees this transaction's own writes, which is what makes
+  // the atomicity below possible.
   sqlite.pragma("foreign_keys = OFF");
   try {
-    // Pending migrations and structured-data validation run inside one
-    // transaction: legacy rows are validated against the current domain
-    // schemas only after conversion migrations had the chance to transform
-    // them, and an invalid database is rolled back completely instead of
-    // being left half-migrated.
+    // Pending migrations, structured-data validation, and referential
+    // integrity all run inside one transaction: legacy rows are validated
+    // against the current domain schemas only after conversion migrations
+    // had the chance to transform them, and any failure rolls back schema
+    // changes, data changes, and the migration journal together instead of
+    // leaving a half-migrated database behind.
     sqlite.transaction(() => {
       ensureMigrationJournal(sqlite);
       applyPendingMigrations(sqlite, migrations);
       validateExistingStructuredData(sqlite);
+      const violationsInTransaction = sqlite.pragma("foreign_key_check") as
+        unknown[] | undefined;
+      if ((violationsInTransaction?.length ?? 0) > 0) {
+        throw new Error("Migration produced foreign key violations");
+      }
     })();
   } finally {
     sqlite.pragma("foreign_keys = ON");
-  }
-
-  const violationsAfter = sqlite.pragma("foreign_key_check") as
-    unknown[] | undefined;
-  if ((violationsAfter?.length ?? 0) > 0) {
-    throw new Error("Database contains foreign key violations after migration");
   }
 }
 
