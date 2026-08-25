@@ -4,13 +4,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { RegisterForm } from "@/components/auth/register-form";
-import { AuthService, SESSION_COOKIE_NAME } from "@/server/auth";
+import { AuthService, sessionCookieName } from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
 export const metadata: Metadata = { title: "新規登録 | Prizgram" };
 
 export default async function RegisterPage() {
-  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  const token = (await cookies()).get(sessionCookieName())?.value;
   if (new AuthService(getDatabase()).authenticate(token) !== undefined) {
     redirect("/app");
   }

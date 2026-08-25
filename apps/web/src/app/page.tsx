@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { AuthService, SESSION_COOKIE_NAME } from "@/server/auth";
+import { AuthService, sessionCookieName } from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
 const features = [
@@ -21,7 +21,7 @@ const features = [
 ] as const;
 
 export default async function Home() {
-  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  const token = (await cookies()).get(sessionCookieName())?.value;
   const user = new AuthService(getDatabase()).authenticate(token);
   if (user !== undefined) redirect("/app");
 
