@@ -1,23 +1,23 @@
 ---
-name: Feature request
-about: Propose a product or engineering improvement
+name: 機能提案
+about: プロダクトまたは技術的な改善を提案する
 title: ""
 labels: "enhancement"
 assignees: ""
 ---
 
-## Problem
+## 課題
 
-What user or engineering problem should this solve?
+どのようなユーザー課題または技術課題を解決したいですか？
 
-## Proposed outcome
+## 期待する状態
 
-What should be true when this is complete?
+この Issue が完了したとき、どのような状態になっているべきですか？
 
-## Acceptance criteria
+## 完了条件
 
 - [ ]
 
-## Notes
+## 補足
 
-Consider explainability, user agency, privacy, and data-source permissions where relevant.
+必要に応じて、説明可能性、ユーザーの意思決定権、プライバシー、データソースの利用許諾を考慮してください。
