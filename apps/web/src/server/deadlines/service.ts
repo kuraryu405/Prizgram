@@ -96,6 +96,7 @@ export function safeZonedToIso(local: string, timeZone: string): string {
       "Invalid local datetime",
       400,
       undefined,
+      undefined,
       {
         cause: error,
       },
