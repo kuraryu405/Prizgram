@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ScoreEvaluateButton } from "@/components/scoring/score-panel";
 import { getDatabase } from "@/server/database";
 import { JobService } from "@/server/jobs/service";
 import { requireSessionUserPage } from "@/server/page-session";
@@ -147,6 +148,14 @@ export default async function JobDetailPage({
             </a>
           </p>
         )}
+      </section>
+
+      <section aria-labelledby="job-scoring" className="card">
+        <h2 id="job-scoring">3軸評価</h2>
+        <ScoreEvaluateButton
+          jobId={detail.jobId}
+          evidenceTextById={Object.fromEntries(signalTextById)}
+        />
       </section>
 
       <section aria-labelledby="job-versions" className="card">
