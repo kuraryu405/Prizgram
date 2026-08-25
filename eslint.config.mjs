@@ -32,6 +32,12 @@ export default tseslint.config(
     },
   },
   {
+    // Browser E2E helpers are plain JavaScript driven by Playwright's
+    // runtime; type-aware rules cannot resolve them meaningfully.
+    files: ["test/e2e/**/*.{js,mjs,ts}"],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
     files: ["**/*.config.{js,mjs,ts}", "eslint.config.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },

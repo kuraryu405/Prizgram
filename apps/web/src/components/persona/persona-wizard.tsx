@@ -154,7 +154,12 @@ export function PersonaWizard({
           {formError}
         </p>
       )}
-      <form className="field" onSubmit={(event) => void handleNext(event)}>
+      <form
+        method="post"
+        action="#"
+        className="field"
+        onSubmit={(event) => void handleNext(event)}
+      >
         <label htmlFor={`answer-${question.id}`}>{question.label}の回答</label>
         <textarea
           aria-describedby={

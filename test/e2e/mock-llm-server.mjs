@@ -1,0 +1,145 @@
+/**
+ * Mock OpenAI-compatible Chat Completions server for browser E2E tests.
+ * Returns a deterministic structured payload per requested schema name so
+ * the whole MVP loop runs without any real LLM dependency.
+ */
+import { createServer } from "node:http";
+
+const PORT = Number(process.env.MOCK_LLM_PORT ?? 4141);
+
+const personaSnapshot = {
+  skills: [
+    { name: "TypeScript", level: "intermediate", evidenceRefs: ["ev:e1"] },
+  ],
+  strengths: ["学習速度が速い"],
+  weaknesses: ["継続的なアウトプット"],
+  values: ["自律性"],
+  preferences: {
+    roles: ["フロントエンドエンジニア"],
+    industries: [],
+    workStyles: [],
+    locations: [],
+  },
+  experiences: [
+    {
+      title: "Webアプリ開発",
+      description: "チームでWebアプリを開発した。",
+      startedOn: null,
+      endedOn: null,
+      evidenceRefs: ["ev:e2"],
+    },
+  ],
+  evidence: [
+    {
+      id: "ev:e1",
+      sourceType: "user_input",
+      sourceId: "q1_skills",
+      summary: "TypeScriptでの実装経験",
+    },
+    {
+      id: "ev:e2",
+      sourceType: "user_input",
+      sourceId: "q2_experiences",
+      summary: "Webアプリ開発経験",
+    },
+  ],
+  confidence: 0.6,
+};
+
+/** Job import provider payload (normalized by JobService afterwards). */
+const jobSnapshot = {
+  company: "株式会社サンプル",
+  role: "フロントエンドエンジニア",
+  employmentType: "internship",
+  description:
+    "ReactとTypeScriptを使うフロントエンド開発インターン。週3日以上勤務できる方を歓迎します。",
+  requirements: [{ text: "TypeScriptの実装経験" }],
+  desiredSkills: [{ text: "Reactの使用経験" }],
+  cultureValues: [{ text: "自律的に動く文化" }],
+  difficultyLevel: "competitive",
+  difficultyEvidence: [{ section: "requirements", index: 0 }],
+};
+
+const scoring = {
+  skillFit: {
+    score: 72,
+    reasons: ["要件のTypeScript実装経験がペルソナのスキルと一致"],
+    evidenceRefs: ["ev:e1", "job:req:1"],
+  },
+  cultureValueFit: {
+    score: 55,
+    reasons: ["自律的な文化はペルソナの価値観と整合する"],
+    evidenceRefs: ["ev:e1", "job:value:1"],
+  },
+  difficultyGap: {
+    score: 35,
+    reasons: ["実装経験から大きな準備ギャップはない"],
+    evidenceRefs: ["job:req:1", "ev:e2"],
+  },
+};
+
+function payloadFor(schemaName) {
+  switch (schemaName) {
+    case "persona_snapshot":
+    case "persona_update_proposal":
+      return personaSnapshot;
+    case "job_snapshot":
+      return jobSnapshot;
+    case "job_scoring":
+      return scoring;
+    default:
+      return null;
+  }
+}
+
+const server = createServer((request, response) => {
+  if (request.method !== "POST" || !request.url.includes("/chat/completions")) {
+    response.writeHead(404).end();
+    return;
+  }
+  let body = "";
+  request.on("data", (chunk) => {
+    body += chunk;
+  });
+  request.on("end", () => {
+    let schemaName = "";
+    try {
+      const parsed = /** @type {any} */ (JSON.parse(body));
+      schemaName = String(
+        parsed?.response_format?.json_schema?.name ??
+          parsed?.response_format?.name ??
+          "",
+      );
+    } catch {
+      response.writeHead(400).end();
+      return;
+    }
+    const payload = payloadFor(schemaName);
+    if (payload === null) {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: { content: JSON.stringify({ unknown: true }) },
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    // Simulate realistic latency so pending states are observable.
+    setTimeout(() => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(payload) } }],
+        }),
+      );
+    }, 50);
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`[mock-llm] listening on http://localhost:${PORT}`);
+});

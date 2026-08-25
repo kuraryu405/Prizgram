@@ -4,3 +4,6 @@ dist
 node_modules
 packages/db/drizzle
 pnpm-lock.yaml
+test/e2e/.runtime.json
+test-results/
+playwright-report/

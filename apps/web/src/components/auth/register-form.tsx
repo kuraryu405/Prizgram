@@ -65,7 +65,12 @@ export function RegisterForm() {
   const passwordError = fieldErrors.password?.[0];
 
   return (
-    <form noValidate onSubmit={(event) => void onSubmit(event)}>
+    <form
+      method="post"
+      action="#"
+      noValidate
+      onSubmit={(event) => void onSubmit(event)}
+    >
       {formError !== null && (
         <p className="form-alert" role="alert">
           {formError}

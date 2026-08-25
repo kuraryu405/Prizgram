@@ -72,6 +72,12 @@ pnpm test
 pnpm build
 ```
 
+ブラウザ E2E テスト（Playwright、mock LLM サーバ使用、実API不要）:
+
+```bash
+pnpm test:e2e          # 初回のみ: pnpm exec playwright install chromium
+```
+
 DB schema を変更する PR は `pnpm db:generate` で migration を生成し、既存 migration を書き換えずに追加します。SQLite migration はデプロイ時に単一プロセスで実行し、本番では事前に DB ファイルをバックアップします。
 
 ## main の保護ルール
