@@ -395,11 +395,26 @@ export class OpenAiCompatibleClient implements StructuredLlmClient {
   }
 }
 
+function requiredEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value.trim() === "") {
+    throw new Error(`${name} must be set to a non-empty value`);
+  }
+  return value.trim();
+}
+
 export function createLlmClientFromEnvironment(): OpenAiCompatibleClient {
+  const timeoutRaw = process.env.OPENAI_TIMEOUT_MS ?? "30000";
+  const timeoutMs = Number(timeoutRaw);
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) {
+    throw new Error(
+      `OPENAI_TIMEOUT_MS must be an integer between 100 and 120000 milliseconds, received "${timeoutRaw}"`,
+    );
+  }
   return new OpenAiCompatibleClient({
-    baseUrl: process.env.OPENAI_BASE_URL ?? "",
-    apiKey: process.env.OPENAI_API_KEY ?? "",
-    model: process.env.OPENAI_MODEL ?? "",
-    timeoutMs: Number(process.env.OPENAI_TIMEOUT_MS ?? "30000"),
+    apiKey: requiredEnvironmentVariable("OPENAI_API_KEY"),
+    baseUrl: requiredEnvironmentVariable("OPENAI_BASE_URL"),
+    model: requiredEnvironmentVariable("OPENAI_MODEL"),
+    timeoutMs,
   });
 }

@@ -160,21 +160,23 @@ export const jobSnapshotSchema = z
   })
   .strict()
   .superRefine((job, context) => {
-    const signals = [
-      ...job.requirements,
-      ...job.desiredSkills,
-      ...job.cultureValues,
-    ];
     const signalIds = new Set<string>();
-    for (const signal of signals) {
-      if (signalIds.has(signal.id)) {
-        context.addIssue({
-          code: "custom",
-          message: "job signal ids must be unique",
-          path: ["requirements"],
-        });
+    const signalGroups = [
+      { field: "requirements", signals: job.requirements },
+      { field: "desiredSkills", signals: job.desiredSkills },
+      { field: "cultureValues", signals: job.cultureValues },
+    ] as const;
+    for (const { field, signals } of signalGroups) {
+      for (const [index, signal] of signals.entries()) {
+        if (signalIds.has(signal.id)) {
+          context.addIssue({
+            code: "custom",
+            message: "job signal ids must be unique",
+            path: [field, index],
+          });
+        }
+        signalIds.add(signal.id);
       }
-      signalIds.add(signal.id);
     }
     for (const [index, reference] of job.difficulty.evidenceRefs.entries()) {
       if (!signalIds.has(reference)) {

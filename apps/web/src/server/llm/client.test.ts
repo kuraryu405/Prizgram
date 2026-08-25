@@ -6,6 +6,7 @@ import { personaStructuredOutput } from "@prizgram/shared";
 import {
   LlmClientError,
   OpenAiCompatibleClient,
+  createLlmClientFromEnvironment,
   toOpenAiStrictJsonSchema,
 } from "./client";
 
@@ -286,5 +287,73 @@ describe("OpenAiCompatibleClient", () => {
         }),
       ),
     ).resolves.toBe("TIMEOUT");
+  });
+});
+
+describe("createLlmClientFromEnvironment", () => {
+  function withEnvironment(
+    overrides: Record<string, string | undefined>,
+    action: () => void,
+  ): void {
+    const previousValues = new Map<string, string | undefined>();
+    for (const [key, value] of Object.entries(overrides)) {
+      previousValues.set(key, process.env[key]);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    try {
+      action();
+    } finally {
+      for (const [key, value] of previousValues) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  }
+
+  const completeEnvironment = {
+    OPENAI_BASE_URL: "https://llm.example.test/v1",
+    OPENAI_API_KEY: "test-secret",
+    OPENAI_MODEL: "test-model",
+  };
+
+  it("names the missing environment variable instead of failing opaquely", () => {
+    withEnvironment(
+      { ...completeEnvironment, OPENAI_API_KEY: undefined },
+      () => {
+        expect(() => createLlmClientFromEnvironment()).toThrowError(
+          /OPENAI_API_KEY must be set/,
+        );
+      },
+    );
+    withEnvironment({ ...completeEnvironment, OPENAI_MODEL: "  " }, () => {
+      expect(() => createLlmClientFromEnvironment()).toThrowError(
+        /OPENAI_MODEL must be set/,
+      );
+    });
+  });
+
+  it("rejects out-of-range timeout values with the variable name", () => {
+    withEnvironment({ ...completeEnvironment, OPENAI_TIMEOUT_MS: "50" }, () => {
+      expect(() => createLlmClientFromEnvironment()).toThrowError(
+        /OPENAI_TIMEOUT_MS/,
+      );
+    });
+    withEnvironment(
+      { ...completeEnvironment, OPENAI_TIMEOUT_MS: "abc" },
+      () => {
+        expect(() => createLlmClientFromEnvironment()).toThrowError(
+          /OPENAI_TIMEOUT_MS/,
+        );
+      },
+    );
+  });
+
+  it("builds a client from a complete environment", () => {
+    withEnvironment(completeEnvironment, () => {
+      expect(createLlmClientFromEnvironment()).toBeInstanceOf(
+        OpenAiCompatibleClient,
+      );
+    });
   });
 });
