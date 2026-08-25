@@ -30,9 +30,13 @@ export const POST = withNoStore(
       input.personaVersionId,
       {
         scoring: {
-          evaluate: (userId: string, jobId: string, evalOptions?: {
-            personaVersionId?: string;
-          }) =>
+          evaluate: (
+            userId: string,
+            jobId: string,
+            evalOptions?: {
+              personaVersionId?: string;
+            },
+          ) =>
             new ScoringService(getDatabase()).evaluateJob(
               userId,
               jobId,
