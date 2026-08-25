@@ -57,6 +57,10 @@ export type EvaluateOptions = Readonly<{
   client?: StructuredLlmClient;
   model?: string;
   now?: () => Date;
+  /** Explicit persona version to evaluate; defaults to the user's latest. */
+  personaVersionId?: string;
+  /** Explicit job version to evaluate; defaults to the job's latest. */
+  jobVersionId?: string;
 }>;
 
 let environmentClient: StructuredLlmClient | undefined;
@@ -201,17 +205,32 @@ function toScoreDetail(row: MatchScoreRow): ScoreDetail {
 export class ScoringService {
   constructor(private readonly connection: DatabaseConnection) {}
 
-  private loadLatestPersonaVersion(userId: string): {
+  private loadPersonaVersion(
+    userId: string,
+    explicitVersionId?: string,
+  ): {
     personaVersionId: string;
     snapshot: PersonaSnapshot;
   } {
-    const row = this.connection.db
-      .select({ id: personaVersions.id })
-      .from(personaVersions)
-      .where(eq(personaVersions.userId, userId))
-      .orderBy(desc(personaVersions.version))
-      .limit(1)
-      .get();
+    const row =
+      explicitVersionId === undefined
+        ? this.connection.db
+            .select({ id: personaVersions.id })
+            .from(personaVersions)
+            .where(eq(personaVersions.userId, userId))
+            .orderBy(desc(personaVersions.version))
+            .limit(1)
+            .get()
+        : this.connection.db
+            .select({ id: personaVersions.id })
+            .from(personaVersions)
+            .where(
+              and(
+                eq(personaVersions.id, explicitVersionId),
+                eq(personaVersions.userId, userId),
+              ),
+            )
+            .get();
     if (row === undefined) {
       throw new AppError(
         "PERSONA_REQUIRED",
@@ -240,9 +259,10 @@ export class ScoringService {
     };
   }
 
-  private loadLatestJobVersion(
+  private loadJobVersion(
     userId: string,
     jobId: string,
+    explicitVersionId?: string,
   ): { jobVersionId: string; snapshot: JobSnapshot } {
     const owned = this.connection.db
       .select({ id: jobs.id })
@@ -252,13 +272,28 @@ export class ScoringService {
     if (owned === undefined) {
       throw new AppError("NOT_FOUND", "Job not found", 404);
     }
-    const versionRow = this.connection.db
-      .select({ id: jobVersions.id })
-      .from(jobVersions)
-      .where(and(eq(jobVersions.userId, userId), eq(jobVersions.jobId, jobId)))
-      .orderBy(desc(jobVersions.version))
-      .limit(1)
-      .get();
+    const versionRow =
+      explicitVersionId === undefined
+        ? this.connection.db
+            .select({ id: jobVersions.id })
+            .from(jobVersions)
+            .where(
+              and(eq(jobVersions.userId, userId), eq(jobVersions.jobId, jobId)),
+            )
+            .orderBy(desc(jobVersions.version))
+            .limit(1)
+            .get()
+        : this.connection.db
+            .select({ id: jobVersions.id })
+            .from(jobVersions)
+            .where(
+              and(
+                eq(jobVersions.id, explicitVersionId),
+                eq(jobVersions.userId, userId),
+                eq(jobVersions.jobId, jobId),
+              ),
+            )
+            .get();
     if (versionRow === undefined) {
       throw new AppError("NOT_FOUND", "Job not found", 404);
     }
@@ -295,11 +330,14 @@ export class ScoringService {
     options: EvaluateOptions = {},
   ): Promise<EvaluationResult> {
     const now = options.now ?? (() => new Date());
-    const { personaVersionId, snapshot: persona } =
-      this.loadLatestPersonaVersion(userId);
-    const { jobVersionId, snapshot: job } = this.loadLatestJobVersion(
+    const { personaVersionId, snapshot: persona } = this.loadPersonaVersion(
+      userId,
+      options.personaVersionId,
+    );
+    const { jobVersionId, snapshot: job } = this.loadJobVersion(
       userId,
       jobId,
+      options.jobVersionId,
     );
 
     const model = options.model ?? process.env.OPENAI_MODEL ?? "unknown-model";

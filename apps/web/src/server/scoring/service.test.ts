@@ -364,6 +364,31 @@ describe("ScoringService.evaluateJob", () => {
     expect(result.detail.jobVersionId).toBe("job-ver-job-1-2");
     expect(result.detail.personaVersionId).toBe("persona-v-user-a-2");
   });
+
+  it("accepts explicit persona/job version targets and rejects cross-user ids", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    insertJobVersion(userA.id, "job-1", 2);
+
+    const explicit = await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+      personaVersionId: "persona-v-user-a-1",
+      jobVersionId: "job-ver-job-1-1",
+    });
+    expect(explicit.detail.jobVersionId).toBe("job-ver-job-1-1");
+    expect(explicit.duplicate).toBe(false);
+
+    // Another user's version id is rejected by the ownership filter.
+    await expect(
+      service.evaluateJob(userA.id, "job-1", {
+        client: clientReturning(scoringPayload()).client,
+        model: "test-model",
+        jobVersionId: "does-not-exist",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+  });
 });
 
 describe("ScoringService.getLatestScore / listScores", () => {
