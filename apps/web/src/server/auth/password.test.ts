@@ -2,7 +2,13 @@ import { randomBytes, scrypt, type ScryptOptions } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
-import { hashPassword, isLegacyPasswordHash, verifyPassword } from "./password";
+import { ConcurrencyGate } from "./concurrency";
+import {
+  hashPassword,
+  isLegacyPasswordHash,
+  runWithinScryptCapacity,
+  verifyPassword,
+} from "./password";
 
 function deriveLegacyKey(
   password: string,
@@ -80,5 +86,78 @@ describe("password hashing", () => {
     await expect(
       verifyPassword("password", "scrypt$16384$8$1$only-five-parts"),
     ).resolves.toBe(false);
+  });
+
+  it("answers queue saturation with a 429 rate limit error, not a crash", async () => {
+    const saturatedGate = new ConcurrencyGate({
+      maxConcurrent: 1,
+      maxQueued: 0,
+      queueTimeoutMs: 5_000,
+    });
+    let releaseSlot!: () => void;
+    void new Promise<void>((resolve) => {
+      releaseSlot = resolve;
+    });
+    const held = hashPassword("holder", saturatedGate);
+
+    await expect(hashPassword("overflow", saturatedGate)).rejects.toMatchObject(
+      {
+        name: "AppError",
+        code: "RATE_LIMITED",
+        status: 429,
+        headers: { "retry-after": "5" },
+      },
+    );
+    // A shape-valid encoded hash reaches the gated derivation and must hit
+    // the same explicit overload response instead of returning early.
+    const shapeValidEncoded = [
+      "scrypt",
+      "16384",
+      "8",
+      "1",
+      Buffer.alloc(16).toString("base64url"),
+      Buffer.alloc(32).toString("base64url"),
+    ].join("$");
+    await expect(
+      verifyPassword("anything", shapeValidEncoded, saturatedGate),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED", status: 429 });
+
+    releaseSlot();
+    await held;
+  });
+
+  it("answers queue timeout with the same explicit overload response", async () => {
+    const slowGate = new ConcurrencyGate({
+      maxConcurrent: 1,
+      maxQueued: 2,
+      queueTimeoutMs: 30,
+    });
+    let releaseSlot!: () => void;
+    const blocker = new Promise<void>((resolve) => {
+      releaseSlot = resolve;
+    });
+    // A raw gate occupant keeps the slot for exactly as long as the test
+    // decides; a real scrypt hash may finish before the queued timer does.
+    const held = slowGate.run(() => blocker).catch(() => undefined);
+
+    await expect(hashPassword("waiter", slowGate)).rejects.toMatchObject({
+      code: "RATE_LIMITED",
+      status: 429,
+    });
+
+    releaseSlot();
+    await held;
+  });
+
+  it("propagates non-capacity failures unchanged", async () => {
+    const gate = new ConcurrencyGate({
+      maxConcurrent: 1,
+      maxQueued: 1,
+      queueTimeoutMs: 5_000,
+    });
+    const injected = new Error("crypto backend exploded");
+    await expect(
+      runWithinScryptCapacity(() => Promise.reject(injected), gate),
+    ).rejects.toBe(injected);
   });
 });

@@ -3,11 +3,27 @@ import "server-only";
 import { credentialsSchema } from "@prizgram/shared";
 
 import { AppError, parseRequest } from "../api";
+import type { FixedWindowRateLimiter } from "./rate-limit";
+import { enforceAuthRateLimit } from "./rate-limit";
 
 export function sessionCookieName(): string {
   return process.env.NODE_ENV === "production"
     ? "__Host-prizgram_session"
     : "prizgram_session";
+}
+
+/**
+ * Shared guard for authentication mutations. The stateless same-origin
+ * check runs first: invalid-origin requests are rejected without touching
+ * the source's rate-limit budget, so a third party cannot drain a victim's
+ * authentication budget by making their browser send cross-origin requests.
+ */
+export function authenticateMutationRequest(
+  request: Request,
+  options?: { rateLimiter?: FixedWindowRateLimiter },
+): void {
+  assertSameOrigin(request);
+  enforceAuthRateLimit(request, options?.rateLimiter);
 }
 
 export function withNoStore(

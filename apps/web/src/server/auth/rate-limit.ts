@@ -8,6 +8,13 @@ export interface FixedWindowRateLimitOptions {
   windowMs: number;
   /** Requests allowed per source within one window. */
   maxRequests: number;
+  /**
+   * Hard cap on simultaneously tracked sources. Once live (non-expired)
+   * entries reach this bound, unseen sources are rejected until entries
+   * expire. This keeps limiter memory bounded when an attacker rotates
+   * source identities faster than windows expire.
+   */
+  maxTrackedSources: number;
   /** Injectable clock for deterministic tests. */
   now?: () => number;
 }
@@ -41,17 +48,33 @@ export class FixedWindowRateLimiter {
     this.checksSinceSweep += 1;
     if (this.checksSinceSweep >= 128) {
       this.checksSinceSweep = 0;
-      for (const [stateKey, state] of this.states) {
-        if (now - state.windowStart >= this.options.windowMs)
-          this.states.delete(stateKey);
-      }
+      this.sweepExpired(now);
     }
 
     let state = this.states.get(key);
     if (
-      state === undefined ||
+      state !== undefined &&
       now - state.windowStart >= this.options.windowMs
     ) {
+      state = undefined;
+    }
+
+    if (state === undefined) {
+      // Only grow the map when a slot is available. Active windows are
+      // never evicted early, so an attacker cannot reset another source's
+      // budget by flooding identities; saturation fails closed instead.
+      if (
+        this.states.size >= this.options.maxTrackedSources &&
+        !this.sweepExpired(now)
+      ) {
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil(this.options.windowMs / 1000),
+          ),
+        };
+      }
       state = { count: 0, windowStart: now };
       this.states.set(key, state);
     }
@@ -64,6 +87,18 @@ export class FixedWindowRateLimiter {
     }
     state.count += 1;
     return { allowed: true };
+  }
+
+  /** Removes expired windows; returns whether anything was removed. */
+  private sweepExpired(now: number): boolean {
+    let removed = false;
+    for (const [stateKey, state] of this.states) {
+      if (now - state.windowStart >= this.options.windowMs) {
+        this.states.delete(stateKey);
+        removed = true;
+      }
+    }
+    return removed;
   }
 }
 
@@ -84,6 +119,10 @@ export function createAuthRateLimiter(
 ): FixedWindowRateLimiter {
   return new FixedWindowRateLimiter({
     maxRequests: positiveIntFromEnvironment("AUTH_RATE_LIMIT_MAX_REQUESTS", 10),
+    maxTrackedSources: positiveIntFromEnvironment(
+      "AUTH_RATE_LIMIT_MAX_TRACKED_SOURCES",
+      10_000,
+    ),
     windowMs: positiveIntFromEnvironment("AUTH_RATE_LIMIT_WINDOW_MS", 60_000),
     ...overrides,
   });

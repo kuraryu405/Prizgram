@@ -26,6 +26,7 @@ describe("FixedWindowRateLimiter", () => {
     const clock = fakeClock();
     const limiter = new FixedWindowRateLimiter({
       maxRequests: 3,
+      maxTrackedSources: 100,
       now: clock.now,
       windowMs: 60_000,
     });
@@ -43,6 +44,7 @@ describe("FixedWindowRateLimiter", () => {
     const clock = fakeClock();
     const limiter = new FixedWindowRateLimiter({
       maxRequests: 1,
+      maxTrackedSources: 100,
       now: clock.now,
       windowMs: 60_000,
     });
@@ -61,6 +63,7 @@ describe("FixedWindowRateLimiter", () => {
     const clock = fakeClock();
     const limiter = new FixedWindowRateLimiter({
       maxRequests: 1,
+      maxTrackedSources: 100,
       now: clock.now,
       windowMs: 60_000,
     });
@@ -77,6 +80,7 @@ describe("FixedWindowRateLimiter", () => {
     const clock = fakeClock();
     const limiter = new FixedWindowRateLimiter({
       maxRequests: 1,
+      maxTrackedSources: 1_000,
       now: clock.now,
       windowMs: 1_000,
     });
@@ -88,6 +92,90 @@ describe("FixedWindowRateLimiter", () => {
     // Expired windows are swept, so the map must stay far below the total
     // number of distinct sources ever seen.
     expect(limiter.trackedSourceCount).toBeLessThanOrEqual(128);
+  });
+
+  it("caps tracked sources and fails closed while saturated", () => {
+    const clock = fakeClock();
+    const limiter = new FixedWindowRateLimiter({
+      maxRequests: 5,
+      maxTrackedSources: 3,
+      now: clock.now,
+      windowMs: 60_000,
+    });
+
+    for (const source of ["s1", "s2", "s3"]) {
+      expect(limiter.check(source)).toEqual({ allowed: true });
+    }
+    expect(limiter.trackedSourceCount).toBe(3);
+
+    // Unseen sources are denied with a bounded retry hint instead of
+    // growing the map.
+    expect(limiter.check("attacker-4")).toEqual({
+      allowed: false,
+      retryAfterSeconds: 60,
+    });
+    expect(limiter.check("attacker-5")).toEqual({
+      allowed: false,
+      retryAfterSeconds: 60,
+    });
+    expect(limiter.trackedSourceCount).toBe(3);
+
+    // Already-tracked sources keep their exact budgets.
+    expect(limiter.check("s1")).toEqual({ allowed: true });
+  });
+
+  it("reuses capacity once windows expire instead of staying saturated", () => {
+    const clock = fakeClock();
+    const limiter = new FixedWindowRateLimiter({
+      maxRequests: 2,
+      maxTrackedSources: 2,
+      now: clock.now,
+      windowMs: 30_000,
+    });
+
+    expect(limiter.check("a")).toEqual({ allowed: true });
+    expect(limiter.check("b")).toEqual({ allowed: true });
+    expect(limiter.check("c")).toEqual({
+      allowed: false,
+      retryAfterSeconds: 30,
+    });
+
+    clock.advance(30_000);
+    expect(limiter.check("c")).toEqual({ allowed: true });
+    expect(limiter.trackedSourceCount).toBeLessThanOrEqual(2);
+  });
+
+  it("never evicts an active source's window, so floods cannot reset budgets", () => {
+    const clock = fakeClock();
+    const limiter = new FixedWindowRateLimiter({
+      maxRequests: 3,
+      maxTrackedSources: 10,
+      now: clock.now,
+      windowMs: 60_000,
+    });
+
+    // The victim consumes one request of its budget.
+    expect(limiter.check("victim")).toEqual({ allowed: true });
+
+    // An attacker saturates every remaining slot with distinct identities.
+    for (let index = 0; index < 9; index += 1) {
+      limiter.check(`flood-${index}`);
+    }
+    for (let index = 9; index < 40; index += 1) {
+      expect(limiter.check(`flood-${index}`)).toEqual({
+        allowed: false,
+        retryAfterSeconds: 60,
+      });
+    }
+
+    // The victim's window survived untouched: two requests remain and the
+    // budget still enforces after they are spent.
+    expect(limiter.check("victim")).toEqual({ allowed: true });
+    expect(limiter.check("victim")).toEqual({ allowed: true });
+    expect(limiter.check("victim")).toEqual({
+      allowed: false,
+      retryAfterSeconds: 60,
+    });
   });
 });
 

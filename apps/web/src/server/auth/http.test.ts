@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AppError } from "../api";
 import {
   assertSameOrigin,
+  authenticateMutationRequest,
   clearSessionCookie,
   readCredentials,
   sessionCookie,
@@ -10,6 +11,7 @@ import {
   sessionTokenFromRequest,
   withNoStore,
 } from "./http";
+import { createAuthRateLimiter } from "./rate-limit";
 
 function withEnvironment(
   overrides: Record<string, string | undefined>,
@@ -178,5 +180,57 @@ describe("auth HTTP boundary", () => {
       new Request("https://prizgram.test"),
     );
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("rejects cross-origin mutations before consuming rate limit budget", () => {
+    const limiter = createAuthRateLimiter({ maxRequests: 1, windowMs: 60_000 });
+    const checkSpy = vi.spyOn(limiter, "check");
+
+    expect(() =>
+      authenticateMutationRequest(
+        new Request("https://prizgram.test/api/auth/login", {
+          method: "POST",
+          headers: {
+            host: "prizgram.test",
+            origin: "https://evil.test",
+          },
+        }),
+        { rateLimiter: limiter },
+      ),
+    ).toThrow(/origin/i);
+    expect(checkSpy).not.toHaveBeenCalled();
+
+    // A same-origin request goes through the limiter and consumes budget.
+    expect(() =>
+      authenticateMutationRequest(
+        new Request("https://prizgram.test/api/auth/login", {
+          method: "POST",
+          headers: {
+            host: "prizgram.test",
+            origin: "https://prizgram.test",
+          },
+        }),
+        { rateLimiter: limiter },
+      ),
+    ).not.toThrow();
+    expect(checkSpy).toHaveBeenCalledTimes(1);
+
+    let caught: unknown;
+    try {
+      authenticateMutationRequest(
+        new Request("https://prizgram.test/api/auth/login", {
+          method: "POST",
+          headers: {
+            host: "prizgram.test",
+            origin: "https://prizgram.test",
+          },
+        }),
+        { rateLimiter: limiter },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(AppError);
+    expect((caught as AppError).code).toBe("RATE_LIMITED");
   });
 });
