@@ -95,6 +95,7 @@ function defaultClient(): StructuredLlmClient {
         "The language model client is not configured",
         500,
         undefined,
+        undefined,
         { cause: error },
       );
     }
@@ -108,6 +109,7 @@ function upstreamError(error: unknown): AppError {
       error.retryable ? "UPSTREAM_UNAVAILABLE" : "UPSTREAM_INVALID_RESPONSE",
       "The persona could not be generated right now",
       502,
+      undefined,
       undefined,
       { cause: error },
     );
