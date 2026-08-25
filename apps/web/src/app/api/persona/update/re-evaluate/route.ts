@@ -29,7 +29,16 @@ export const POST = withNoStore(
       user,
       input.personaVersionId,
       {
-        scoring: new ScoringService(getDatabase()),
+        scoring: {
+          evaluate: (userId: string, jobId: string, evalOptions?: {
+            personaVersionId?: string;
+          }) =>
+            new ScoringService(getDatabase()).evaluateJob(
+              userId,
+              jobId,
+              evalOptions,
+            ),
+        },
       },
     );
     return apiResult({ audit });

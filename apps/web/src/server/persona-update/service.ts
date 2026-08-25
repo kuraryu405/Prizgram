@@ -331,10 +331,14 @@ export class PersonaUpdateService {
     personaVersionId: string,
     options: {
       scoring: {
-        score: (
-          user: AuthenticatedUser,
-          input: { jobId?: string; personaVersionId?: string },
-        ) => Promise<{ scoreId: string; duplicate: boolean }>;
+        evaluate: (
+          userId: string,
+          jobId: string,
+          evalOptions?: { personaVersionId?: string },
+        ) => Promise<{
+          detail: { scoreId: string };
+          duplicate: boolean;
+        }>;
       };
     },
   ): Promise<
@@ -356,14 +360,13 @@ export class PersonaUpdateService {
     > = [];
     for (const job of jobRows) {
       try {
-        const result = await options.scoring.score(user, {
-          jobId: job.id,
+        const result = await options.scoring.evaluate(user.id, job.id, {
           personaVersionId,
         });
         audit.push({
           jobId: job.id,
           status: "scored",
-          scoreId: result.scoreId,
+          scoreId: result.detail.scoreId,
         });
       } catch (error) {
         audit.push({
