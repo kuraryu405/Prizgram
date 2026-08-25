@@ -1,22 +1,22 @@
-## Summary
+## 概要
 
-<!-- What does this PR change? -->
+<!-- この PR で何を変更しますか？ -->
 
-## Why
+## 背景・目的
 
-<!-- What problem does it solve? -->
+<!-- どのような課題を解決しますか？ -->
 
-## Changes
+## 変更内容
 
 - 
 
-## Verification
+## 確認項目
 
-- [ ] Tests added or updated where needed
-- [ ] Lint / typecheck passes
-- [ ] No unrelated changes included
-- [ ] Product guardrails remain intact
+- [ ] 必要に応じてテストを追加・更新した
+- [ ] lint / typecheck が通る
+- [ ] 無関係な変更を含んでいない
+- [ ] Prizgram のプロダクトガードレールを維持している
 
-## Screenshots / notes
+## スクリーンショット / 補足
 
-<!-- Add UI screenshots or implementation notes when useful. -->
+<!-- 必要に応じて UI のスクリーンショットや実装上の補足を追加してください。 -->
