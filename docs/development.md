@@ -125,7 +125,7 @@ Smoke test / health check
 
 CI が失敗したコミットをデプロイしないことを最重要条件とします。
 
-デプロイ先が確定したら、StayBridge Tokyo と同様に `workflow_run` で main の CI 成功後だけ Release workflow を起動します。Production 用 secret は GitHub Environment に置き、workflow ファイルへ直接埋め込みません。
+EC2向けの運用手順（deploy・backup・migration・cron・restore drill・TLS checklist）は [`docs/deployment.md`](deployment.md) に集約します。Production 用 secret は GitHub Environment または server-local `.env`（root:600）に置き、workflow ファイルへ直接埋め込みません。
 
 ## GitHub Actions の権限
 
