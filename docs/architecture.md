@@ -1,76 +1,76 @@
-# Prizgram Architecture
+# Prizgram アーキテクチャ
 
-## Goals
+## 目的
 
-The initial architecture should support:
+初期アーキテクチャでは、次の機能を支えられることを目標とします。
 
-- conversational persona generation,
-- explainable opportunity scoring,
-- application-stage tracking,
-- deadline-driven notifications,
-- persistent user state,
-- later addition of mock interview feedback and document drafting.
+- 対話型のペルソナ生成
+- 説明可能な求人スコアリング
+- 応募・選考ステータス管理
+- 締切ベースの通知
+- ユーザー状態の永続化
+- 将来的な模擬面接フィードバックと応募書類下書き生成
 
-## Proposed stack
+## 想定技術スタック
 
 - **Frontend:** Next.js, TypeScript, Tailwind CSS
 - **Backend:** NestJS, TypeScript
 - **Database:** PostgreSQL
 - **LLM:** Claude API
-- **Background processing:** queue / worker model
+- **Background processing:** queue / worker モデル
 
-## Repository structure
+## リポジトリ構成
 
 ```text
 apps/
-  web/       Next.js application
-  api/       NestJS API and workers
+  web/       Next.js アプリケーション
+  api/       NestJS API / worker
 packages/
-  shared/    Shared TypeScript types, schemas, and utilities
+  shared/    共通 TypeScript 型、schema、utility
 docs/
   product.md
   architecture.md
 ```
 
-## Core domains
+## コアドメイン
 
 ### Persona
 
-Represents the current structured understanding of a user.
+ユーザーに対する現在の構造化された理解を表します。
 
-Possible fields:
+想定フィールド:
 
-- skills,
-- experience,
-- values,
-- preferred roles,
-- preferred work style,
-- strengths,
-- weaknesses,
-- evidence / provenance,
-- confidence,
-- updatedAt.
+- skills
+- experience
+- values
+- preferredRoles
+- preferredWorkStyle
+- strengths
+- weaknesses
+- evidence / provenance
+- confidence
+- updatedAt
 
-Persona updates should be traceable. Avoid overwriting the previous state without retaining evidence or history.
+Persona の更新は追跡可能であるべきです。根拠や履歴を失う形で以前の状態を単純上書きしないようにします。
 
 ### Opportunity
 
-Represents an internship or job opportunity.
+インターンまたは求人情報を表します。
 
-Possible fields:
+想定フィールド:
 
-- company,
-- role,
-- requirements,
-- desired skills,
-- culture / values signals,
-- selection process,
-- deadlines,
-- source and source permissions.
+- company
+- role
+- requirements
+- desiredSkills
+- culture / values signals
+- selectionProcess
+- deadlines
+- source / source permissions
 
 ### MatchScore
 
-Stores explainable scoring results rather than only a total score.
+総合点だけではなく、説明可能なスコアリング結果を保持します。
 
 ```ts
 type MatchScore = {
@@ -91,9 +91,9 @@ type ScoreDimension = {
 
 ### Application
 
-Tracks the user's selection process.
+ユーザーの選考プロセスを管理します。
 
-Possible states:
+想定ステータス:
 
 ```text
 saved
@@ -105,11 +105,11 @@ saved
 → accepted / rejected / withdrawn
 ```
 
-State transitions should be stored as history so outcomes can feed back into the persona model.
+状態遷移は履歴として保存し、選考結果を Persona モデルへフィードバックできるようにします。
 
-## Event-driven loop
+## イベント駆動ループ
 
-Candidate domain events:
+想定するドメインイベント:
 
 - `persona.updated`
 - `opportunity.created`
@@ -119,46 +119,46 @@ Candidate domain events:
 - `deadline.approaching`
 - `mock_interview.analyzed`
 
-Example flow:
+処理例:
 
 ```text
 application.outcome_recorded
         ↓
-extract learning signals
+学習シグナルを抽出
         ↓
-update persona version
+Persona version を更新
         ↓
-re-score active opportunities
+進行中の求人を再スコアリング
         ↓
-update recommended next actions
+推奨する次のアクションを更新
 ```
 
-## Data integrity principles
+## データ整合性の原則
 
-- Preserve persona versions and evidence provenance.
-- Separate deterministic scoring inputs from generated explanations where possible.
-- Record which persona and opportunity versions produced a score.
-- Make LLM-derived fields distinguishable from user-provided or source-provided facts.
-- Require explicit approval boundaries for external user-representing actions.
+- Persona の version と根拠の provenance を保持する。
+- 可能な限り、決定論的なスコアリング入力と生成された説明文を分離する。
+- どの Persona / Opportunity version からスコアが生成されたか記録する。
+- LLM が生成した値と、ユーザー入力・外部ソース由来の事実を区別できるようにする。
+- ユーザーを代表する対外的な操作には明示的な承認境界を設ける。
 
-## Security and privacy considerations
+## セキュリティ・プライバシー
 
-Prizgram will handle potentially sensitive recruiting data. Before production use, the implementation should include:
+Prizgram は、就活に関する個人的なデータを扱う可能性があります。本番利用前には、少なくとも次の対策を実装する必要があります。
 
-- strict authorization boundaries,
-- encrypted secrets and secure environment configuration,
-- minimum-necessary retention of transcripts and application data,
-- deletion/export flows,
-- auditability of automated persona changes,
-- prompt-injection resistance for externally sourced job text.
+- 厳格な認可境界
+- secret の安全な保管と適切な環境設定
+- 面接 transcript・応募データの必要最小限の保持
+- データ削除・エクスポート機能
+- 自動 Persona 更新の監査可能性
+- 外部求人テキストに対する prompt injection 耐性
 
-## MVP implementation order
+## MVP 実装順序
 
-1. Shared schemas and database model
-2. Persona interview flow
-3. Persona persistence/versioning
-4. Opportunity ingestion interface
-5. Explainable scoring pipeline
+1. 共通 schema とデータベースモデル
+2. Persona ヒアリングフロー
+3. Persona の永続化・version 管理
+4. Opportunity 取り込みインターフェース
+5. 説明可能なスコアリング pipeline
 6. Application tracker
-7. Deadline scheduler / notification events
-8. Evaluation and telemetry
+7. 締切 scheduler / notification event
+8. 評価・telemetry
