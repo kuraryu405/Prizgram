@@ -12,11 +12,38 @@ import {
 import {
   applicationStatuses,
   deadlineKinds,
+  evidenceIdListSchema,
+  generationProvenanceSchema,
+  jobSnapshotSchema,
+  personaSnapshotSchema,
   reminderPriorities,
   reminderStatuses,
+  scoreReasonListSchema,
 } from "@prizgram/shared";
 
+import { validatedJsonText } from "./json-column";
+
 const now = sql`(unixepoch() * 1000)`;
+const personaSnapshotJson = validatedJsonText(
+  "persona_versions.snapshot",
+  personaSnapshotSchema,
+);
+const provenanceJson = validatedJsonText(
+  "persona_versions.provenance",
+  generationProvenanceSchema,
+);
+const jobSnapshotJson = validatedJsonText(
+  "job_versions.snapshot",
+  jobSnapshotSchema,
+);
+const scoreReasonsJson = validatedJsonText(
+  "match_scores.reasons",
+  scoreReasonListSchema,
+);
+const evidenceRefsJson = validatedJsonText(
+  "match_scores.evidence_refs",
+  evidenceIdListSchema,
+);
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -36,8 +63,8 @@ export const personaVersions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
-    snapshot: text("snapshot").notNull(),
-    provenance: text("provenance").notNull(),
+    snapshot: personaSnapshotJson("snapshot").notNull(),
+    provenance: provenanceJson("provenance").notNull(),
     model: text("model"),
     promptVersion: text("prompt_version"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -46,6 +73,11 @@ export const personaVersions = sqliteTable(
   },
   (table) => [
     check("persona_versions_version_positive", sql`${table.version} > 0`),
+    check("persona_versions_snapshot_json", sql`json_valid(${table.snapshot})`),
+    check(
+      "persona_versions_provenance_json",
+      sql`json_valid(${table.provenance})`,
+    ),
     uniqueIndex("persona_versions_user_version_unique").on(
       table.userId,
       table.version,
@@ -94,7 +126,7 @@ export const jobVersions = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     jobId: text("job_id").notNull(),
     version: integer("version").notNull(),
-    snapshot: text("snapshot").notNull(),
+    snapshot: jobSnapshotJson("snapshot").notNull(),
     contentHash: text("content_hash").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
@@ -102,6 +134,7 @@ export const jobVersions = sqliteTable(
   },
   (table) => [
     check("job_versions_version_positive", sql`${table.version} > 0`),
+    check("job_versions_snapshot_json", sql`json_valid(${table.snapshot})`),
     uniqueIndex("job_versions_job_version_unique").on(
       table.jobId,
       table.version,
@@ -130,16 +163,20 @@ export const matchScores = sqliteTable(
     personaVersionId: text("persona_version_id").notNull(),
     jobVersionId: text("job_version_id").notNull(),
     skillFitScore: integer("skill_fit_score").notNull(),
-    skillFitReasons: text("skill_fit_reasons").notNull(),
-    skillFitEvidenceRefs: text("skill_fit_evidence_refs").notNull(),
+    skillFitReasons: scoreReasonsJson("skill_fit_reasons").notNull(),
+    skillFitEvidenceRefs: evidenceRefsJson("skill_fit_evidence_refs").notNull(),
     cultureValueFitScore: integer("culture_value_fit_score").notNull(),
-    cultureValueFitReasons: text("culture_value_fit_reasons").notNull(),
-    cultureValueFitEvidenceRefs: text(
+    cultureValueFitReasons: scoreReasonsJson(
+      "culture_value_fit_reasons",
+    ).notNull(),
+    cultureValueFitEvidenceRefs: evidenceRefsJson(
       "culture_value_fit_evidence_refs",
     ).notNull(),
     difficultyGapScore: integer("difficulty_gap_score").notNull(),
-    difficultyGapReasons: text("difficulty_gap_reasons").notNull(),
-    difficultyGapEvidenceRefs: text("difficulty_gap_evidence_refs").notNull(),
+    difficultyGapReasons: scoreReasonsJson("difficulty_gap_reasons").notNull(),
+    difficultyGapEvidenceRefs: evidenceRefsJson(
+      "difficulty_gap_evidence_refs",
+    ).notNull(),
     model: text("model").notNull(),
     promptVersion: text("prompt_version").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -158,6 +195,30 @@ export const matchScores = sqliteTable(
     check(
       "match_scores_difficulty_range",
       sql`${table.difficultyGapScore} between 0 and 100`,
+    ),
+    check(
+      "match_scores_skill_reasons_json",
+      sql`json_valid(${table.skillFitReasons})`,
+    ),
+    check(
+      "match_scores_skill_evidence_json",
+      sql`json_valid(${table.skillFitEvidenceRefs})`,
+    ),
+    check(
+      "match_scores_culture_reasons_json",
+      sql`json_valid(${table.cultureValueFitReasons})`,
+    ),
+    check(
+      "match_scores_culture_evidence_json",
+      sql`json_valid(${table.cultureValueFitEvidenceRefs})`,
+    ),
+    check(
+      "match_scores_difficulty_reasons_json",
+      sql`json_valid(${table.difficultyGapReasons})`,
+    ),
+    check(
+      "match_scores_difficulty_evidence_json",
+      sql`json_valid(${table.difficultyGapEvidenceRefs})`,
     ),
     foreignKey({
       columns: [table.userId, table.personaVersionId],

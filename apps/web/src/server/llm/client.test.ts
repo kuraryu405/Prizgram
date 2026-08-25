@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { LlmClientError, OpenAiCompatibleClient } from "./client";
+import { personaStructuredOutput } from "@prizgram/shared";
 
+import {
+  LlmClientError,
+  OpenAiCompatibleClient,
+  toOpenAiStrictJsonSchema,
+} from "./client";
+
+const providerOutputSchema = z.object({ value: z.string() }).strict();
 const outputSchema = z.object({ value: z.string().min(1) }).strict();
+const output = {
+  providerSchema: providerOutputSchema,
+  domainSchema: outputSchema,
+  normalize: (value: { value: string }) => value,
+};
 const config = {
   baseUrl: "https://llm.example.test/v1",
   apiKey: "test-secret",
@@ -34,6 +46,19 @@ async function errorCode(
 }
 
 describe("OpenAiCompatibleClient", () => {
+  it("accepts provider-specific persona schema and rejects optional provider fields", () => {
+    const jsonSchema = toOpenAiStrictJsonSchema(
+      personaStructuredOutput.providerSchema,
+    );
+    expect(JSON.stringify(jsonSchema)).not.toContain("minLength");
+    expect(JSON.stringify(jsonSchema)).not.toContain('"format":"uri"');
+    expect(() =>
+      toOpenAiStrictJsonSchema(
+        z.object({ optional: z.string().optional() }).strict(),
+      ),
+    ).toThrowError(/required/);
+  });
+
   it("requests JSON schema output and validates the result", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
@@ -43,7 +68,7 @@ describe("OpenAiCompatibleClient", () => {
     await expect(
       client.generateStructured({
         messages: [{ role: "user", content: "input" }],
-        schema: outputSchema,
+        output,
         schemaName: "test_output",
       }),
     ).resolves.toEqual({ value: "ok" });
@@ -74,7 +99,7 @@ describe("OpenAiCompatibleClient", () => {
       errorCode(
         httpClient.generateStructured({
           messages: [],
-          schema: outputSchema,
+          output,
           schemaName: "test",
         }),
       ),
@@ -90,7 +115,7 @@ describe("OpenAiCompatibleClient", () => {
       errorCode(
         networkClient.generateStructured({
           messages: [],
-          schema: outputSchema,
+          output,
           schemaName: "test",
         }),
       ),
@@ -117,7 +142,7 @@ describe("OpenAiCompatibleClient", () => {
       errorCode(
         timeoutClient.generateStructured({
           messages: [],
-          schema: outputSchema,
+          output,
           schemaName: "test",
         }),
       ),
@@ -146,7 +171,7 @@ describe("OpenAiCompatibleClient", () => {
         errorCode(
           client.generateStructured({
             messages: [],
-            schema: outputSchema,
+            output,
             schemaName: "test",
           }),
         ),
@@ -174,7 +199,7 @@ describe("OpenAiCompatibleClient", () => {
       errorCode(
         client.generateStructured({
           messages: [],
-          schema: outputSchema,
+          output,
           schemaName: "test",
         }),
       ),
@@ -203,7 +228,7 @@ describe("OpenAiCompatibleClient", () => {
       errorCode(
         client.generateStructured({
           messages: [],
-          schema: outputSchema,
+          output,
           schemaName: "test",
         }),
       ),

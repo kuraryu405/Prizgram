@@ -1,12 +1,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createDatabase, migrateDatabase } from "./client";
+import {
+  createDatabase,
+  databaseUrlFromEnvironment,
+  loadPrizgramEnvironment,
+  migrateDatabase,
+} from "./client";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(currentDirectory, "../drizzle");
-const databaseUrl = process.env.DATABASE_URL ?? "file:./data/prizgram.sqlite";
-const connection = createDatabase(databaseUrl);
+loadPrizgramEnvironment();
+const connection = createDatabase(databaseUrlFromEnvironment());
 
 try {
   migrateDatabase(connection, migrationsFolder);

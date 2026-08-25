@@ -1,15 +1,19 @@
 import "server-only";
 
-import { createDatabase, type DatabaseConnection } from "@prizgram/db";
+import {
+  createDatabase,
+  databaseUrlFromEnvironment,
+  loadPrizgramEnvironment,
+  type DatabaseConnection,
+} from "@prizgram/db";
 
 declare global {
   var prizgramDatabase: DatabaseConnection | undefined;
 }
 
 function initializeDatabase(): DatabaseConnection {
-  return createDatabase(
-    process.env.DATABASE_URL ?? "file:./data/prizgram.sqlite",
-  );
+  loadPrizgramEnvironment();
+  return createDatabase(databaseUrlFromEnvironment());
 }
 
 export const database = globalThis.prizgramDatabase ?? initializeDatabase();

@@ -69,17 +69,17 @@ docs/               product / architecture / development
 4. SQLite JSON column の読み出し
 5. HTTP response DTO
 
-OpenAI 互換 client は provider に JSON Schema response format を渡しますが、その保証だけを信用せず、最終的に Zod で検証します。timeout、abort、network、非2xx、過大応答、不正 envelope、不正 JSON、schema mismatch を型付き error として区別し、API key、入力本文、LLM 生応答を log に出しません。
+OpenAI 互換 client は provider に JSON Schema response format を渡しますが、その保証だけを信用せず、最終的に Zod で検証します。domain schema の optional 値や URL format をそのまま strict mode に渡さず、provider 用 schema では全 field を required にし、optional 値を nullable で表現します。応答を provider schema で検証してから normalize し、制約の強い domain schema でもう一度検証します。timeout、abort、network、非2xx、過大応答、不正 envelope、不正 JSON、schema mismatch を型付き error として区別し、API key、入力本文、LLM 生応答を log に出しません。
 
 求人本文などの外部テキストは命令ではなくデータとして prompt 内で区切ります。具体的な prompt は各 feature PR で追加し、prompt version と model を永続化します。
 
 ## SQLite 運用
 
-各接続で `foreign_keys = ON`、`busy_timeout = 5000`、ファイル DB で WAL mode を設定します。migration はアプリ起動中に暗黙実行せず、デプロイ前の単一プロセスで `pnpm db:migrate` を実行します。本番 migration 前に DB ファイルのバックアップが必要です。
+各接続で `foreign_keys = ON`、`busy_timeout = 5000`、ファイル DB で WAL mode を設定します。JSON text 列は Drizzle custom type によって読み書き時の Zod validation を強制し、SQLite 側でも `json_valid` check を持ちます。mutable table の `updated_at` は trigger で更新します。migration はアプリ起動中に暗黙実行せず、デプロイ前の単一プロセスで `pnpm db:migrate` を実行します。本番 migration 前に DB ファイルのバックアップが必要です。
 
 ## API error
 
-Route Handler は `{ ok, data|error, requestId }` の envelope を使います。既知の domain error のみ安全な code/message を返し、Zod error は field error へ変換します。予期しない例外では stack、SQL、secret を公開しません。
+Route Handler は body を返す場合に `{ ok, data|error, requestId }` の envelope を使います。成功時の status と header を保持でき、body のない `204` も明示的に返せます。既知の domain error のみ安全な code/message を返し、Zod error は field error へ変換します。予期しない例外では stack、SQL、secret を公開しません。
 
 ## 後続 PR の境界
 

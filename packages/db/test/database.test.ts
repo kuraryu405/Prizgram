@@ -6,16 +6,65 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  jobSnapshotSchema,
+  JsonColumnValidationError,
+  personaSnapshotSchema,
+} from "@prizgram/shared";
+
+import {
   createDatabase,
+  matchScores,
   migrateDatabase,
+  personaVersions,
   type DatabaseConnection,
 } from "../src";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(here, "../drizzle");
+const initialMigrationName = "0000_fast_sabra.sql";
 
 let temporaryDirectory: string;
 let connection: DatabaseConnection;
+
+const validUpgradePersona = personaSnapshotSchema.parse({
+  skills: [{ name: "TypeScript", level: "advanced", evidenceRefs: ["e1"] }],
+  strengths: ["問題を分解できる"],
+  weaknesses: ["発表経験が少ない"],
+  values: ["透明性"],
+  preferences: {
+    roles: ["Engineer"],
+    industries: [],
+    workStyles: ["team"],
+    locations: ["Tokyo"],
+  },
+  experiences: [],
+  evidence: [
+    { id: "e1", sourceType: "user_input", summary: "Webアプリを開発" },
+  ],
+  confidence: 0.8,
+});
+
+const validUpgradeJob = jobSnapshotSchema.parse({
+  company: "Example",
+  role: "Engineer",
+  employmentType: "internship",
+  description: "Product engineering internship",
+  requirements: [{ id: "job:req:1", text: "TypeScript" }],
+  desiredSkills: [],
+  cultureValues: [{ id: "job:value:1", text: "Transparency" }],
+  difficulty: { level: "competitive", evidenceRefs: ["job:req:1"] },
+  source: {
+    kind: "user_provided",
+    name: "User",
+    retrievedAt: "2026-08-25T00:00:00Z",
+  },
+});
+
+const validUpgradeProvenance = {
+  source: "user_input",
+  sourceIds: ["hearing-1"],
+  generatedAt: "2026-08-25T00:00:00Z",
+};
 
 beforeEach(() => {
   temporaryDirectory = fs.mkdtempSync(
@@ -49,6 +98,23 @@ function seedInputs(): void {
     .run("job-version-a-1", "user-a", "job-a", "{}", "hash-a");
 }
 
+function createInitialMigrationsFolder(): string {
+  const oldMigrationsFolder = path.join(temporaryDirectory, "old-migrations");
+  fs.mkdirSync(path.join(oldMigrationsFolder, "meta"), { recursive: true });
+  fs.copyFileSync(
+    path.join(migrationsFolder, initialMigrationName),
+    path.join(oldMigrationsFolder, initialMigrationName),
+  );
+  const journal = JSON.parse(
+    fs.readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8"),
+  ) as { entries: unknown[] };
+  fs.writeFileSync(
+    path.join(oldMigrationsFolder, "meta/_journal.json"),
+    JSON.stringify({ ...journal, entries: journal.entries.slice(0, 1) }),
+  );
+  return oldMigrationsFolder;
+}
+
 describe("SQLite foundation", () => {
   it("applies migrations with foreign key enforcement", () => {
     expect(connection.ready()).toEqual({ ready: true });
@@ -73,6 +139,109 @@ describe("SQLite foundation", () => {
   it("reports a partially migrated database as not ready", () => {
     connection.sqlite.exec("drop table reminders");
     expect(() => connection.ready()).toThrow(/fully applied/);
+  });
+
+  it("upgrades an existing database with referenced version rows", () => {
+    const oldMigrationsFolder = createInitialMigrationsFolder();
+
+    const upgradeConnection = createDatabase(
+      path.join(temporaryDirectory, "upgrade.sqlite"),
+    );
+    try {
+      migrateDatabase(upgradeConnection, oldMigrationsFolder);
+      upgradeConnection.sqlite
+        .prepare("insert into users (id) values (?)")
+        .run("upgrade-user");
+      upgradeConnection.sqlite
+        .prepare(
+          "insert into persona_versions (id, user_id, version, snapshot, provenance) values (?, ?, 1, ?, ?)",
+        )
+        .run(
+          "upgrade-persona",
+          "upgrade-user",
+          JSON.stringify(validUpgradePersona),
+          JSON.stringify(validUpgradeProvenance),
+        );
+      upgradeConnection.sqlite
+        .prepare("insert into jobs (id, user_id) values (?, ?)")
+        .run("upgrade-job", "upgrade-user");
+      upgradeConnection.sqlite
+        .prepare(
+          "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, 1, ?, ?)",
+        )
+        .run(
+          "upgrade-job-version",
+          "upgrade-user",
+          "upgrade-job",
+          JSON.stringify(validUpgradeJob),
+          "upgrade-hash",
+        );
+      upgradeConnection.sqlite
+        .prepare(
+          `insert into match_scores (
+            id, user_id, persona_version_id, job_version_id,
+            skill_fit_score, skill_fit_reasons, skill_fit_evidence_refs,
+            culture_value_fit_score, culture_value_fit_reasons, culture_value_fit_evidence_refs,
+            difficulty_gap_score, difficulty_gap_reasons, difficulty_gap_evidence_refs,
+            model, prompt_version
+          ) values (?, ?, ?, ?, 70, '["reason"]', '["e1"]', 60, '["reason"]', '["job:value:1"]', 30, '["reason"]', '["job:req:1"]', 'model', 'v1')`,
+        )
+        .run(
+          "upgrade-score",
+          "upgrade-user",
+          "upgrade-persona",
+          "upgrade-job-version",
+        );
+
+      migrateDatabase(upgradeConnection, migrationsFolder);
+
+      expect(
+        upgradeConnection.sqlite
+          .prepare("select id from match_scores where id = ?")
+          .get("upgrade-score"),
+      ).toEqual({ id: "upgrade-score" });
+      expect(
+        upgradeConnection.sqlite.pragma("foreign_keys", { simple: true }),
+      ).toBe(1);
+      expect(upgradeConnection.sqlite.pragma("foreign_key_check")).toEqual([]);
+      expect(
+        upgradeConnection.db.select().from(personaVersions).get()?.snapshot
+          .skills[0]?.name,
+      ).toBe("TypeScript");
+      expect(
+        upgradeConnection.db.select().from(matchScores).get()?.skillFitReasons,
+      ).toEqual(["reason"]);
+    } finally {
+      upgradeConnection.close();
+    }
+  });
+
+  it("refuses to migrate legacy JSON that violates the domain schema", () => {
+    const legacyConnection = createDatabase(
+      path.join(temporaryDirectory, "invalid-upgrade.sqlite"),
+    );
+    try {
+      migrateDatabase(legacyConnection, createInitialMigrationsFolder());
+      legacyConnection.sqlite
+        .prepare("insert into users (id) values (?)")
+        .run("legacy-user");
+      legacyConnection.sqlite
+        .prepare(
+          "insert into persona_versions (id, user_id, version, snapshot, provenance) values (?, ?, 1, ?, ?)",
+        )
+        .run("legacy-persona", "legacy-user", "{}", "{}");
+
+      expect(() => migrateDatabase(legacyConnection, migrationsFolder)).toThrow(
+        JsonColumnValidationError,
+      );
+      expect(
+        legacyConnection.sqlite
+          .prepare("select count(*) as count from __drizzle_migrations")
+          .get(),
+      ).toEqual({ count: 1 });
+    } finally {
+      legacyConnection.close();
+    }
   });
 
   it("rejects cross-user references and out-of-range scores", () => {
@@ -133,6 +302,51 @@ describe("SQLite foundation", () => {
         .prepare("update job_versions set snapshot = ? where id = ?")
         .run('{"changed":true}', "job-version-a-1"),
     ).toThrow(/immutable/);
+  });
+
+  it("rejects malformed JSON and validates JSON columns when reading", () => {
+    connection.sqlite
+      .prepare("insert into users (id) values (?)")
+      .run("user-a");
+
+    expect(() =>
+      connection.sqlite
+        .prepare(
+          "insert into persona_versions (id, user_id, version, snapshot, provenance) values (?, ?, 1, ?, ?)",
+        )
+        .run("malformed", "user-a", "not-json", "{}"),
+    ).toThrow();
+
+    connection.sqlite
+      .prepare(
+        "insert into persona_versions (id, user_id, version, snapshot, provenance) values (?, ?, 1, ?, ?)",
+      )
+      .run("invalid-domain", "user-a", "{}", "{}");
+
+    expect(() => connection.db.select().from(personaVersions).all()).toThrow(
+      JsonColumnValidationError,
+    );
+  });
+
+  it("advances updated_at when mutable records change", () => {
+    seedInputs();
+    connection.sqlite
+      .prepare(
+        "insert into applications (id, user_id, job_id, status) values (?, ?, ?, ?)",
+      )
+      .run("application-a", "user-a", "job-a", "saved");
+    const before = connection.sqlite
+      .prepare("select updated_at as updatedAt from applications where id = ?")
+      .get("application-a") as { updatedAt: number };
+
+    connection.sqlite
+      .prepare("update applications set status = ? where id = ?")
+      .run("applying", "application-a");
+    const after = connection.sqlite
+      .prepare("select updated_at as updatedAt from applications where id = ?")
+      .get("application-a") as { updatedAt: number };
+
+    expect(after.updatedAt).toBeGreaterThan(before.updatedAt);
   });
 
   it("deduplicates reminders and rolls back failed transactions", () => {

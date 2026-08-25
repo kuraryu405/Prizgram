@@ -87,6 +87,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@next/env':
+        specifier: 16.3.2
+        version: 16.3.2
       '@prizgram/shared':
         specifier: workspace:*
         version: link:../shared

@@ -55,6 +55,11 @@ pnpm db:migrate
 pnpm dev
 ```
 
+`.env` はリポジトリルートに置きます。`DATABASE_URL` の相対パスは、実行時の
+カレントディレクトリではなく常にリポジトリルートから解決されるため、migration
+CLI と Next.js は同じ SQLite ファイルを使用します。standalone 配布環境では
+workspace root を前提にしないため、絶対パスの `DATABASE_URL` を設定してください。
+
 品質ゲートは次のコマンドです。
 
 ```bash

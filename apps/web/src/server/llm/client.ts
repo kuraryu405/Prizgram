@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { StructuredOutputContract } from "@prizgram/shared";
 import { z } from "zod";
 
 const configSchema = z
@@ -36,6 +37,7 @@ export type LlmErrorCode =
   | "NETWORK_ERROR"
   | "HTTP_ERROR"
   | "RESPONSE_TOO_LARGE"
+  | "INVALID_PROVIDER_SCHEMA"
   | "INVALID_RESPONSE"
   | "SCHEMA_VALIDATION_FAILED";
 
@@ -57,15 +59,96 @@ export type ChatMessage = Readonly<{
   content: string;
 }>;
 
-export type StructuredGeneration<T> = Readonly<{
+export type StructuredGeneration<ProviderOutput, DomainOutput> = Readonly<{
   messages: readonly ChatMessage[];
-  schema: z.ZodType<T>;
+  output: StructuredOutputContract<ProviderOutput, DomainOutput>;
   schemaName: string;
   signal?: AbortSignal;
 }>;
 
 export interface StructuredLlmClient {
-  generateStructured<T>(input: StructuredGeneration<T>): Promise<T>;
+  generateStructured<ProviderOutput, DomainOutput>(
+    input: StructuredGeneration<ProviderOutput, DomainOutput>,
+  ): Promise<DomainOutput>;
+}
+
+type JsonSchema = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonSchema {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertOpenAiStrictSchema(node: unknown, path = "$"): void {
+  if (!isRecord(node)) return;
+  const format = node.format;
+  const supportedFormats = new Set([
+    "date-time",
+    "time",
+    "date",
+    "duration",
+    "email",
+    "hostname",
+    "ipv4",
+    "ipv6",
+    "uuid",
+  ]);
+  if (typeof format === "string" && !supportedFormats.has(format)) {
+    throw new LlmClientError(
+      "INVALID_PROVIDER_SCHEMA",
+      `Unsupported provider schema format at ${path}`,
+      false,
+    );
+  }
+  if ("minLength" in node || "maxLength" in node) {
+    throw new LlmClientError(
+      "INVALID_PROVIDER_SCHEMA",
+      `Unsupported provider string constraint at ${path}`,
+      false,
+    );
+  }
+  if (isRecord(node.properties)) {
+    const properties = Object.keys(node.properties);
+    const required = Array.isArray(node.required) ? node.required : [];
+    if (
+      properties.some((key) => !required.includes(key)) ||
+      required.length !== properties.length
+    ) {
+      throw new LlmClientError(
+        "INVALID_PROVIDER_SCHEMA",
+        `All provider fields must be required at ${path}`,
+        false,
+      );
+    }
+    if (node.additionalProperties !== false) {
+      throw new LlmClientError(
+        "INVALID_PROVIDER_SCHEMA",
+        `Provider objects must reject additional properties at ${path}`,
+        false,
+      );
+    }
+    for (const [key, child] of Object.entries(node.properties))
+      assertOpenAiStrictSchema(child, `${path}.${key}`);
+  }
+  if (node.items !== undefined)
+    assertOpenAiStrictSchema(node.items, `${path}[]`);
+  if (Array.isArray(node.anyOf))
+    node.anyOf.forEach((child, index) =>
+      assertOpenAiStrictSchema(child, `${path}.anyOf[${index}]`),
+    );
+}
+
+export function toOpenAiStrictJsonSchema(schema: z.ZodType): JsonSchema {
+  const converted = z.toJSONSchema(schema, { io: "output", reused: "inline" });
+  if (!isRecord(converted) || converted.type !== "object") {
+    throw new LlmClientError(
+      "INVALID_PROVIDER_SCHEMA",
+      "Provider schema root must be an object",
+      false,
+    );
+  }
+  delete converted.$schema;
+  assertOpenAiStrictSchema(converted);
+  return converted;
 }
 
 function completionsUrl(baseUrl: string): string {
@@ -114,12 +197,16 @@ export class OpenAiCompatibleClient implements StructuredLlmClient {
     this.config = configSchema.parse(config);
   }
 
-  async generateStructured<T>({
+  async generateStructured<ProviderOutput, DomainOutput>({
     messages,
-    schema,
+    output,
     schemaName,
     signal,
-  }: StructuredGeneration<T>): Promise<T> {
+  }: StructuredGeneration<
+    ProviderOutput,
+    DomainOutput
+  >): Promise<DomainOutput> {
+    const providerJsonSchema = toOpenAiStrictJsonSchema(output.providerSchema);
     const timeoutController = new AbortController();
     const timeout = setTimeout(
       () =>
@@ -147,7 +234,7 @@ export class OpenAiCompatibleClient implements StructuredLlmClient {
             json_schema: {
               name: schemaName,
               strict: true,
-              schema: z.toJSONSchema(schema, { io: "output" }),
+              schema: providerJsonSchema,
             },
           },
         }),
@@ -272,18 +359,29 @@ export class OpenAiCompatibleClient implements StructuredLlmClient {
         );
       }
 
-      const parsed = schema.safeParse(structured);
-      if (!parsed.success) {
+      const providerParsed = output.providerSchema.safeParse(structured);
+      if (!providerParsed.success) {
         throw new LlmClientError(
           "SCHEMA_VALIDATION_FAILED",
           "The structured content did not match its schema",
           false,
           {
-            cause: parsed.error,
+            cause: providerParsed.error,
           },
         );
       }
-      return parsed.data;
+      const domainParsed = output.domainSchema.safeParse(
+        output.normalize(providerParsed.data),
+      );
+      if (!domainParsed.success) {
+        throw new LlmClientError(
+          "SCHEMA_VALIDATION_FAILED",
+          "The normalized content did not match its domain schema",
+          false,
+          { cause: domainParsed.error },
+        );
+      }
+      return domainParsed.data;
     } finally {
       clearTimeout(timeout);
     }

@@ -4,23 +4,99 @@ import path from "node:path";
 import BetterSqlite3 from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { z } from "zod";
+import type { z } from "zod";
 
+import {
+  decodeJsonColumn,
+  evidenceIdListSchema,
+  generationProvenanceSchema,
+  jobSnapshotSchema,
+  personaSnapshotSchema,
+  scoreReasonListSchema,
+} from "@prizgram/shared";
+
+import { databasePathFromUrl, type DatabasePathOptions } from "./config";
 import { schema, tableNames } from "./schema";
 
-const databaseUrlSchema = z.string().trim().min(1);
+export {
+  databasePathFromUrl,
+  databaseUrlFromEnvironment,
+  loadPrizgramEnvironment,
+} from "./config";
 
 export type DatabaseConnection = ReturnType<typeof createDatabase>;
 
-export function databasePathFromUrl(databaseUrl: string): string {
-  const parsed = databaseUrlSchema.parse(databaseUrl);
-  if (parsed === ":memory:" || parsed.startsWith("file:") === false)
-    return parsed;
-  return parsed.slice("file:".length);
+const structuredColumns: ReadonlyArray<{
+  table: string;
+  column: string;
+  schema: z.ZodType;
+}> = [
+  {
+    table: "persona_versions",
+    column: "snapshot",
+    schema: personaSnapshotSchema,
+  },
+  {
+    table: "persona_versions",
+    column: "provenance",
+    schema: generationProvenanceSchema,
+  },
+  { table: "job_versions", column: "snapshot", schema: jobSnapshotSchema },
+  {
+    table: "match_scores",
+    column: "skill_fit_reasons",
+    schema: scoreReasonListSchema,
+  },
+  {
+    table: "match_scores",
+    column: "skill_fit_evidence_refs",
+    schema: evidenceIdListSchema,
+  },
+  {
+    table: "match_scores",
+    column: "culture_value_fit_reasons",
+    schema: scoreReasonListSchema,
+  },
+  {
+    table: "match_scores",
+    column: "culture_value_fit_evidence_refs",
+    schema: evidenceIdListSchema,
+  },
+  {
+    table: "match_scores",
+    column: "difficulty_gap_reasons",
+    schema: scoreReasonListSchema,
+  },
+  {
+    table: "match_scores",
+    column: "difficulty_gap_evidence_refs",
+    schema: evidenceIdListSchema,
+  },
+];
+
+function validateExistingStructuredData(sqlite: BetterSqlite3.Database): void {
+  for (const { column, schema: columnSchema, table } of structuredColumns) {
+    const exists = sqlite
+      .prepare(
+        "select 1 from sqlite_master where type = 'table' and name = ? limit 1",
+      )
+      .get(table);
+    if (exists === undefined) continue;
+
+    const rows = sqlite
+      .prepare(`select \`${column}\` as value from \`${table}\``)
+      .all() as Array<{ value: string }>;
+    for (const { value } of rows) {
+      decodeJsonColumn(`${table}.${column}`, columnSchema, value);
+    }
+  }
 }
 
-export function createDatabase(databaseUrl: string) {
-  const filename = databasePathFromUrl(databaseUrl);
+export function createDatabase(
+  databaseUrl: string,
+  options?: DatabasePathOptions,
+) {
+  const filename = databasePathFromUrl(databaseUrl, options);
   if (filename !== ":memory:") {
     fs.mkdirSync(path.dirname(path.resolve(filename)), { recursive: true });
   }
@@ -61,5 +137,31 @@ export function migrateDatabase(
   connection: DatabaseConnection,
   migrationsFolder: string,
 ): void {
-  migrate(connection.db, { migrationsFolder });
+  // Refuse to mutate a legacy database whose JSON rows cannot be exposed
+  // through the current domain types after the migration.
+  validateExistingStructuredData(connection.sqlite);
+  const violationsBefore = connection.sqlite.pragma("foreign_key_check") as
+    unknown[] | undefined;
+  if ((violationsBefore?.length ?? 0) > 0) {
+    throw new Error(
+      "Database contains foreign key violations before migration",
+    );
+  }
+
+  // SQLite ignores PRAGMA foreign_keys changes inside a transaction. Drizzle
+  // wraps each migration in a transaction, so table-rebuild migrations must
+  // disable enforcement before entering the migrator.
+  connection.sqlite.pragma("foreign_keys = OFF");
+  try {
+    migrate(connection.db, { migrationsFolder });
+  } finally {
+    connection.sqlite.pragma("foreign_keys = ON");
+  }
+
+  const violationsAfter = connection.sqlite.pragma("foreign_key_check") as
+    unknown[] | undefined;
+  if ((violationsAfter?.length ?? 0) > 0) {
+    throw new Error("Database contains foreign key violations after migration");
+  }
+  validateExistingStructuredData(connection.sqlite);
 }

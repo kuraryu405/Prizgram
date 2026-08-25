@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const trimmedString = (max: number) => z.string().trim().min(1).max(max);
 const idSchema = z.string().trim().min(1).max(128);
+export const evidenceIdListSchema = z.array(idSchema).min(1).max(100);
+export const scoreReasonListSchema = z
+  .array(trimmedString(1_000))
+  .min(1)
+  .max(20);
 
 export const evidenceSourceTypes = [
   "user_input",
@@ -185,8 +190,8 @@ export const jobSnapshotSchema = z
 export const scoreDimensionSchema = z
   .object({
     score: z.number().int().finite().min(0).max(100),
-    reasons: z.array(trimmedString(1_000)).min(1).max(20),
-    evidenceRefs: z.array(idSchema).min(1).max(100),
+    reasons: scoreReasonListSchema,
+    evidenceRefs: evidenceIdListSchema,
   })
   .strict();
 

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { AppError, parseRequest, withApiHandler } from "./errors";
+import {
+  apiNoContent,
+  apiResult,
+  AppError,
+  parseRequest,
+  withApiHandler,
+} from "./errors";
 
 describe("withApiHandler", () => {
   it("returns a consistent success envelope", async () => {
@@ -16,6 +22,35 @@ describe("withApiHandler", () => {
       data: { value: 1 },
       requestId: "request-1",
     });
+  });
+
+  it("preserves success status and headers", async () => {
+    const response = await withApiHandler(() =>
+      apiResult(
+        { id: "created" },
+        { status: 201, headers: { "set-cookie": "session=test; HttpOnly" } },
+      ),
+    )(new Request("https://example.test"));
+    expect(response.status).toBe(201);
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("supports a bodyless 204 response", async () => {
+    const response = await withApiHandler(() =>
+      apiNoContent({ "cache-control": "no-store" }),
+    )(new Request("https://example.test"));
+    expect(response.status).toBe(204);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    await expect(response.text()).resolves.toBe("");
+  });
+
+  it("does not allow a body helper to construct a 204 response", () => {
+    expect(() =>
+      // @ts-expect-error A bodyless response must use apiNoContent.
+      apiResult({ invalid: true }, { status: 204 }),
+    ).toThrow(/permits a body/);
   });
 
   it("maps Zod and explicit application errors", async () => {
