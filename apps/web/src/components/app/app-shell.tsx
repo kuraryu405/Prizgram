@@ -13,6 +13,7 @@ const navigationItems = [
   { href: "/app/persona", label: "ペルソナ" },
   { href: "/app/jobs", label: "求人" },
   { href: "/app/applications", label: "応募管理" },
+  { href: "/app/deadlines", label: "締切" },
   { href: "/app/reminders", label: "リマインダー" },
 ] as const;
 
