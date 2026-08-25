@@ -110,14 +110,14 @@ Prizgram は、求人探索、情報整理、求人スコアリング、リマ�
 
 MVP の技術構成は次のとおりです。
 
-| レイヤー | 技術 |
-| --- | --- |
+| レイヤー  | 技術                                                     |
+| --------- | -------------------------------------------------------- |
 | Web / API | Next.js App Router / React / TypeScript / Route Handlers |
-| Database | SQLite / Drizzle ORM |
-| LLM | OpenAI 互換 API / Structured Outputs / Zod |
-| 求人取得 | 外部求人検索 API（MVP は 1 provider） |
-| 定期処理 | cron または node-cron |
-| 実行環境 | AWS EC2 / Node.js 22+ |
+| Database  | SQLite / Drizzle ORM                                     |
+| LLM       | OpenAI 互換 API / Structured Outputs / Zod               |
+| 求人取得  | 外部求人検索 API（MVP は 1 provider）                    |
+| 定期処理  | cron または node-cron                                    |
+| 実行環境  | AWS EC2 / Node.js 22+                                    |
 
 モノレポ構成です。
 
