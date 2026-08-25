@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 
+<<<<<<< HEAD
 import { AuthService, sessionCookieName } from "@/server/auth";
+=======
+import { AuthService, SESSION_COOKIE_NAME } from "@/server/auth";
+>>>>>>> 2200c73 (feat: ログイン・新規登録UIと認証済みアプリシェルを追加)
 import { getDatabase } from "@/server/database";
 
 const workItems = [
@@ -28,7 +32,11 @@ const workItems = [
 ] as const;
 
 export default async function AppHome() {
+<<<<<<< HEAD
   const token = (await cookies()).get(sessionCookieName())?.value;
+=======
+  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+>>>>>>> 2200c73 (feat: ログイン・新規登録UIと認証済みアプリシェルを追加)
   const user = new AuthService(getDatabase()).requireUser(token);
 
   return (
