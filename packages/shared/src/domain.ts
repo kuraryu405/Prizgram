@@ -246,6 +246,32 @@ export const applicationStatuses = [
   "withdrawn",
 ] as const;
 
+/**
+ * Allowed forward transitions between selection statuses. Terminal statuses
+ * permit nothing further; `withdrawn` is reachable while still actionable,
+ * `rejected` closes the funnel from any active stage.
+ */
+export const applicationTransitions: Readonly<
+  Record<ApplicationStatus, readonly ApplicationStatus[]>
+> = {
+  saved: ["applying", "withdrawn"],
+  applying: ["submitted", "withdrawn"],
+  submitted: ["screening", "rejected", "withdrawn"],
+  screening: ["interview", "rejected", "withdrawn"],
+  interview: ["offer", "rejected", "withdrawn"],
+  offer: ["accepted", "rejected", "withdrawn"],
+  accepted: [],
+  rejected: [],
+  withdrawn: [],
+};
+
+export function canTransitionApplication(
+  from: ApplicationStatus,
+  to: ApplicationStatus,
+): boolean {
+  return from !== to && applicationTransitions[from].includes(to);
+}
+
 export const applicationStatusSchema = z.enum(applicationStatuses);
 export const deadlineKinds = [
   "application",

@@ -1,0 +1,404 @@
+import "server-only";
+
+import { randomUUID } from "node:crypto";
+
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
+
+import {
+  applicationStatuses,
+  applicationTransitions,
+  canTransitionApplication,
+  type ApplicationStatus,
+  type AuthenticatedUser,
+} from "@prizgram/shared";
+import {
+  applications,
+  applicationStageEvents,
+  jobs,
+  jobVersions,
+  type DatabaseConnection,
+} from "@prizgram/db";
+
+import { AppError } from "../api";
+
+export const applicationCreateRequestSchema = z
+  .object({
+    jobId: z.string().trim().min(1).max(128),
+    nextAction: z.string().trim().min(1).max(500).optional(),
+    note: z.string().trim().min(1).max(2_000).optional(),
+  })
+  .strict();
+
+export const applicationUpdateRequestSchema = z
+  .object({
+    status: z.enum(applicationStatuses).optional(),
+    nextAction: z.string().trim().max(500).nullable().optional(),
+    note: z.string().trim().max(2_000).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      input.status !== undefined ||
+      input.nextAction !== undefined ||
+      input.note !== undefined,
+    { message: "at least one field must be provided" },
+  );
+
+export type ApplicationCreateInput = z.infer<
+  typeof applicationCreateRequestSchema
+>;
+export type ApplicationUpdateInput = z.infer<
+  typeof applicationUpdateRequestSchema
+>;
+
+export type StageEventView = Readonly<{
+  id: string;
+  sequence: number;
+  fromStatus?: ApplicationStatus;
+  toStatus: ApplicationStatus;
+  note?: string;
+  occurredAt: string;
+}>;
+
+type ApplicationCore = Readonly<{
+  applicationId: string;
+  jobId: string;
+  status: ApplicationStatus;
+  nextAction?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}>;
+
+export type ApplicationSummary = ApplicationCore &
+  Readonly<{ company: string; role: string }>;
+
+export type ApplicationDetail = ApplicationCore &
+  Readonly<{
+    company: string;
+    role: string;
+    allowedNextStatuses: readonly ApplicationStatus[];
+    events: readonly StageEventView[];
+  }>;
+
+export class ApplicationService {
+  constructor(private readonly connection: DatabaseConnection) {}
+
+  /** Creates an application from an owned job. Submission is never automated. */
+  createFromJob(
+    user: AuthenticatedUser,
+    input: ApplicationCreateInput,
+  ): ApplicationSummary {
+    return this.connection.db.transaction((tx) => {
+      const ownedJob = tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.id, input.jobId), eq(jobs.userId, user.id)))
+        .get();
+      if (ownedJob === undefined) {
+        throw new AppError("NOT_FOUND", "Job not found", 404);
+      }
+      const duplicate = tx
+        .select({ id: applications.id })
+        .from(applications)
+        .where(
+          and(
+            eq(applications.userId, user.id),
+            eq(applications.jobId, input.jobId),
+          ),
+        )
+        .get();
+      if (duplicate !== undefined) {
+        throw new AppError(
+          "APPLICATION_EXISTS",
+          "This job is already in your applications",
+          409,
+        );
+      }
+
+      const now = new Date();
+      const applicationId = randomUUID();
+      tx.insert(applications)
+        .values({
+          id: applicationId,
+          userId: user.id,
+          jobId: input.jobId,
+          status: "saved",
+          ...(input.nextAction === undefined
+            ? {}
+            : { nextAction: input.nextAction }),
+        })
+        .run();
+      this.insertEvent(tx, {
+        applicationId,
+        userId: user.id,
+        sequence: 1,
+        fromStatus: null,
+        toStatus: "saved",
+        ...(input.note === undefined ? {} : { note: input.note }),
+        occurredAt: now,
+      });
+
+      const created = tx
+        .select()
+        .from(applications)
+        .where(eq(applications.id, applicationId))
+        .get();
+      if (created === undefined) {
+        throw new AppError("INTERNAL_ERROR", "Application missing", 500);
+      }
+      return {
+        ...this.coreFromDrizzle(created),
+        ...this.companyRole(user.id, input.jobId),
+      };
+    });
+  }
+
+  listApplications(
+    userId: string,
+    filter: { status?: ApplicationStatus } = {},
+  ): ApplicationSummary[] {
+    const rows =
+      filter.status === undefined
+        ? this.connection.db
+            .select()
+            .from(applications)
+            .where(eq(applications.userId, userId))
+            .all()
+        : this.connection.db
+            .select()
+            .from(applications)
+            .where(
+              and(
+                eq(applications.userId, userId),
+                eq(applications.status, filter.status),
+              ),
+            )
+            .all();
+    rows.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+    const companyRoleByJob = this.latestJobVersions(
+      userId,
+      rows.map((row) => row.jobId),
+    );
+    return rows.map((row) => ({
+      ...this.coreFromDrizzle(row),
+      company: companyRoleByJob.get(row.jobId)?.company ?? "(不明)",
+      role: companyRoleByJob.get(row.jobId)?.role ?? "(不明)",
+    }));
+  }
+
+  getApplicationDetail(
+    userId: string,
+    applicationId: string,
+  ): ApplicationDetail {
+    const row = this.loadOwned(userId, applicationId);
+    const eventRows = this.connection.db
+      .select()
+      .from(applicationStageEvents)
+      .where(eq(applicationStageEvents.applicationId, applicationId))
+      .all();
+    eventRows.sort((a, b) => a.sequence - b.sequence);
+    return {
+      ...this.coreFromDrizzle(row),
+      ...this.companyRole(userId, row.jobId),
+      allowedNextStatuses: [...applicationTransitions[row.status]],
+      events: eventRows.map((event) => ({
+        id: event.id,
+        sequence: event.sequence,
+        ...(event.fromStatus === null ? {} : { fromStatus: event.fromStatus }),
+        toStatus: event.toStatus,
+        ...(event.note === null ? {} : { note: event.note }),
+        occurredAt: event.occurredAt.toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * Status transitions append exactly one stage event inside the same
+   * transaction as the update. Sequences are recomputed as max+1 and guarded
+   * by the unique (application_id, sequence) index.
+   */
+  updateApplication(
+    user: AuthenticatedUser,
+    applicationId: string,
+    input: ApplicationUpdateInput,
+  ): ApplicationDetail {
+    this.connection.db.transaction((tx) => {
+      const found = tx
+        .select()
+        .from(applications)
+        .where(
+          and(
+            eq(applications.id, applicationId),
+            eq(applications.userId, user.id),
+          ),
+        )
+        .get();
+      if (found === undefined) {
+        throw new AppError("NOT_FOUND", "Application not found", 404);
+      }
+
+      const statusChanged =
+        input.status !== undefined && input.status !== found.status;
+      if (input.status !== undefined && statusChanged) {
+        if (!canTransitionApplication(found.status, input.status)) {
+          throw new AppError(
+            "INVALID_STATUS_TRANSITION",
+            `Cannot move from ${found.status} to ${input.status}`,
+            409,
+          );
+        }
+      }
+
+      tx.update(applications)
+        .set({
+          ...(statusChanged && input.status !== undefined
+            ? { status: input.status }
+            : {}),
+          ...(input.nextAction === undefined
+            ? {}
+            : input.nextAction === null
+              ? { nextAction: null }
+              : { nextAction: input.nextAction }),
+          ...(input.note === undefined
+            ? {}
+            : input.note === null
+              ? { note: null }
+              : { note: input.note }),
+          updatedAt: new Date(),
+        })
+        .where(eq(applications.id, applicationId))
+        .run();
+
+      if (statusChanged && input.status !== undefined) {
+        const maxSequence = tx
+          .select({
+            value: sql<number>`coalesce(max(${applicationStageEvents.sequence}), 0)`,
+          })
+          .from(applicationStageEvents)
+          .where(eq(applicationStageEvents.applicationId, applicationId))
+          .get();
+        this.insertEvent(tx, {
+          applicationId,
+          userId: user.id,
+          sequence: Number(maxSequence?.value ?? 0) + 1,
+          fromStatus: found.status,
+          toStatus: input.status,
+          ...(input.note !== undefined && input.note !== null
+            ? { note: input.note }
+            : {}),
+          occurredAt: new Date(),
+        });
+      }
+    });
+
+    // Same connection: the transaction above has committed by the time this runs.
+    return this.getApplicationDetail(user.id, applicationId);
+  }
+
+  // --- helpers -----------------------------------------------------------
+
+  private insertEvent(
+    tx: Parameters<Parameters<DatabaseConnection["db"]["transaction"]>[0]>[0],
+    values: {
+      applicationId: string;
+      userId: string;
+      sequence: number;
+      fromStatus: ApplicationStatus | null;
+      toStatus: ApplicationStatus;
+      note?: string;
+      occurredAt: Date;
+    },
+  ): void {
+    tx.insert(applicationStageEvents)
+      .values({
+        id: randomUUID(),
+        applicationId: values.applicationId,
+        userId: values.userId,
+        sequence: values.sequence,
+        ...(values.fromStatus === null
+          ? {}
+          : { fromStatus: values.fromStatus }),
+        toStatus: values.toStatus,
+        ...(values.note === undefined ? {} : { note: values.note }),
+        occurredAt: values.occurredAt,
+      })
+      .run();
+  }
+
+  private loadOwned(userId: string, applicationId: string) {
+    const row = this.connection.db
+      .select()
+      .from(applications)
+      .where(
+        and(
+          eq(applications.id, applicationId),
+          eq(applications.userId, userId),
+        ),
+      )
+      .get();
+    if (row === undefined) {
+      throw new AppError("NOT_FOUND", "Application not found", 404);
+    }
+    return row;
+  }
+
+  private coreFromDrizzle(row: {
+    id: string;
+    status: ApplicationStatus;
+    nextAction: string | null;
+    note?: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    jobId: string;
+  }): ApplicationCore {
+    return {
+      applicationId: row.id,
+      jobId: row.jobId,
+      status: row.status,
+      ...(row.nextAction === null ? {} : { nextAction: row.nextAction }),
+      ...(row.note === undefined || row.note === null
+        ? {}
+        : { note: row.note }),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private companyRole(userId: string, jobId: string) {
+    const versions = this.latestJobVersions(userId, [jobId]);
+    return versions.get(jobId) ?? { company: "(不明)", role: "(不明)" };
+  }
+
+  private latestJobVersions(userId: string, jobIds: string[]) {
+    const result = new Map<string, { company: string; role: string }>();
+    if (jobIds.length === 0) return result;
+    const versionRows = this.connection.db
+      .select({
+        jobId: jobVersions.jobId,
+        version: jobVersions.version,
+        snapshot: jobVersions.snapshot,
+      })
+      .from(jobVersions)
+      .where(
+        and(eq(jobVersions.userId, userId), inArray(jobVersions.jobId, jobIds)),
+      )
+      .all();
+    const latestVersionByJob = new Map<string, number>();
+    for (const row of versionRows) {
+      const current = latestVersionByJob.get(row.jobId) ?? 0;
+      if (row.version > current) latestVersionByJob.set(row.jobId, row.version);
+    }
+    for (const row of versionRows) {
+      if (latestVersionByJob.get(row.jobId) !== row.version) continue;
+      // Drizzle's validated JSON column already decodes + validates.
+      result.set(row.jobId, {
+        company: row.snapshot.company,
+        role: row.snapshot.role,
+      });
+    }
+    return result;
+  }
+}
