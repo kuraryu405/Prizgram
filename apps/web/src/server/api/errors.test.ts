@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { z } from "zod";
 
 import {
@@ -8,6 +8,18 @@ import {
   parseRequest,
   withApiHandler,
 } from "./errors";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+function spyConsoleError(): MockInstance {
+  return vi.spyOn(console, "error").mockImplementation(() => {});
+}
+
+function loggedErrors(spy: MockInstance): string[] {
+  return spy.mock.calls.map(([payload]) => String(payload));
+}
 
 describe("withApiHandler", () => {
   it("returns a consistent success envelope", async () => {
@@ -99,5 +111,95 @@ describe("withApiHandler", () => {
       }),
     );
     expect(response.headers.get("x-request-id")).not.toBe("unsafe request id");
+  });
+
+  it("logs an unexpected error once with the same requestId it returns", async () => {
+    const errorSpy = spyConsoleError();
+    const request = new Request("https://example.test/api/things?query=secret");
+    const response = await withApiHandler(() => {
+      throw new Error("database exploded");
+    })(request);
+    expect(response.status).toBe(500);
+    const {
+      error: { requestId },
+    } = (await response.json()) as { error: { requestId: string } };
+
+    expect(loggedErrors(errorSpy)).toHaveLength(1);
+    const payload = JSON.parse(loggedErrors(errorSpy)[0] ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toMatchObject({
+      level: "error",
+      code: "INTERNAL_ERROR",
+      method: "GET",
+      path: "/api/things",
+      requestId,
+      requestIdSource: "server",
+      name: "Error",
+      message: "database exploded",
+    });
+    expect(typeof payload.stack).toBe("string");
+  });
+
+  it("keeps credentials and query strings out of the error log", async () => {
+    const errorSpy = spyConsoleError();
+    const request = new Request(
+      "https://example.test/api/auth/login?token=leaky",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer super-secret-token",
+          cookie: "prizgram_session=super-secret-session",
+        },
+        body: JSON.stringify({ password: "super-secret-password" }),
+      },
+    );
+    await withApiHandler(() => {
+      throw new Error("failed after reading the request");
+    })(request);
+
+    expect(loggedErrors(errorSpy)).toHaveLength(1);
+    expect(loggedErrors(errorSpy)[0]).not.toContain("super-secret-token");
+    expect(loggedErrors(errorSpy)[0]).not.toContain("super-secret-session");
+    expect(loggedErrors(errorSpy)[0]).not.toContain("super-secret-password");
+    expect(loggedErrors(errorSpy)[0]).not.toContain("leaky");
+  });
+
+  it("does not log expected client-facing application errors", async () => {
+    const errorSpy = spyConsoleError();
+    const conflict = await withApiHandler(() => {
+      throw new AppError("ALREADY_EXISTS", "Already exists", 409);
+    })(new Request("https://example.test"));
+    const invalid = await withApiHandler(() => {
+      parseRequest(z.object({ name: z.string().min(1) }), { name: "" });
+    })(new Request("https://example.test"));
+    expect(conflict.status).toBe(409);
+    expect(invalid.status).toBe(400);
+    expect(loggedErrors(errorSpy)).toEqual([]);
+  });
+
+  it("logs server-fault application errors with their own code", async () => {
+    const errorSpy = spyConsoleError();
+    const response = await withApiHandler(() => {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "Origin is not configured",
+        500,
+      );
+    })(
+      new Request("https://example.test", {
+        headers: { "x-request-id": "client-id-1" },
+      }),
+    );
+    expect(response.status).toBe(500);
+
+    expect(loggedErrors(errorSpy)).toHaveLength(1);
+    expect(JSON.parse(loggedErrors(errorSpy)[0] ?? "{}")).toMatchObject({
+      code: "SERVER_MISCONFIGURED",
+      message: "Origin is not configured",
+      requestId: "client-id-1",
+      requestIdSource: "client",
+    });
   });
 });

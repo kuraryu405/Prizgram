@@ -66,6 +66,51 @@ function errorResponse(
   );
 }
 
+/**
+ * Correlates an unexpected 5xx with the requestId returned to the client.
+ * Only the error identity is logged; request bodies, headers, and query
+ * strings are excluded because they can carry credentials or PII.
+ */
+export function logApiServerError(
+  request: Request,
+  requestId: string,
+  requestIdSource: "client" | "server",
+  error: unknown,
+): void {
+  let path: string;
+  try {
+    path = new URL(request.url).pathname;
+  } catch {
+    path = "<unparsed>";
+  }
+  const base = {
+    level: "error",
+    method: request.method,
+    path,
+    requestId,
+    requestIdSource,
+  };
+
+  if (error instanceof AppError) {
+    // Expected client-facing failures stay quiet; server faults are logged
+    // with their developer-defined code and message, which never embed
+    // request data.
+    if (error.status < 500) return;
+    console.error(
+      JSON.stringify({ ...base, code: error.code, message: error.message }),
+    );
+    return;
+  }
+
+  const details =
+    error instanceof Error
+      ? { name: error.name, message: error.message, stack: error.stack }
+      : { name: "UnknownError", message: String(error), stack: undefined };
+  console.error(
+    JSON.stringify({ ...base, code: "INTERNAL_ERROR", ...details }),
+  );
+}
+
 export type ApiSuccessBody<T> = { ok: true; data: T; requestId: string };
 export type ApiBodyStatus = 200 | 201 | 202 | 203 | 206 | 207 | 208 | 226;
 export type ApiBodyResponseInit = Omit<ResponseInit, "status"> & {
@@ -110,11 +155,12 @@ export type ApiHandler<T> = (
 export function withApiHandler<T>(handler: ApiHandler<T>) {
   return async (request: Request): Promise<NextResponse> => {
     const suppliedRequestId = request.headers.get("x-request-id");
-    const requestId =
+    const requestIdIsClientSupplied =
       suppliedRequestId !== null &&
-      /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedRequestId)
-        ? suppliedRequestId
-        : crypto.randomUUID();
+      /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedRequestId);
+    const requestId = requestIdIsClientSupplied
+      ? suppliedRequestId
+      : crypto.randomUUID();
     try {
       const result = await handler(request);
       if (result instanceof ApiNoContent) {
@@ -131,6 +177,12 @@ export function withApiHandler<T>(handler: ApiHandler<T>) {
         { ...init, status: init.status ?? 200, headers },
       );
     } catch (error) {
+      logApiServerError(
+        request,
+        requestId,
+        requestIdIsClientSupplied ? "client" : "server",
+        error,
+      );
       return errorResponse(error, requestId);
     }
   };
