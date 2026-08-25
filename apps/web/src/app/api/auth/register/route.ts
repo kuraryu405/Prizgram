@@ -1,6 +1,6 @@
 import {
-  assertSameOrigin,
   AuthService,
+  authenticateMutationRequest,
   readCredentials,
   sessionCookie,
   withNoStore,
@@ -9,7 +9,7 @@ import { apiResult, withApiHandler } from "@/server/api";
 import { getDatabase } from "@/server/database";
 
 const register = withApiHandler(async (request) => {
-  assertSameOrigin(request);
+  authenticateMutationRequest(request);
   const credentials = await readCredentials(request);
   const session = await new AuthService(getDatabase()).register(credentials);
   return apiResult(

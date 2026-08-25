@@ -19,6 +19,7 @@ export class AppError extends Error {
     message: string,
     readonly status: number,
     readonly fieldErrors?: Record<string, string[]>,
+    readonly headers?: Readonly<Record<string, string>>,
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -62,7 +63,10 @@ function errorResponse(
           : { fieldErrors: appError.fieldErrors }),
       },
     },
-    { status: appError.status, headers: { "x-request-id": requestId } },
+    {
+      status: appError.status,
+      headers: { ...(appError.headers ?? {}), "x-request-id": requestId },
+    },
   );
 }
 
