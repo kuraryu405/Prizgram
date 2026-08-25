@@ -1,0 +1,47 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: #f5f4ef;
+  color: #1b2722;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  max-width: 18ch;
+  font-size: clamp(2rem, 6vw, 4.5rem);
+  line-height: 1.1;
+}
+
+main > p:last-child {
+  max-width: 48rem;
+  color: #4e5e56;
+  line-height: 1.8;
+}
+
+.eyebrow {
+  color: #087a55;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
