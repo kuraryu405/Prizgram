@@ -18,7 +18,7 @@ export default defineConfig({
       reporter: ["text", "json-summary"],
     },
     environment: "node",
-    include: ["apps/**/*.test.ts", "packages/**/*.test.ts"],
+    include: ["apps/**/*.test.{ts,tsx}", "packages/**/*.test.{ts,tsx}"],
     restoreMocks: true,
   },
 });

@@ -1,0 +1,29 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { LoginForm } from "@/components/auth/login-form";
+import { AuthService, sessionCookieName } from "@/server/auth";
+import { getDatabase } from "@/server/database";
+
+export const metadata: Metadata = { title: "ログイン | Prizgram" };
+
+export default async function LoginPage() {
+  const token = (await cookies()).get(sessionCookieName())?.value;
+  if (new AuthService(getDatabase()).authenticate(token) !== undefined) {
+    redirect("/app");
+  }
+
+  return (
+    <main className="auth-page">
+      <section aria-labelledby="login-title" className="card auth-card">
+        <h1 id="login-title">ログイン</h1>
+        <LoginForm />
+        <p className="auth-switch">
+          アカウントをお持ちでない方は <Link href="/register">新規登録</Link>へ
+        </p>
+      </section>
+    </main>
+  );
+}
