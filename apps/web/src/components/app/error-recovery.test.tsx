@@ -13,13 +13,13 @@ afterEach(() => {
 describe("ErrorRecovery", () => {
   test("shows an accessible recovery action without exposing error details", async () => {
     const error = new Error("database credentials must stay private");
-    const retry = vi.fn();
+    const reset = vi.fn();
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
     const user = userEvent.setup();
 
-    render(<ErrorRecovery error={error} retry={retry} />);
+    render(<ErrorRecovery error={error} reset={reset} />);
 
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(
@@ -32,7 +32,7 @@ describe("ErrorRecovery", () => {
 
     await user.click(screen.getByRole("button", { name: "再試行" }));
 
-    expect(retry).toHaveBeenCalledOnce();
+    expect(reset).toHaveBeenCalledOnce();
     expect(consoleError).toHaveBeenCalledWith("Unexpected route error", error);
   });
 });
