@@ -177,12 +177,12 @@ export default async function AppHome() {
                     </ul>
                   </div>
                 )}
-                <p className="dashboard-links">
-                  <Link href="/app/deadlines">締切一覧へ</Link>
-                  <Link href="/app/reminders">リマインダー一覧へ</Link>
-                </p>
               </>
             )}
+            <p className="dashboard-links">
+              <Link href="/app/deadlines">締切一覧へ</Link>
+              <Link href="/app/reminders">リマインダー一覧へ</Link>
+            </p>
           </section>
         </div>
 
