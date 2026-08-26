@@ -292,6 +292,23 @@ a {
   margin-bottom: 0.75rem;
 }
 
+.error-page {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+}
+
+.error-recovery {
+  max-width: 34rem;
+  width: 100%;
+}
+
+.error-recovery h1 {
+  font-size: 1.5rem;
+}
+
 /* Emphasis for the single most important dashboard card. */
 
 .card-focus {
