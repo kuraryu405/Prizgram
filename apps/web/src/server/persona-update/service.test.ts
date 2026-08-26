@@ -15,7 +15,7 @@ import { personaSnapshotSchema, type PersonaSnapshot } from "@prizgram/shared";
 
 import { AppError } from "../api";
 import { LlmClientError } from "@/server/llm";
-import { PersonaUpdateService } from "./service";
+import { MAX_REEVALUATE_JOBS, PersonaUpdateService } from "./service";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(
@@ -217,5 +217,66 @@ describe("PersonaUpdateService.propose error contract", () => {
         { client: failingClient },
       ),
     ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
+  });
+});
+
+describe("PersonaUpdateService.reEvaluateAll", () => {
+  function seedJobs(count: number): string[] {
+    const jobIds: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const jobId = `job-${index}`;
+      connection.sqlite
+        .prepare("insert into jobs (id, user_id) values (?, ?)")
+        .run(jobId, userA.id);
+      jobIds.push(jobId);
+    }
+    return jobIds;
+  }
+
+  function scoringStub() {
+    const evaluated: string[] = [];
+    return {
+      evaluated,
+      scoring: {
+        evaluate: (userId: string, jobId: string) => {
+          evaluated.push(jobId);
+          return Promise.resolve({
+            detail: { scoreId: `score-${jobId}` },
+            duplicate: false,
+          });
+        },
+      },
+    };
+  }
+
+  it("caps the per-request fan-out and reports the remaining jobs", async () => {
+    seedBaseAndApplication();
+    seedJobs(MAX_REEVALUATE_JOBS + 7);
+    const { evaluated, scoring } = scoringStub();
+
+    const result = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+    });
+
+    expect(evaluated).toHaveLength(MAX_REEVALUATE_JOBS);
+    expect(result.audit).toHaveLength(MAX_REEVALUATE_JOBS);
+    // job-a from seedBaseAndApplication plus the seeded rows.
+    expect(result.remainingJobs).toBe(8);
+    // Oldest jobs first so repeated passes make deterministic progress.
+    expect(result.audit[0]?.jobId).toBe("job-0");
+  });
+
+  it("honors an explicit smaller limit", async () => {
+    seedBaseAndApplication();
+    seedJobs(5);
+    const { evaluated, scoring } = scoringStub();
+
+    const result = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+      limit: 2,
+    });
+
+    expect(evaluated).toHaveLength(2);
+    expect(result.remainingJobs).toBe(4);
   });
 });

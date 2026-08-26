@@ -25,7 +25,7 @@ export const POST = withNoStore(
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(input.personaVersionId)) {
       throw new AppError("NOT_FOUND", "Persona not found", 404);
     }
-    const audit = await new PersonaUpdateService(getDatabase()).reEvaluateAll(
+    const result = await new PersonaUpdateService(getDatabase()).reEvaluateAll(
       user,
       input.personaVersionId,
       {
@@ -45,6 +45,9 @@ export const POST = withNoStore(
         },
       },
     );
-    return apiResult({ audit });
+    return apiResult({
+      audit: result.audit,
+      remainingJobs: result.remainingJobs,
+    });
   }),
 );

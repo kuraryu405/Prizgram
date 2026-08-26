@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -53,6 +53,14 @@ export interface EventEvidenceSource {
   toStatus: string;
   occurredAt: string;
 }
+
+/**
+ * Upper bound on jobs re-evaluated per request. Every processed job may
+ * trigger one LLM call (a fresh persona version never reuses stored
+ * scores), so the fan-out must stay bounded; callers continue by invoking
+ * the endpoint again while `remainingJobs > 0`.
+ */
+export const MAX_REEVALUATE_JOBS = 20;
 
 let environmentClient: StructuredLlmClient | undefined;
 
@@ -359,9 +367,11 @@ export class PersonaUpdateService {
   }
 
   /**
-   * Re-evaluates every owned job's latest version against a persona version.
-   * Per-job failures are captured in the returned audit trail; one failure
-   * does not stop the rest.
+   * Re-evaluates the user's jobs against a persona version, oldest job
+   * first, bounded by `limit` (capped at MAX_REEVALUATE_JOBS). Per-job
+   * failures are captured in the audit trail; one failure does not stop
+   * the rest. `remainingJobs` tells the caller how many jobs were not
+   * processed in this pass.
    */
   async reEvaluateAll(
     user: AuthenticatedUser,
@@ -377,25 +387,33 @@ export class PersonaUpdateService {
           duplicate: boolean;
         }>;
       };
+      limit?: number;
     },
-  ): Promise<
-    Array<
+  ): Promise<{
+    audit: Array<
       | { jobId: string; status: "scored"; scoreId: string }
       | { jobId: string; status: "failed"; code: string }
-    >
-  > {
+    >;
+    remainingJobs: number;
+  }> {
     this.baseVersion(user, personaVersionId);
-    const jobRows = this.connection.db
+    const effectiveLimit = Math.max(
+      0,
+      Math.min(options.limit ?? MAX_REEVALUATE_JOBS, MAX_REEVALUATE_JOBS),
+    );
+    const totalJobs = this.connection.db
       .select({ id: jobs.id })
       .from(jobs)
       .where(eq(jobs.userId, user.id))
+      .orderBy(asc(jobs.createdAt), asc(jobs.id))
       .all();
 
+    const targets = totalJobs.slice(0, effectiveLimit);
     const audit: Array<
       | { jobId: string; status: "scored"; scoreId: string }
       | { jobId: string; status: "failed"; code: string }
     > = [];
-    for (const job of jobRows) {
+    for (const job of targets) {
       try {
         const result = await options.scoring.evaluate(user.id, job.id, {
           personaVersionId,
@@ -416,6 +434,9 @@ export class PersonaUpdateService {
         });
       }
     }
-    return audit;
+    return {
+      audit,
+      remainingJobs: Math.max(0, totalJobs.length - targets.length),
+    };
   }
 }
