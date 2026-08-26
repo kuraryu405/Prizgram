@@ -437,8 +437,12 @@ describe("JobService.importJob with provider provenance", () => {
     expect(second.duplicate).toBe(false);
     expect(second.jobId).toBe(first.jobId);
     expect(second.version).toBe(2);
-    expect(service.getJobDetail(userA.id, first.jobId).versions).toHaveLength(2);
-    expect(service.getJobDetail(userA.id, first.jobId).latest.snapshot.requirements).toHaveLength(2);
+    expect(service.getJobDetail(userA.id, first.jobId).versions).toHaveLength(
+      2,
+    );
+    expect(
+      service.getJobDetail(userA.id, first.jobId).latest.snapshot.requirements,
+    ).toHaveLength(2);
   });
 
   it("scopes external-id dedupe per user", async () => {

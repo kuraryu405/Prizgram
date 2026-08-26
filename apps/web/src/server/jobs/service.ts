@@ -284,10 +284,7 @@ export class JobService {
       // shares the same external identity, updates belong to it regardless of
       // whether the caller supplied an explicit jobId (unless mismatched).
       if (provisionedJobId !== undefined) {
-        if (
-          input.jobId !== undefined &&
-          input.jobId !== provisionedJobId
-        ) {
+        if (input.jobId !== undefined && input.jobId !== provisionedJobId) {
           throw new AppError(
             "VALIDATION_ERROR",
             "jobId does not match the provider's logical job",
