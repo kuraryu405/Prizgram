@@ -1,24 +1,13 @@
 import Link from "next/link";
 
 import { ApplicationAddForm } from "@/components/applications/application-add-form";
+import { applicationStatusLabels } from "@/lib/labels";
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
 import { JobService } from "@/server/jobs/service";
 import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
-
-export const applicationStatusLabels: Readonly<Record<string, string>> = {
-  accepted: "内定承諾",
-  applying: "応募中",
-  interview: "面接",
-  offer: "内定",
-  rejected: "落選",
-  saved: "保存済み",
-  screening: "書類選考",
-  submitted: "応募送信済み",
-  withdrawn: "辞退",
-};
 
 const filterStatuses = [
   "saved",
