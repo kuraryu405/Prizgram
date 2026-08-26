@@ -235,7 +235,10 @@ export default async function AppHome() {
                           )}{" "}
                           {deadline.title}（
                           {deadlineKindLabels[deadline.kind] ?? deadline.kind}
-                          ）— {formatDateTime(deadline.dueAt)}
+                          ）—{" "}
+                          <time dateTime={deadline.dueAt}>
+                            {formatDateTime(deadline.dueAt)}
+                          </time>
                         </li>
                       ))}
                     </ul>
@@ -382,7 +385,10 @@ export default async function AppHome() {
             ) : (
               <>
                 <p className="summary-line">
-                  最終更新: {formatDateTime(persona.createdAt)}
+                  最終更新:{" "}
+                  <time dateTime={persona.createdAt}>
+                    {formatDateTime(persona.createdAt)}
+                  </time>
                   <span className="hint-text">（v{persona.version}）</span>
                 </p>
                 <p className="hint-text">
