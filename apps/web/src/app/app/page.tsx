@@ -97,6 +97,17 @@ export default async function AppHome() {
     (application) => !closedApplicationStatuses.has(application.status),
   ).length;
 
+  // Brand-new users (nothing registered at all) get a single onboarding
+  // flow instead of a dashboard of unrelated empty cards.
+  const onboardingNeeded =
+    persona === undefined &&
+    jobList.length === 0 &&
+    applications.length === 0 &&
+    deadlines.length === 0;
+  // Empty states skip their own CTA when the next-actions list already
+  // links to the same place, so the same guidance is not shown twice.
+  const actionHrefs = new Set(actions.map((action) => action.href));
+
   return (
     <div className="page page-dashboard">
       <h1>ようこそ、{user.loginId} さん</h1>
@@ -106,25 +117,94 @@ export default async function AppHome() {
 
       <div className="dashboard-grid">
         <div className="dashboard-area dashboard-area--focus">
-          <section aria-labelledby="next-actions" className="card card-focus">
-            <h2 id="next-actions">次のアクション</h2>
-            {actions.length === 0 ? (
+          {onboardingNeeded ? (
+            <section
+              aria-labelledby="getting-started"
+              className="card card-focus"
+            >
+              <h2 id="getting-started">はじめましょう</h2>
               <p className="hint-text">
-                いま取り組むべき項目はありません。新しい求人の取り込みや評価から進めてみましょう。
+                4つのステップで、就活の進行と締切をここで管理できるようになります。
               </p>
-            ) : (
-              <ol className="action-list">
-                {actions.map((action) => (
-                  <li key={action.label} className={action.tone}>
-                    <Link href={action.href}>
-                      <span className="action-label">{action.label}</span>
-                      <span className="hint-text">{action.detail}</span>
-                    </Link>
-                  </li>
-                ))}
+              <ol className="onboarding-steps">
+                <li>
+                  <span className="onboarding-step-head">
+                    <span aria-hidden="true" className="onboarding-step-number">
+                      1
+                    </span>
+                    <span className="onboarding-step-title">
+                      ペルソナを作る
+                    </span>
+                  </span>
+                  <p className="hint-text">
+                    ヒアリングに答えると、スキル・経験・価値観が整理され、求人評価の基準になります。
+                  </p>
+                  <Link href="/app/persona/intake">
+                    ペルソナ・ヒアリングを始める
+                  </Link>
+                </li>
+                <li>
+                  <span className="onboarding-step-head">
+                    <span aria-hidden="true" className="onboarding-step-number">
+                      2
+                    </span>
+                    <span className="onboarding-step-title">
+                      求人を取り込む
+                    </span>
+                  </span>
+                  <p className="hint-text">
+                    気になる求人を貼り付けて保存すると、3軸で評価できます。
+                  </p>
+                </li>
+                <li>
+                  <span className="onboarding-step-head">
+                    <span aria-hidden="true" className="onboarding-step-number">
+                      3
+                    </span>
+                    <span className="onboarding-step-title">
+                      応募を登録する
+                    </span>
+                  </span>
+                  <p className="hint-text">
+                    選考ステータスの変化を記録し、進捗として把握できます。
+                  </p>
+                </li>
+                <li>
+                  <span className="onboarding-step-head">
+                    <span aria-hidden="true" className="onboarding-step-number">
+                      4
+                    </span>
+                    <span className="onboarding-step-title">
+                      締切を登録する
+                    </span>
+                  </span>
+                  <p className="hint-text">
+                    日が近づくとリマインダーがこの画面に表示されます。
+                  </p>
+                </li>
               </ol>
-            )}
-          </section>
+            </section>
+          ) : (
+            <section aria-labelledby="next-actions" className="card card-focus">
+              <h2 id="next-actions">次のアクション</h2>
+              {actions.length === 0 ? (
+                <p className="hint-text">
+                  いま取り組むべき項目はありません。新しい求人の取り込みや評価から進めてみましょう。
+                </p>
+              ) : (
+                <ol className="action-list">
+                  {actions.map((action) => (
+                    <li key={action.label} className={action.tone}>
+                      <Link href={action.href}>
+                        <span className="action-label">{action.label}</span>
+                        <span className="hint-text">{action.detail}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          )}
 
           <section aria-labelledby="dashboard-deadlines" className="card">
             <h2 id="dashboard-deadlines">締切とリマインダー</h2>
@@ -190,9 +270,16 @@ export default async function AppHome() {
           <section aria-labelledby="dashboard-applications" className="card">
             <h2 id="dashboard-applications">応募の状況</h2>
             {applications.length === 0 ? (
-              <p className="hint-text">
-                まだ応募がありません。取り込んだ求人から応募を登録すると、選考履歴を追跡できます。
-              </p>
+              <>
+                <p className="hint-text">
+                  まだ応募がありません。取り込んだ求人から応募を登録すると、このカードに選考の進捗が表示されます。
+                </p>
+                {actionHrefs.has("/app/applications") ? null : (
+                  <p className="dashboard-links">
+                    <Link href="/app/applications">応募を登録する</Link>
+                  </p>
+                )}
+              </>
             ) : (
               <>
                 <p className="summary-line">
@@ -216,10 +303,16 @@ export default async function AppHome() {
           <section aria-labelledby="dashboard-jobs" className="card">
             <h2 id="dashboard-jobs">取り込んだ求人と評価</h2>
             {jobList.length === 0 ? (
-              <p className="hint-text">
-                求人がまだありません。<Link href="/app/jobs">求人取り込み</Link>{" "}
-                から始めてください。
-              </p>
+              <>
+                <p className="hint-text">
+                  求人がまだありません。求人票を貼り付けて取り込むと、このカードに一覧と評価が表示されます。
+                </p>
+                {actionHrefs.has("/app/jobs") ? null : (
+                  <p className="dashboard-links">
+                    <Link href="/app/jobs">求人取り込みへ</Link>
+                  </p>
+                )}
+              </>
             ) : (
               <>
                 <p className="summary-line">
@@ -261,15 +354,10 @@ export default async function AppHome() {
           <section aria-labelledby="dashboard-persona" className="card">
             <h2 id="dashboard-persona">ペルソナ</h2>
             {persona === undefined ? (
-              <>
-                <p className="hint-text">
-                  まだペルソナがありません。
-                  ヒアリングに答えると、スキル・経験・価値観が構造化され、求人評価の基準になります。
-                </p>
-                <p className="dashboard-links">
-                  <Link href="/app/persona/intake">ヒアリングを開始</Link>
-                </p>
-              </>
+              <p className="hint-text">
+                まだペルソナがありません。
+                ヒアリングに答えると、スキル・経験・価値観が構造化され、求人評価の基準になります。
+              </p>
             ) : (
               <>
                 <p className="summary-line">
