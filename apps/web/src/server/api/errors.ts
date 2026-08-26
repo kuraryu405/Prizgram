@@ -123,6 +123,37 @@ function errorResponse(
   );
 }
 
+type LoggedErrorCause = {
+  name: string;
+  code?: string;
+  message: string;
+};
+
+/** Upper bound so circular or pathological cause chains cannot spin. */
+const MAX_CAUSE_CHAIN_DEPTH = 3;
+
+/**
+ * Summarizes an AppError's cause chain as developer-defined identities
+ * (name, typed code, static message) so upstream faults such as "provider
+ * returned HTTP 401" are diagnosable from logs alone without SSH access to
+ * re-run requests. The chain is truncated defensively.
+ */
+export function describeAppErrorCauses(error: AppError): LoggedErrorCause[] {
+  const causes: LoggedErrorCause[] = [];
+  let current: unknown = error.cause;
+  for (let depth = 0; depth < MAX_CAUSE_CHAIN_DEPTH; depth += 1) {
+    if (!(current instanceof Error)) break;
+    const typedCode = (current as unknown as { code?: unknown }).code;
+    causes.push({
+      name: current.name,
+      ...(typeof typedCode === "string" ? { code: typedCode } : {}),
+      message: current.message,
+    });
+    current = current.cause;
+  }
+  return causes;
+}
+
 /**
  * Correlates an unexpected 5xx with the requestId returned to the client.
  * Only the error identity is logged; request bodies, headers, and query
@@ -154,7 +185,14 @@ export function logApiServerError(
     // request data.
     if (error.status < 500) return;
     console.error(
-      JSON.stringify({ ...base, code: error.code, message: error.message }),
+      JSON.stringify({
+        ...base,
+        code: error.code,
+        message: error.message,
+        ...(describeAppErrorCauses(error).length > 0
+          ? { causes: describeAppErrorCauses(error) }
+          : {}),
+      }),
     );
     return;
   }
