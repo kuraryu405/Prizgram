@@ -131,7 +131,7 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
-  const { user, status, logout } = useAuth();
+  const { user, status, logout, reloadSession } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -140,6 +140,31 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
   }, [status, router]);
+
+  if (status === "unavailable") {
+    // Transient failures must not look like a logged-out session.
+    return (
+      <main className="app-main">
+        <div className="card form-stack" role="alert">
+          <p>
+            セッション情報の取得に失敗しました。ネットワークを確認してください。
+          </p>
+          <div className="button-row">
+            <button
+              className="button button-primary"
+              onClick={reloadSession}
+              type="button"
+            >
+              再試行
+            </button>
+            <Link className="button button-secondary" href="/login">
+              ログインへ
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (status !== "authenticated" || user === null) {
     return (

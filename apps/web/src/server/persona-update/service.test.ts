@@ -14,7 +14,8 @@ import {
 import { personaSnapshotSchema, type PersonaSnapshot } from "@prizgram/shared";
 
 import { AppError } from "../api";
-import { PersonaUpdateService } from "./service";
+import { LlmClientError } from "@/server/llm";
+import { MAX_REEVALUATE_JOBS, PersonaUpdateService } from "./service";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.resolve(
@@ -175,5 +176,162 @@ describe("PersonaUpdateService", () => {
         snapshot: proposedSnapshot(),
       }),
     ).toThrow(AppError);
+  });
+
+  it("returns the stored version when the same requestId is replayed", () => {
+    const ids = seedBaseAndApplication();
+    const input = {
+      basePersonaVersionId: ids.personaVersionId,
+      requestId: "req-replay-1",
+      snapshot: proposedSnapshot(),
+    };
+
+    const first = service.approve(userA, input);
+    const second = service.approve(userA, input);
+
+    expect(second.personaVersionId).toBe(first.personaVersionId);
+    expect(second.version).toBe(first.version);
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(2);
+  });
+});
+
+describe("PersonaUpdateService.propose error contract", () => {
+  it("maps retryable LLM failures to UPSTREAM_UNAVAILABLE without writing", async () => {
+    const ids = seedBaseAndApplication();
+    const failingClient = {
+      generateStructured: () =>
+        Promise.reject(new LlmClientError("TIMEOUT", "timed out", true)),
+    };
+    await expect(
+      service.propose(
+        userA,
+        {
+          personaVersionId: ids.personaVersionId,
+          reflection: "面接でデータ基盤への興味を評価された。",
+        },
+        { client: failingClient },
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_UNAVAILABLE", status: 502 });
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
+
+  it("maps non-retryable LLM failures to UPSTREAM_INVALID_RESPONSE", async () => {
+    const ids = seedBaseAndApplication();
+    const failingClient = {
+      generateStructured: () =>
+        Promise.reject(
+          new LlmClientError("SCHEMA_VALIDATION_FAILED", "bad shape", false),
+        ),
+    };
+    await expect(
+      service.propose(
+        userA,
+        {
+          personaVersionId: ids.personaVersionId,
+          reflection: "面接でデータ基盤への興味を評価された。",
+        },
+        { client: failingClient },
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
+  });
+});
+
+describe("PersonaUpdateService.reEvaluateAll", () => {
+  function seedJobs(count: number): string[] {
+    const jobIds: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const jobId = `job-${index}`;
+      connection.sqlite
+        .prepare("insert into jobs (id, user_id) values (?, ?)")
+        .run(jobId, userA.id);
+      jobIds.push(jobId);
+    }
+    return jobIds;
+  }
+
+  function scoringStub() {
+    const evaluated: string[] = [];
+    return {
+      evaluated,
+      scoring: {
+        evaluate: (userId: string, jobId: string) => {
+          evaluated.push(jobId);
+          return Promise.resolve({
+            detail: { scoreId: `score-${jobId}` },
+            duplicate: false,
+          });
+        },
+      },
+    };
+  }
+
+  /** Persists what one pass produced so the next pass can observe it. */
+  function markScored(personaVersionId: string, jobIds: string[]): void {
+    for (const jobId of jobIds) {
+      connection.sqlite
+        .prepare(
+          "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, 1, '{}', 'hash')",
+        )
+        .run(`jv-${jobId}`, userA.id, jobId);
+      connection.sqlite
+        .prepare(
+          "insert into match_scores (id, user_id, persona_version_id, job_version_id, skill_fit_score, skill_fit_reasons, skill_fit_evidence_refs, culture_value_fit_score, culture_value_fit_reasons, culture_value_fit_evidence_refs, difficulty_gap_score, difficulty_gap_reasons, difficulty_gap_evidence_refs, model, prompt_version) values (?, ?, ?, ?, 50, '[]', '[]', 50, '[]', '[]', 50, '[]', '[]', 'test-model', 'test-prompt')",
+        )
+        .run(`score-${jobId}`, userA.id, personaVersionId, `jv-${jobId}`);
+    }
+  }
+
+  it("caps the per-request fan-out and reports the remaining jobs", async () => {
+    seedBaseAndApplication();
+    seedJobs(MAX_REEVALUATE_JOBS + 7);
+    const { evaluated, scoring } = scoringStub();
+
+    const result = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+    });
+
+    expect(evaluated).toHaveLength(MAX_REEVALUATE_JOBS);
+    expect(result.audit).toHaveLength(MAX_REEVALUATE_JOBS);
+    // job-a from seedBaseAndApplication plus the seeded rows.
+    expect(result.remainingJobs).toBe(8);
+    // Oldest jobs first so repeated passes make deterministic progress.
+    expect(result.audit[0]?.jobId).toBe("job-0");
+  });
+
+  it("honors an explicit smaller limit", async () => {
+    seedBaseAndApplication();
+    seedJobs(5);
+    const { evaluated, scoring } = scoringStub();
+
+    const result = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+      limit: 2,
+    });
+
+    expect(evaluated).toHaveLength(2);
+    expect(result.remainingJobs).toBe(4);
+  });
+
+  it("skips jobs already scored for the persona so repeated passes converge", async () => {
+    seedBaseAndApplication();
+    seedJobs(MAX_REEVALUATE_JOBS + 7);
+    const { evaluated, scoring } = scoringStub();
+
+    const first = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+    });
+    expect(first.remainingJobs).toBe(8);
+    const firstBatch = new Set(evaluated);
+    markScored("persona-base", [...evaluated]);
+
+    const second = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+    });
+
+    expect(second.audit).toHaveLength(first.remainingJobs);
+    for (const entry of second.audit) {
+      expect(firstBatch.has(entry.jobId)).toBe(false);
+    }
+    expect(second.remainingJobs).toBe(0);
   });
 });

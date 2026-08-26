@@ -26,6 +26,7 @@ export function PersonaUpdateFlow({
   const [applicationId, setApplicationId] = useState("");
   const [proposed, setProposed] = useState<Proposed | null>(null);
   const [audit, setAudit] = useState<AuditEntry[] | null>(null);
+  const [remainingJobs, setRemainingJobs] = useState<number | null>(null);
   const [, setNewPersonaVersionId] = useState<string | null>(null);
   const [pending, setPending] = useState<
     "propose" | "approve" | "reeval" | null
@@ -84,11 +85,15 @@ export function PersonaUpdateFlow({
   const reEvaluate = async (targetPersonaVersionId: string) => {
     setPending("reeval");
     try {
-      const result = await apiFetch<{ audit: AuditEntry[] }>(
+      const result = await apiFetch<{
+        audit: AuditEntry[];
+        remainingJobs: number;
+      }>(
         "/api/persona/update/re-evaluate",
         jsonRequestInit("POST", { personaVersionId: targetPersonaVersionId }),
       );
       setAudit(result.audit);
+      setRemainingJobs(result.remainingJobs);
     } catch (e) {
       setError(describeApiError(e));
     } finally {
@@ -182,6 +187,12 @@ export function PersonaUpdateFlow({
               </li>
             ))}
           </ul>
+          {remainingJobs !== null && remainingJobs > 0 && (
+            <p className="hint-text" role="status">
+              保存求人が多いため、今回で{remainingJobs}
+              件が未処理です。このページを再読み込みして再度承認・再評価を実行してください。
+            </p>
+          )}
         </section>
       )}
     </div>

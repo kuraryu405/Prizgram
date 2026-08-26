@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -16,17 +17,21 @@ import {
 } from "@prizgram/shared";
 
 import {
+  ApiClientError,
   apiFetch,
   jsonRequestInit,
   UNAUTHORIZED_EVENT,
 } from "@/lib/api-client";
 
-export type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+export type AuthStatus =
+  "loading" | "authenticated" | "unauthenticated" | "unavailable";
 
 type AuthContextValue = Readonly<{
   user: AuthenticatedUser | null;
   status: AuthStatus;
   refresh: () => Promise<void>;
+  /** Restarts session restoration after a transient failure. */
+  reloadSession: () => void;
   login: (credentials: { loginId: string; password: string }) => Promise<void>;
   register: (credentials: {
     loginId: string;
@@ -36,6 +41,12 @@ type AuthContextValue = Readonly<{
 }>;
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const RESTORE_MAX_RETRIES = 2;
+
+function isAuthRequiredError(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 401;
+}
 
 async function requestSession(
   path: string,
@@ -51,37 +62,65 @@ async function requestSession(
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [user, setUser] = useState<AuthenticatedUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
+  const retryTimerRef = useRef<number | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const data = await apiFetch<{ user: unknown }>("/api/auth/me");
-      setUser(authenticatedUserSchema.parse(data.user));
-      setStatus("authenticated");
-    } catch {
-      setUser(null);
-      setStatus("unauthenticated");
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
   }, []);
 
-  // The initial restore mirrors refresh() but keeps its state updates inside
-  // promise callbacks so the effect never sets state synchronously.
+  const restoreRef = useRef<(attempt?: number) => void>(() => undefined);
+
+  /**
+   * Resolves the session from /api/auth/me. Only an explicit 401 marks the
+   * user as unauthenticated; network errors and 5xx stay unresolved and are
+   * retried a limited number of times before surfacing as `unavailable`,
+   * so a transient blip never kicks a signed-in user to the login page.
+   */
+  const restore = useCallback(
+    (attempt = 0) => {
+      clearRetryTimer();
+      apiFetch<{ user: unknown }>("/api/auth/me")
+        .then((data) => {
+          const parsed = authenticatedUserSchema.safeParse(data.user);
+          if (!parsed.success) {
+            // Malformed payloads must not be trusted as a session.
+            setUser(null);
+            setStatus("unauthenticated");
+            return;
+          }
+          setUser(parsed.data);
+          setStatus("authenticated");
+        })
+        .catch((error: unknown) => {
+          if (isAuthRequiredError(error)) {
+            setUser(null);
+            setStatus("unauthenticated");
+            return;
+          }
+          if (attempt < RESTORE_MAX_RETRIES) {
+            retryTimerRef.current = window.setTimeout(
+              () => restoreRef.current(attempt + 1),
+              500 * (attempt + 1),
+            );
+            return;
+          }
+          setStatus("unavailable");
+        });
+    },
+    [clearRetryTimer],
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    apiFetch<{ user: unknown }>("/api/auth/me")
-      .then((data) => {
-        if (cancelled) return;
-        setUser(authenticatedUserSchema.parse(data.user));
-        setStatus("authenticated");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setUser(null);
-        setStatus("unauthenticated");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    restoreRef.current = restore;
+  }, [restore]);
+
+  useEffect(() => {
+    restore();
+    return clearRetryTimer;
+  }, [restore, clearRetryTimer]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
@@ -92,6 +131,25 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     return () =>
       window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
   }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ user: unknown }>("/api/auth/me");
+      setUser(authenticatedUserSchema.parse(data.user));
+      setStatus("authenticated");
+    } catch (error) {
+      // A failed probe must not log the user out; only an explicit 401 does.
+      if (isAuthRequiredError(error)) {
+        setUser(null);
+        setStatus("unauthenticated");
+      }
+    }
+  }, []);
+
+  const reloadSession = useCallback(() => {
+    setStatus("loading");
+    restore();
+  }, [restore]);
 
   const login = useCallback(
     async (credentials: { loginId: string; password: string }) => {
@@ -116,8 +174,16 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, status, refresh, login, register, logout }),
-    [user, status, refresh, login, register, logout],
+    () => ({
+      user,
+      status,
+      refresh,
+      reloadSession,
+      login,
+      register,
+      logout,
+    }),
+    [user, status, refresh, reloadSession, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
