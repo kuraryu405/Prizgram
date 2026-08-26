@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "reminders:cron": "tsx scripts/run-reminders.ts"
+    "reminders:cron": "tsx scripts/run-reminders.ts",
+    "start": "next start"
   },
   "dependencies": {
     "@prizgram/db": "workspace:*",

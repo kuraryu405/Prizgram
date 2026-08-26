@@ -1,0 +1,72 @@
+name: Release
+
+# main の CI が成功した直後だけ production へ deploy する (docs/development.md の CD 設計)。
+# Secrets / vars は GitHub Environment `production` に置く (workflow への埋め込み禁止)。
+#
+# 必要な設定:
+#   secrets.SSH_HOST, secrets.SSH_USER, secrets.SSH_PRIVATE_KEY
+#   vars (任意): DEPLOY_DIR=/opt/prizgram, PROD_URL=https://prizgram.kuraryu.jp,
+#                SERVICE_RESTART_CMD="sudo systemctl restart prizgram"
+#
+# 初回セットアップ:
+#   1. EC2 側で /opt/prizgram にリポジトリを配置済みであること (docs/deployment.md)
+#   2. CI 用公開鍵をサーバの authorized_keys に登録
+#   3. GitHub Environment `production` に上記 secrets を登録
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout deployed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify release configuration
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for name in SSH_HOST SSH_USER SSH_PRIVATE_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::GitHub Environment 'production' に次の secret が未設定です: ${missing[*]}" >&2
+            echo "docs/deployment.md と workflow 先頭コメントの手順に従って設定してください。" >&2
+            exit 1
+          fi
+
+      - name: Deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+          PROD_URL: ${{ vars.PROD_URL }}
+          SERVICE_RESTART_CMD: ${{ vars.SERVICE_RESTART_CMD }}
+        run: bash scripts/cd/deploy.sh
