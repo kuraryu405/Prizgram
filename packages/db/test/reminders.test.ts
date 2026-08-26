@@ -198,7 +198,9 @@ describe("ReminderService.generateDueReminders", () => {
 
     // Move deadline 1 week into the future (>7d => no bucket)
     connection.sqlite
-      .prepare("update application_deadlines set due_at = ?, updated_at = ? where id = ?")
+      .prepare(
+        "update application_deadlines set due_at = ?, updated_at = ? where id = ?",
+      )
       .run(now.getTime() + 10 * DAY_MS, now.getTime() + 1, "dl-resched-row");
     const afterNow = new Date(now.getTime() + 60_000);
     // Next generation should dismiss the stale 24h reminder and create nothing (too far)
@@ -260,7 +262,9 @@ describe("ReminderService.generateDueReminders", () => {
     const after = service.listActive(userA, later);
     expect(after).toHaveLength(1);
     // Dedupe changes, so old is dismissed – total rows 2 but only 1 active
-    const all = connection.sqlite.prepare("select count(*) as c from reminders").get() as { c: number };
+    const all = connection.sqlite
+      .prepare("select count(*) as c from reminders")
+      .get() as { c: number };
     expect(all.c).toBe(2);
   });
 });

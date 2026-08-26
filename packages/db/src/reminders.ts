@@ -208,7 +208,10 @@ export class ReminderService {
     // Preload existing active reminders for all scanned deadlines in one query
     // to avoid per-deadline N+1.
     const deadlineIds = rows.map((row) => row.id);
-    const activeByDeadline = new Map<string, Array<typeof reminders.$inferSelect>>();
+    const activeByDeadline = new Map<
+      string,
+      Array<typeof reminders.$inferSelect>
+    >();
     if (deadlineIds.length > 0) {
       const actives = this.db
         .select()
@@ -496,7 +499,10 @@ export class ReminderService {
     return this.dismissMany(userId, [reminderId]) === 1;
   }
 
-  countActive(userId: string, now: Date = new Date()): { urgent: number; total: number } {
+  countActive(
+    userId: string,
+    now: Date = new Date(),
+  ): { urgent: number; total: number } {
     const rows = this.listActive(userId, now);
     return {
       urgent: rows.filter((row) => row.priority === "urgent").length,
