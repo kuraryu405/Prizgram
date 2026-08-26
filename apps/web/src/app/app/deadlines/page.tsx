@@ -4,20 +4,13 @@ import {
   DeadlineCreateForm,
   DeadlineToggle,
 } from "@/components/deadlines/deadline-components";
+import { deadlineKindLabels as kindLabels } from "@/lib/labels";
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
 import { DeadlineService, type DeadlineView } from "@/server/deadlines/service";
 import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
-
-const kindLabels: Readonly<Record<string, string>> = {
-  application: "応募締切",
-  document: "ES・書類",
-  interview: "面接",
-  offer_response: "内定承諾",
-  other: "その他",
-};
 
 function formatInZone(view: DeadlineView): string {
   return new Intl.DateTimeFormat("ja-JP", {
