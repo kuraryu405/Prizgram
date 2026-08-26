@@ -457,9 +457,35 @@ export class ScoringService {
     return rows.map((row) => row.id);
   }
 
+  private loadLatestPersonaVersionId(userId: string): string | undefined {
+    const row = this.connection.db
+      .select({ id: personaVersions.id })
+      .from(personaVersions)
+      .where(eq(personaVersions.userId, userId))
+      .orderBy(desc(personaVersions.version))
+      .limit(1)
+      .get();
+    return row?.id;
+  }
+
+  private loadLatestJobVersionId(
+    userId: string,
+    jobId: string,
+  ): string | undefined {
+    const row = this.connection.db
+      .select({ id: jobVersions.id })
+      .from(jobVersions)
+      .where(and(eq(jobVersions.userId, userId), eq(jobVersions.jobId, jobId)))
+      .orderBy(desc(jobVersions.version))
+      .limit(1)
+      .get();
+    return row?.id;
+  }
+
   /**
    * Returns the newest stored evaluation for a job, regardless of which
    * versions it pinned, so the UI can always show current standings.
+   * @deprecated Prefer getCurrentScore for freshness-aware UI; this is history.
    */
   getLatestScore(userId: string, jobId: string): ScoreDetail | undefined {
     // match_scores has no job_id column; scores are scoped to job versions.
@@ -481,6 +507,123 @@ export class ScoringService {
     return row === undefined ? undefined : toScoreDetail(row);
   }
 
+  /**
+   * Returns the fresh evaluation pinned to the user's latest persona version
+   * and the job's latest version. Stale scores (different versions) are not
+   * considered current and return undefined; they remain accessible via
+   * listScores history.
+   */
+  getCurrentScore(userId: string, jobId: string): ScoreDetail | undefined {
+    const latestPersona = this.loadLatestPersonaVersionId(userId);
+    const latestJob = this.loadLatestJobVersionId(userId, jobId);
+    if (latestPersona === undefined || latestJob === undefined) return undefined;
+    const row = this.connection.db
+      .select()
+      .from(matchScores)
+      .where(
+        and(
+          eq(matchScores.userId, userId),
+          eq(matchScores.personaVersionId, latestPersona),
+          eq(matchScores.jobVersionId, latestJob),
+        ),
+      )
+      .orderBy(desc(matchScores.createdAt))
+      .limit(1)
+      .get();
+    return row === undefined ? undefined : toScoreDetail(row);
+  }
+
+  /**
+   * Batch variant of getCurrentScore: one persona lookup + one job_versions
+   * lookup + one match_scores lookup regardless of N. Returns only fresh scores.
+   */
+  getCurrentScores(
+    userId: string,
+    jobIds: readonly string[],
+  ): ReadonlyMap<string, ScoreDetail> {
+    const uniqueIds = [...new Set(jobIds)];
+    if (uniqueIds.length === 0) return new Map();
+    const latestPersona = this.loadLatestPersonaVersionId(userId);
+    if (latestPersona === undefined) return new Map();
+
+    const versionRows = this.connection.db
+      .select({ jobId: jobVersions.jobId, id: jobVersions.id, version: jobVersions.version })
+      .from(jobVersions)
+      .where(and(eq(jobVersions.userId, userId), inArray(jobVersions.jobId, uniqueIds)))
+      .all();
+    const latestByJob = new Map<string, { id: string; version: number }>();
+    for (const r of versionRows) {
+      const cur = latestByJob.get(r.jobId);
+      if (cur === undefined || r.version > cur.version) latestByJob.set(r.jobId, { id: r.id, version: r.version });
+    }
+    if (latestByJob.size === 0) return new Map();
+    const latestVersionIds = [...latestByJob.values()].map((v) => v.id);
+    const reverse = new Map<string, string>();
+    for (const [jobId, v] of latestByJob) reverse.set(v.id, jobId);
+
+    const scoreRows = this.connection.db
+      .select()
+      .from(matchScores)
+      .where(
+        and(
+          eq(matchScores.userId, userId),
+          eq(matchScores.personaVersionId, latestPersona),
+          inArray(matchScores.jobVersionId, latestVersionIds),
+        ),
+      )
+      .all();
+    // If multiple models exist for same version pair, keep newest per job
+    const newestByJob = new Map<string, MatchScoreRow>();
+    for (const row of scoreRows) {
+      const jobId = reverse.get(row.jobVersionId);
+      if (jobId === undefined) continue;
+      const cur = newestByJob.get(jobId);
+      if (cur === undefined || row.createdAt.getTime() > cur.createdAt.getTime()) {
+        newestByJob.set(jobId, row);
+      }
+    }
+    const result = new Map<string, ScoreDetail>();
+    for (const [jobId, row] of newestByJob) result.set(jobId, toScoreDetail(row));
+    return result;
+  }
+
+  /**
+   * Batch variant of getLatestScore for N+1 avoidance: returns the newest
+   * score per job regardless of freshness, in a constant number of queries.
+   */
+  getLatestScores(
+    userId: string,
+    jobIds: readonly string[],
+  ): ReadonlyMap<string, ScoreDetail> {
+    const uniqueIds = [...new Set(jobIds)];
+    if (uniqueIds.length === 0) return new Map();
+    const versionRows = this.connection.db
+      .select({ jobId: jobVersions.jobId, id: jobVersions.id })
+      .from(jobVersions)
+      .where(and(eq(jobVersions.userId, userId), inArray(jobVersions.jobId, uniqueIds)))
+      .all();
+    if (versionRows.length === 0) return new Map();
+    const versionIds = versionRows.map((r) => r.id);
+    const versionIdToJobId = new Map<string, string>();
+    for (const r of versionRows) versionIdToJobId.set(r.id, r.jobId);
+    // Also need to group by jobId for picking newest per job
+    const scoreRows = this.connection.db
+      .select()
+      .from(matchScores)
+      .where(and(eq(matchScores.userId, userId), inArray(matchScores.jobVersionId, versionIds)))
+      .orderBy(desc(matchScores.createdAt))
+      .all();
+    const newestByJob = new Map<string, MatchScoreRow>();
+    for (const row of scoreRows) {
+      const jobId = versionIdToJobId.get(row.jobVersionId);
+      if (jobId === undefined) continue;
+      if (!newestByJob.has(jobId)) newestByJob.set(jobId, row);
+    }
+    const result = new Map<string, ScoreDetail>();
+    for (const [jobId, row] of newestByJob) result.set(jobId, toScoreDetail(row));
+    return result;
+  }
+
   /** Full evaluation history of a job, newest first. */
   listScores(userId: string, jobId: string): readonly ScoreDetail[] {
     const versionIds = this.loadOwnedJobVersionIds(userId, jobId);
@@ -497,5 +640,28 @@ export class ScoringService {
       .orderBy(desc(matchScores.createdAt))
       .all();
     return rows.map(toScoreDetail);
+  }
+
+  /**
+   * Describes staleness of the latest stored score relative to current versions.
+   * Useful for UI to show "stale" badges without extra queries.
+   */
+  describeFreshness(
+    userId: string,
+    jobId: string,
+  ): { status: "fresh" | "stale" | "never"; detail?: ScoreDetail; latestPersonaId?: string; latestJobVersionId?: string } {
+    const latest = this.getLatestScore(userId, jobId);
+    if (latest === undefined) return { status: "never" };
+    const latestPersona = this.loadLatestPersonaVersionId(userId);
+    const latestJob = this.loadLatestJobVersionId(userId, jobId);
+    const isFresh =
+      latest.personaVersionId === latestPersona &&
+      latest.jobVersionId === latestJob;
+    return {
+      status: isFresh ? "fresh" : "stale",
+      detail: latest,
+      latestPersonaId: latestPersona,
+      latestJobVersionId: latestJob,
+    };
   }
 }

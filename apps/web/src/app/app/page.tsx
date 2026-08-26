@@ -18,7 +18,6 @@ import type { DeadlineView } from "@/server/deadlines/service";
 import { JobService } from "@/server/jobs/service";
 import { PersonaService } from "@/server/persona/service";
 import { ScoringService } from "@/server/scoring/service";
-import type { ScoreDetail } from "@/server/scoring/service";
 
 /** Statuses whose selection process is finished and no longer active. */
 const closedApplicationStatuses: ReadonlySet<string> = new Set([
@@ -52,11 +51,12 @@ export default async function AppHome() {
   const reminders = reminderService.listActive(user.id);
   const scoring = new ScoringService(db);
 
-  const scoreByJob = new Map<string, ScoreDetail>();
-  for (const job of jobList) {
-    const latest = scoring.getLatestScore(user.id, job.jobId);
-    if (latest !== undefined) scoreByJob.set(job.jobId, latest);
-  }
+  // Batch, freshness-aware fetch avoids N*2 queries and hides stale scores
+  // (persona/job version mismatch) from "evaluated" counts until re-evaluated.
+  const scoreByJob = scoring.getCurrentScores(
+    user.id,
+    jobList.map((job) => job.jobId),
+  );
 
   // Deadlines shown on the dashboard: overdue first (they need attention),
   // then the nearest upcoming ones, capped so the list stays scannable.

@@ -427,6 +427,84 @@ describe("ScoringService.getLatestScore / listScores", () => {
   });
 });
 
+describe("ScoringService freshness (#129)", () => {
+  it("treats a score pinned to an old persona version as stale", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    // Latest history exists but current (fresh) should be that score
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeDefined();
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("fresh");
+
+    insertPersonaVersion(userA.id, 2);
+    // History newest still exists
+    expect(service.getLatestScore(userA.id, "job-1")).toBeDefined();
+    // Fresh is now undefined because persona moved
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeUndefined();
+    const freshness = service.describeFreshness(userA.id, "job-1");
+    expect(freshness.status).toBe("stale");
+    expect(freshness.detail).toBeDefined();
+    // Re-evaluating against v2 restores freshness
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeDefined();
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("fresh");
+  });
+
+  it("treats a score pinned to an old job version as stale", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    insertJobVersion(userA.id, "job-1", 2);
+    expect(service.getLatestScore(userA.id, "job-1")).toBeDefined();
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeUndefined();
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("stale");
+  });
+
+  it("batch current scores avoid N+1 and respect freshness", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    insertJobVersion(userA.id, "job-2", 1);
+    insertJobVersion(userA.id, "job-3", 1);
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    await service.evaluateJob(userA.id, "job-2", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    // job-3 stays unscored
+
+    const fresh = service.getCurrentScores(userA.id, ["job-1", "job-2", "job-3"]);
+    expect(fresh.size).toBe(2);
+    expect(fresh.has("job-1")).toBe(true);
+    expect(fresh.has("job-2")).toBe(true);
+    expect(fresh.has("job-3")).toBe(false);
+
+    // Historical batch includes same (since all fresh)
+    const hist = service.getLatestScores(userA.id, ["job-1", "job-2", "job-3"]);
+    expect(hist.size).toBe(2);
+
+    // After persona update, fresh batch should be empty
+    insertPersonaVersion(userA.id, 2);
+    expect(service.getCurrentScores(userA.id, ["job-1", "job-2"]).size).toBe(0);
+    // Historical still returns old
+    expect(service.getLatestScores(userA.id, ["job-1", "job-2"]).size).toBe(2);
+  });
+});
+
 describe("scoring helpers", () => {
   it("collects persona evidence and job signal ids as the citation universe", () => {
     const refs = allowedEvidenceRefSet(personaSnapshot, jobSnapshot);
