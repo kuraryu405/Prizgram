@@ -517,6 +517,46 @@ a {
     margin-right: auto;
     max-width: 42rem;
   }
+
+  /* Dashboard: use the width freed by the sidebar. Placed after the rule
+     above on purpose so the dashboard override wins the cascade. */
+  .app-main > .page-dashboard {
+    max-width: 56rem;
+  }
+}
+
+/* Dashboard responsive layout
+   Mobile/tablet: single column (the baseline grid in this file).
+   >=1200px viewport (sidebar + enough room): two columns — the focus area
+   (next actions, deadlines/reminders) takes the wider left column, progress
+   cards stack in the right rail, and the profile card closes the left
+   column below focus. minmax(0, …) keeps long content from blowing out the
+   track, so no horizontal scrolling at any breakpoint. */
+
+@media (min-width: 1200px) {
+  .app-main > .page-dashboard {
+    max-width: 75rem;
+  }
+
+  .dashboard-grid {
+    align-items: start;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  }
+
+  .dashboard-area--focus {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .dashboard-area--profile {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .dashboard-area--progress {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
 }
 
 /* Page scaffolding */
