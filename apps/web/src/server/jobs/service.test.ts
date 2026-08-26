@@ -378,7 +378,7 @@ describe("JobService.importJob with provider provenance", () => {
     expect(detail.latest.snapshot.source.url).toBe(externalSource.sourceUrl);
   });
 
-  it("short-circuits re-imports of a known external id without an LLM call", async () => {
+  it("reuses existing version when external id matches and content is identical", async () => {
     const service = new JobService(connection);
     const first = await service.importJob(
       userA,
@@ -386,35 +386,59 @@ describe("JobService.importJob with provider provenance", () => {
       { client: clientReturning(validProviderPayload), model: "test-model" },
     );
 
-    const clientSpy = vi.fn<typeof fetch>().mockImplementation(() => {
-      throw new Error("LLM must not be called for a known external id");
-    });
+    // Same external id and same structured content -> duplicate via content hash
     const second = await service.importJob(
       userA,
       {
-        body: `${postingText()}改稿後に取得し直した本文で文言が変わっても\n`,
+        body: postingText(),
         ...externalSource,
         sourceUrl: "https://jobviewtrack.example.test/v2/abc?ref=x",
       },
       {
-        client: new OpenAiCompatibleClient(
-          {
-            baseUrl: "https://llm.example.test/v1",
-            apiKey: "test-key",
-            model: "test-model",
-            timeoutMs: 100,
-          },
-          clientSpy,
-        ),
+        client: clientReturning(validProviderPayload),
         model: "test-model",
       },
     );
 
     expect(second.duplicate).toBe(true);
+    expect(second.jobId).toBe(first.jobId);
     expect(second.jobVersionId).toBe(first.jobVersionId);
     expect(service.getJobDetail(userA.id, first.jobId).versions).toHaveLength(
       1,
     );
+  });
+
+  it("creates a new immutable version when the same external id is re-imported with changed content", async () => {
+    const service = new JobService(connection);
+    const first = await service.importJob(
+      userA,
+      { body: postingText(), ...externalSource },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+
+    const changedPayload = {
+      ...validProviderPayload,
+      requirements: [
+        { text: "TypeScriptの実装経験" },
+        { text: "テスト自動化の経験" },
+      ],
+      difficultyEvidence: [{ section: "requirements" as const, index: 1 }],
+    };
+
+    const second = await service.importJob(
+      userA,
+      {
+        body: postingText("テスト自動化の経験も歓迎します。\n"),
+        ...externalSource,
+      },
+      { client: clientReturning(changedPayload), model: "test-model" },
+    );
+
+    expect(second.duplicate).toBe(false);
+    expect(second.jobId).toBe(first.jobId);
+    expect(second.version).toBe(2);
+    expect(service.getJobDetail(userA.id, first.jobId).versions).toHaveLength(2);
+    expect(service.getJobDetail(userA.id, first.jobId).latest.snapshot.requirements).toHaveLength(2);
   });
 
   it("scopes external-id dedupe per user", async () => {
