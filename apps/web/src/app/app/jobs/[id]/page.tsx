@@ -96,7 +96,10 @@ export default async function JobDetailPage({
     }
   }
   // If the current score pins an older persona version, also include its evidence
-  if (currentScore !== undefined && personaLatest?.personaVersionId !== currentScore.personaVersionId) {
+  if (
+    currentScore !== undefined &&
+    personaLatest?.personaVersionId !== currentScore.personaVersionId
+  ) {
     try {
       const raw = db.sqlite
         .prepare("select snapshot from persona_versions where id = ?")
@@ -108,7 +111,8 @@ export default async function JobDetailPage({
           raw.snapshot,
         );
         for (const ev of pinned.evidence) {
-          if (!evidenceTextById.has(ev.id)) evidenceTextById.set(ev.id, ev.summary);
+          if (!evidenceTextById.has(ev.id))
+            evidenceTextById.set(ev.id, ev.summary);
         }
       }
     } catch {
@@ -197,7 +201,12 @@ export default async function JobDetailPage({
         {currentScore !== undefined ? (
           <div className="score-current">
             <p className="hint-text">
-              最新の評価を表示しています（{new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(currentScore.createdAt))}）
+              最新の評価を表示しています（
+              {new Intl.DateTimeFormat("ja-JP", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(currentScore.createdAt))}
+              ）
             </p>
             <ul className="axis-list">
               {(
@@ -234,7 +243,8 @@ export default async function JobDetailPage({
               })}
             </ul>
             <p className="hint-text">
-              v{detail.latest.version} / persona {currentScore.personaVersionId.slice(0, 8)} / {currentScore.model}
+              v{detail.latest.version} / persona{" "}
+              {currentScore.personaVersionId.slice(0, 8)} / {currentScore.model}
             </p>
           </div>
         ) : freshness.status === "stale" && freshness.detail !== undefined ? (
@@ -243,12 +253,20 @@ export default async function JobDetailPage({
               評価が古くなっています。ペルソナまたは求人内容が更新されたため、再評価を推奨します。
             </p>
             <p className="hint-text">
-              前回の評価（{new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(new Date(freshness.detail.createdAt))}）:
-              skill {freshness.detail.axes.skillFit.score} / culture {freshness.detail.axes.cultureValueFit.score} / gap {freshness.detail.axes.difficultyGap.score}
+              前回の評価（
+              {new Intl.DateTimeFormat("ja-JP", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }).format(new Date(freshness.detail.createdAt))}
+              ）: skill {freshness.detail.axes.skillFit.score} / culture{" "}
+              {freshness.detail.axes.cultureValueFit.score} / gap{" "}
+              {freshness.detail.axes.difficultyGap.score}
             </p>
           </div>
         ) : (
-          <p className="hint-text">まだ評価されていません。下のボタンから評価を実行してください。</p>
+          <p className="hint-text">
+            まだ評価されていません。下のボタンから評価を実行してください。
+          </p>
         )}
         {history.length > 0 && (
           <details className="score-history">
@@ -256,8 +274,18 @@ export default async function JobDetailPage({
             <ul>
               {history.map((entry) => (
                 <li key={entry.scoreId} className="hint-text">
-                  {new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short" }).format(new Date(entry.createdAt))} — skill {entry.axes.skillFit.score} / culture {entry.axes.cultureValueFit.score} / gap {entry.axes.difficultyGap.score}（p{entry.personaVersionId.slice(0, 6)} / j{entry.jobVersionId.slice(0, 6)}）
-                  {freshness.status === "stale" && entry.scoreId === freshness.detail?.scoreId && " — 古いバージョン"}
+                  {new Intl.DateTimeFormat("ja-JP", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  }).format(new Date(entry.createdAt))}{" "}
+                  — skill {entry.axes.skillFit.score} / culture{" "}
+                  {entry.axes.cultureValueFit.score} / gap{" "}
+                  {entry.axes.difficultyGap.score}（p
+                  {entry.personaVersionId.slice(0, 6)} / j
+                  {entry.jobVersionId.slice(0, 6)}）
+                  {freshness.status === "stale" &&
+                    entry.scoreId === freshness.detail?.scoreId &&
+                    " — 古いバージョン"}
                 </li>
               ))}
             </ul>

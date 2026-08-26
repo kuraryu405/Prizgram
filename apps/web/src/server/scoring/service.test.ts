@@ -487,7 +487,11 @@ describe("ScoringService freshness (#129)", () => {
     });
     // job-3 stays unscored
 
-    const fresh = service.getCurrentScores(userA.id, ["job-1", "job-2", "job-3"]);
+    const fresh = service.getCurrentScores(userA.id, [
+      "job-1",
+      "job-2",
+      "job-3",
+    ]);
     expect(fresh.size).toBe(2);
     expect(fresh.has("job-1")).toBe(true);
     expect(fresh.has("job-2")).toBe(true);

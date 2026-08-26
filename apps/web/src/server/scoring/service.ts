@@ -516,7 +516,8 @@ export class ScoringService {
   getCurrentScore(userId: string, jobId: string): ScoreDetail | undefined {
     const latestPersona = this.loadLatestPersonaVersionId(userId);
     const latestJob = this.loadLatestJobVersionId(userId, jobId);
-    if (latestPersona === undefined || latestJob === undefined) return undefined;
+    if (latestPersona === undefined || latestJob === undefined)
+      return undefined;
     const row = this.connection.db
       .select()
       .from(matchScores)
@@ -547,14 +548,24 @@ export class ScoringService {
     if (latestPersona === undefined) return new Map();
 
     const versionRows = this.connection.db
-      .select({ jobId: jobVersions.jobId, id: jobVersions.id, version: jobVersions.version })
+      .select({
+        jobId: jobVersions.jobId,
+        id: jobVersions.id,
+        version: jobVersions.version,
+      })
       .from(jobVersions)
-      .where(and(eq(jobVersions.userId, userId), inArray(jobVersions.jobId, uniqueIds)))
+      .where(
+        and(
+          eq(jobVersions.userId, userId),
+          inArray(jobVersions.jobId, uniqueIds),
+        ),
+      )
       .all();
     const latestByJob = new Map<string, { id: string; version: number }>();
     for (const r of versionRows) {
       const cur = latestByJob.get(r.jobId);
-      if (cur === undefined || r.version > cur.version) latestByJob.set(r.jobId, { id: r.id, version: r.version });
+      if (cur === undefined || r.version > cur.version)
+        latestByJob.set(r.jobId, { id: r.id, version: r.version });
     }
     if (latestByJob.size === 0) return new Map();
     const latestVersionIds = [...latestByJob.values()].map((v) => v.id);
@@ -578,12 +589,16 @@ export class ScoringService {
       const jobId = reverse.get(row.jobVersionId);
       if (jobId === undefined) continue;
       const cur = newestByJob.get(jobId);
-      if (cur === undefined || row.createdAt.getTime() > cur.createdAt.getTime()) {
+      if (
+        cur === undefined ||
+        row.createdAt.getTime() > cur.createdAt.getTime()
+      ) {
         newestByJob.set(jobId, row);
       }
     }
     const result = new Map<string, ScoreDetail>();
-    for (const [jobId, row] of newestByJob) result.set(jobId, toScoreDetail(row));
+    for (const [jobId, row] of newestByJob)
+      result.set(jobId, toScoreDetail(row));
     return result;
   }
 
@@ -600,7 +615,12 @@ export class ScoringService {
     const versionRows = this.connection.db
       .select({ jobId: jobVersions.jobId, id: jobVersions.id })
       .from(jobVersions)
-      .where(and(eq(jobVersions.userId, userId), inArray(jobVersions.jobId, uniqueIds)))
+      .where(
+        and(
+          eq(jobVersions.userId, userId),
+          inArray(jobVersions.jobId, uniqueIds),
+        ),
+      )
       .all();
     if (versionRows.length === 0) return new Map();
     const versionIds = versionRows.map((r) => r.id);
@@ -610,7 +630,12 @@ export class ScoringService {
     const scoreRows = this.connection.db
       .select()
       .from(matchScores)
-      .where(and(eq(matchScores.userId, userId), inArray(matchScores.jobVersionId, versionIds)))
+      .where(
+        and(
+          eq(matchScores.userId, userId),
+          inArray(matchScores.jobVersionId, versionIds),
+        ),
+      )
       .orderBy(desc(matchScores.createdAt))
       .all();
     const newestByJob = new Map<string, MatchScoreRow>();
@@ -620,7 +645,8 @@ export class ScoringService {
       if (!newestByJob.has(jobId)) newestByJob.set(jobId, row);
     }
     const result = new Map<string, ScoreDetail>();
-    for (const [jobId, row] of newestByJob) result.set(jobId, toScoreDetail(row));
+    for (const [jobId, row] of newestByJob)
+      result.set(jobId, toScoreDetail(row));
     return result;
   }
 
@@ -649,7 +675,12 @@ export class ScoringService {
   describeFreshness(
     userId: string,
     jobId: string,
-  ): { status: "fresh" | "stale" | "never"; detail?: ScoreDetail; latestPersonaId?: string; latestJobVersionId?: string } {
+  ): {
+    status: "fresh" | "stale" | "never";
+    detail?: ScoreDetail;
+    latestPersonaId?: string;
+    latestJobVersionId?: string;
+  } {
     const latest = this.getLatestScore(userId, jobId);
     if (latest === undefined) return { status: "never" };
     const latestPersona = this.loadLatestPersonaVersionId(userId);
