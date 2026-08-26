@@ -138,7 +138,11 @@ test.describe("Prizgram MVP core loop", () => {
     await page.goto("/app/applications");
     const addFormJobSelect = page.getByLabel("求人");
     if (await addFormJobSelect.isVisible().catch(() => false)) {
-      await addFormJobSelect.selectOption({ index: 0 });
+      // Select by explicit label: dropdown ordering is not part of the
+      // contract, so index-based selection would be flaky.
+      await addFormJobSelect.selectOption({
+        label: "株式会社サンプル — フロントエンドエンジニア",
+      });
       await page
         .getByRole("button", { name: /追加|登録|作成/ })
         .first()
@@ -240,6 +244,94 @@ test.describe("Prizgram MVP core loop", () => {
     await expect(
       page.getByRole("heading", { name: "次のアクション" }),
     ).toBeVisible();
+  });
+
+  test("persona update propose → approve → re-evaluation bumps the version", async ({
+    page,
+  }) => {
+    await registerAndLogin(page);
+
+    // Seed persona + job + application via API (UI paths covered above).
+    const request = page.request;
+    const post = (url: string, data?: unknown) =>
+      request.post(url, {
+        data,
+        headers: { origin: ORIGIN },
+      });
+
+    await post("/api/persona");
+    const intakeResponse = await post("/api/persona");
+    const { intakeId } = (
+      (await intakeResponse.json()) as {
+        data: { intakeId: string };
+      }
+    ).data;
+    const answers: Array<[string, string]> = [
+      ["q1_skills", "TypeScriptでの実装経験があります。"],
+      ["q2_experiences", "チームでWebアプリを開発しました。"],
+      ["q3_strengths", "学習速度"],
+      ["q4_weaknesses", "継続力"],
+      ["q5_values", "自律性"],
+      ["q6_preferences", "フロントエンド"],
+    ];
+    for (const [questionId, answer] of answers) {
+      const saved = await request.put(
+        `/api/persona/intake/${intakeId}/answers`,
+        { data: { questionId, answer }, headers: { origin: ORIGIN } },
+      );
+      expect(saved.ok()).toBeTruthy();
+    }
+    expect((await post("/api/persona/generate", { intakeId })).status()).toBe(
+      201,
+    );
+
+    const imported = await post("/api/jobs", {
+      body:
+        "【募集】フロントエンドエンジニアインターン\n" +
+        "株式会社サンプルではReactとTypeScriptを使う開発インターンを募集しています。\n" +
+        "週3日以上勤務できる方を歓迎します。",
+    });
+    expect(imported.status()).toBe(201);
+    const {
+      data: { jobId },
+    } = (await imported.json()) as { data: { jobId: string } };
+    const application = await post("/api/applications", {
+      jobId,
+      nextAction: "ESを書く",
+    });
+    expect(application.status()).toBe(201);
+
+    // The first persona version is v1 before any update.
+    await page.goto("/app/persona");
+    await expect(page.getByText(/v1/).first()).toBeVisible();
+
+    // --- Feedback loop through the update UI.
+    await page.goto("/app/persona/update");
+    await page
+      .getByLabel("振り返りメモ")
+      .fill(
+        "面接ではデータ整備の話が深まりました。Next.jsの実務経験をさらに伸ばしたいです。",
+      );
+    await page.getByRole("button", { name: /更新案を作成/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "更新案の確認" }),
+    ).toBeVisible({ timeout: 20_000 });
+
+    // Approval must not auto-finalize without an explicit confirmation.
+    await page
+      .getByRole("button", { name: /承認して新バージョンを作成/ })
+      .click();
+    await expect(page.getByRole("heading", { name: "再評価結果" })).toBeVisible(
+      { timeout: 20_000 },
+    );
+    // The seeded job is re-scored against the approved persona.
+    await expect(page.getByText(/再評価済み/).first()).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // The approved proposal became a new immutable persona version.
+    await page.goto("/app/persona");
+    await expect(page.getByText(/v2/).first()).toBeVisible();
   });
 
   test("unauthenticated users are redirected away from the app shell", async ({

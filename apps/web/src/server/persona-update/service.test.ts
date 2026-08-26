@@ -193,6 +193,67 @@ describe("PersonaUpdateService", () => {
     expect(second.version).toBe(first.version);
     expect(connection.db.select().from(personaVersions).all()).toHaveLength(2);
   });
+
+  it("carries forward intake-derived evidence citing its stored answer id", () => {
+    // A persona generated from intake stores the answer-row id (not the
+    // evidence id) as its user_input sourceId. A faithful proposal repeats
+    // that entry verbatim and must not be rejected (#13).
+    const answerId = "answer-row-q1";
+    const carriedBase = personaSnapshotSchema.parse({
+      ...baseSnapshot(),
+      evidence: [
+        {
+          id: "ev-intake",
+          sourceType: "user_input" as const,
+          sourceId: answerId,
+          summary: "初回ヒアリングの回答",
+        },
+      ],
+    });
+    connection.sqlite
+      .prepare("insert into users (id) values (?)")
+      .run(userA.id);
+    connection.sqlite
+      .prepare(
+        'insert into persona_versions (id, user_id, version, snapshot, provenance) values (\'persona-intake\', ?, 1, ?, \'{"source":"llm","sourceIds":[],"generatedAt":"2026-08-26T00:00:00Z"}\')',
+      )
+      .run(userA.id, JSON.stringify(carriedBase));
+
+    const approved = service.approve(userA, {
+      basePersonaVersionId: "persona-intake",
+      requestId: "req-carry-forward",
+      snapshot: personaSnapshotSchema.parse({
+        ...carriedBase,
+        strengths: ["面接で確認できた強み"],
+        confidence: 0.7,
+      }),
+    });
+
+    expect(approved.version).toBe(2);
+  });
+
+  it("still rejects user_input evidence citing an invented source", () => {
+    seedBaseAndApplication();
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: "persona-base",
+        requestId: "req-invented",
+        snapshot: personaSnapshotSchema.parse({
+          ...baseSnapshot(),
+          evidence: [
+            ...baseSnapshot().evidence,
+            {
+              id: "ev-invented",
+              sourceType: "user_input" as const,
+              sourceId: "q1_skills",
+              summary: "質問IDをそのまま引用した偽装エビデンス",
+            },
+          ],
+        }),
+      }),
+    ).toThrow(AppError);
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
 });
 
 describe("PersonaUpdateService.propose error contract", () => {

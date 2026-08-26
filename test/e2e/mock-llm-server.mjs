@@ -103,11 +103,58 @@ const jobSearchQuery = {
   workHours: "",
 };
 
+/**
+ * Persona update proposals must cite only allowed sources: the base
+ * persona's own facts carried forward plus reflection-prefixed new
+ * evidence (#13). The current persona arrives inside the prompt payload,
+ * so its evidence is echoed verbatim — mirroring what the real model is
+ * instructed to do.
+ */
+function personaUpdateProposalFor(userContent) {
+  // `userContent` is the prompt's user message: the JSON digest built by
+  // PersonaUpdateService.propose.
+  let current = null;
+  try {
+    current = JSON.parse(String(userContent ?? "{}"))?.currentPersona ?? null;
+  } catch {
+    current = null;
+  }
+  const baseEvidence = Array.isArray(current?.evidence) ? current.evidence : [];
+  // The stored domain snapshot omits absent optional dates; the provider
+  // schema requires the keys, so restore them as explicit nulls.
+  const baseExperiences = Array.isArray(current?.experiences)
+    ? current.experiences.map((experience) => ({
+        startedOn: null,
+        endedOn: null,
+        ...experience,
+      }))
+    : [];
+  return {
+    ...(current ?? personaSnapshot),
+    experiences: baseExperiences,
+    strengths: [
+      ...(current?.strengths ?? []),
+      "面接で確認できたデータへの興味",
+    ],
+    evidence: [
+      ...baseEvidence,
+      {
+        id: "ev:reflection",
+        sourceType: "user_input",
+        sourceId: "reflection:e2e-update",
+        summary: "面接ではデータ整備の話が深まりました。",
+      },
+    ],
+    confidence: Math.min(1, Number(current?.confidence ?? 0.6) + 0.1),
+  };
+}
+
 function payloadFor(schemaName, body) {
   switch (schemaName) {
     case "persona_snapshot":
-    case "persona_update_proposal":
       return personaSnapshot;
+    case "persona_update_proposal":
+      return personaUpdateProposalFor(body);
     case "job_snapshot":
       return jobPayloadFor(body);
     case "job_scoring":
