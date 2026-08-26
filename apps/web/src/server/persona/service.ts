@@ -171,25 +171,9 @@ export class PersonaService {
       throw new AppError("CONFLICT", "This intake is already completed", 409);
     }
     const now = new Date();
-    const existing = this.connection.db
-      .select({ id: personaIntakeAnswers.id })
-      .from(personaIntakeAnswers)
-      .where(
-        and(
-          eq(personaIntakeAnswers.intakeId, intake.id),
-          eq(personaIntakeAnswers.questionId, input.questionId),
-        ),
-      )
-      .get();
-    if (existing !== undefined) {
-      // Keep the stable answer id: evidence references point at it.
-      this.connection.db
-        .update(personaIntakeAnswers)
-        .set({ answer: input.answer, updatedAt: now })
-        .where(eq(personaIntakeAnswers.id, existing.id))
-        .run();
-      return;
-    }
+    // Upsert on (intake_id, question_id): concurrent saves cannot violate
+    // the unique index, and the stable answer id survives overwrites so
+    // evidence references keep pointing at the same row.
     this.connection.db
       .insert(personaIntakeAnswers)
       .values({
@@ -198,6 +182,14 @@ export class PersonaService {
         intakeId: intake.id,
         questionId: input.questionId,
         answer: input.answer,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          personaIntakeAnswers.intakeId,
+          personaIntakeAnswers.questionId,
+        ],
+        set: { answer: input.answer, updatedAt: now },
       })
       .run();
     this.connection.db
