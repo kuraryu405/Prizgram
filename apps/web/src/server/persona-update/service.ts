@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -10,11 +10,22 @@ import {
   type AuthenticatedUser,
   type PersonaSnapshot,
 } from "@prizgram/shared";
-import { applicationStageEvents, personaVersions, jobs } from "@prizgram/db";
+import {
+  applicationStageEvents,
+  jobVersions,
+  jobs,
+  matchScores,
+  personaVersions,
+} from "@prizgram/db";
 
 import type { DatabaseConnection } from "@prizgram/db";
 import { AppError } from "../api";
-import type { StructuredLlmClient } from "@/server/llm";
+import {
+  createLlmClientFromEnvironment,
+  LlmClientError,
+  personaStructuredOutput,
+  type StructuredLlmClient,
+} from "@/server/llm";
 
 export const proposeRequestSchema = z
   .object({
@@ -42,11 +53,68 @@ export type ApproveInput = z.infer<typeof approveRequestSchema>;
 const REFLECTION_PREFIX = "reflection:";
 const EVENT_PREFIX = "event:";
 
+const VERSION_UNIQUE_VIOLATION =
+  /unique constraint failed: .*persona_versions.*user_id.*version|persona_versions_user_version_unique/i;
+
+/** Matches only the persona_versions (user_id, version) unique violation. */
+export function isPersonaVersionUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return (
+    typeof code === "string" &&
+    code.startsWith("SQLITE_CONSTRAINT") &&
+    typeof message === "string" &&
+    VERSION_UNIQUE_VIOLATION.test(message)
+  );
+}
+
 export interface EventEvidenceSource {
   eventId: string;
   sequence: number;
   toStatus: string;
   occurredAt: string;
+}
+
+/**
+ * Upper bound on jobs re-evaluated per request. Every processed job may
+ * trigger one LLM call (a fresh persona version never reuses stored
+ * scores), so the fan-out must stay bounded; callers continue by invoking
+ * the endpoint again while `remainingJobs > 0`.
+ */
+export const MAX_REEVALUATE_JOBS = 20;
+
+let environmentClient: StructuredLlmClient | undefined;
+
+function defaultClient(): StructuredLlmClient {
+  environmentClient ??= (() => {
+    try {
+      return createLlmClientFromEnvironment();
+    } catch (error) {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "The language model client is not configured",
+        500,
+        undefined,
+        undefined,
+        { cause: error },
+      );
+    }
+  })();
+  return environmentClient;
+}
+
+function upstreamError(error: unknown): AppError {
+  if (error instanceof LlmClientError) {
+    return new AppError(
+      error.retryable ? "UPSTREAM_UNAVAILABLE" : "UPSTREAM_INVALID_RESPONSE",
+      "The persona update could not be proposed right now",
+      502,
+      undefined,
+      undefined,
+      { cause: error },
+    );
+  }
+  throw error;
 }
 
 export class PersonaUpdateService {
@@ -172,6 +240,13 @@ export class PersonaUpdateService {
     input: ApproveInput,
   ): { personaVersionId: string; version: number } {
     const base = this.baseVersion(user, input.basePersonaVersionId);
+
+    // Idempotency: a retried approval (e.g. the response was lost after the
+    // insert committed) must return the stored version instead of minting
+    // another one for the same requestId.
+    const replayed = this.findVersionByRequestId(user.id, input.requestId);
+    if (replayed !== undefined) return replayed;
+
     const baseEvidence = new Set(base.snapshot.evidence.map((e) => e.id));
     const eventSources =
       input.applicationId === undefined
@@ -186,34 +261,86 @@ export class PersonaUpdateService {
       input.snapshot,
     );
 
-    const maxVersion = this.connection.sqlite
-      .prepare(
-        "select max(version) as value from persona_versions where user_id = ?",
-      )
-      .get(user.id) as { value: number | null };
-    const version = Number(maxVersion.value ?? 0) + 1;
-    const personaVersionId = randomUUID();
-    this.connection.db
-      .insert(personaVersions)
-      .values({
-        id: personaVersionId,
-        userId: user.id,
-        version,
-        snapshot: validated,
-        provenance: {
-          source: "llm",
-          sourceIds: [
-            `update-of:${base.id}`,
-            ...eventSources.map((e) => `${EVENT_PREFIX}${e.eventId}`),
-            `${REFLECTION_PREFIX}${input.requestId}`,
-          ],
-          generatedAt: new Date().toISOString(),
-          model: "human-approved",
-          promptVersion: "feedback-v1",
-        },
-      })
-      .run();
-    return { personaVersionId, version };
+    let lastError: unknown;
+    // Version numbers are computed and inserted inside one transaction, and
+    // a unique (user_id, version) violation from another writer is retried
+    // once with a fresh number — mirroring generatePersona.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return this.connection.db.transaction((transaction) => {
+          const maxVersion = transaction
+            .select({
+              value: sql<number>`coalesce(max(${personaVersions.version}), 0)`,
+            })
+            .from(personaVersions)
+            .where(eq(personaVersions.userId, user.id))
+            .get();
+          const version = Number(maxVersion?.value ?? 0) + 1;
+          const personaVersionId = randomUUID();
+          transaction
+            .insert(personaVersions)
+            .values({
+              id: personaVersionId,
+              userId: user.id,
+              version,
+              snapshot: validated,
+              provenance: {
+                source: "llm",
+                sourceIds: [
+                  `update-of:${base.id}`,
+                  ...eventSources.map((e) => `${EVENT_PREFIX}${e.eventId}`),
+                  `${REFLECTION_PREFIX}${input.requestId}`,
+                ],
+                generatedAt: new Date().toISOString(),
+                model: "human-approved",
+                promptVersion: "feedback-v1",
+              },
+            })
+            .run();
+          return { personaVersionId, version };
+        });
+      } catch (error) {
+        lastError = error;
+        if (!isPersonaVersionUniqueViolation(error)) throw error;
+      }
+    }
+    throw lastError;
+  }
+
+  /**
+   * Finds an already-approved persona version carrying this exact request
+   * id in its provenance, so duplicate submissions are absorbed.
+   */
+  private findVersionByRequestId(
+    userId: string,
+    requestId: string,
+  ): { personaVersionId: string; version: number } | undefined {
+    const rows = this.connection.db
+      .select({ id: personaVersions.id, version: personaVersions.version })
+      .from(personaVersions)
+      .where(eq(personaVersions.userId, userId))
+      .all();
+    const marker = `${REFLECTION_PREFIX}${requestId}`;
+    for (const row of rows) {
+      const raw = this.connection.sqlite
+        .prepare("select provenance from persona_versions where id = ?")
+        .get(row.id) as { provenance: string } | undefined;
+      if (raw === undefined) continue;
+      try {
+        const provenance = JSON.parse(raw.provenance) as {
+          sourceIds?: unknown;
+        };
+        if (
+          Array.isArray(provenance.sourceIds) &&
+          provenance.sourceIds.includes(marker)
+        ) {
+          return { personaVersionId: row.id, version: row.version };
+        }
+      } catch {
+        // Undecodable provenance cannot match any requestId.
+      }
+    }
+    return undefined;
   }
 
   /** Builds the prompt digest of selection events for proposals. */
@@ -241,15 +368,7 @@ export class PersonaUpdateService {
     proposed: PersonaSnapshot;
     eventSources: EventEvidenceSource[];
   }> {
-    const { OpenAiCompatibleClient } = await import("@/server/llm");
-    const client =
-      options.client ??
-      new OpenAiCompatibleClient({
-        baseUrl: process.env.OPENAI_BASE_URL ?? "",
-        apiKey: process.env.OPENAI_API_KEY ?? "",
-        model: process.env.OPENAI_MODEL ?? "",
-        timeoutMs: Number(process.env.OPENAI_TIMEOUT_MS ?? "30000"),
-      });
+    const client = options.client ?? defaultClient();
 
     const base = this.baseVersion(user, input.personaVersionId);
     const baseSnapshot = base.snapshot;
@@ -283,14 +402,18 @@ export class PersonaUpdateService {
       },
     ];
 
-    // The provider schema above is the persona one; reuse its normalization
-    // by parsing through the structured contract for parity.
-    const contract = (await import("@prizgram/shared")).personaStructuredOutput;
-    const raw = await client.generateStructured({
-      messages,
-      output: contract,
-      schemaName: "persona_update_proposal",
-    });
+    let raw: PersonaSnapshot;
+    try {
+      raw = await client.generateStructured({
+        messages,
+        output: personaStructuredOutput,
+        schemaName: "persona_update_proposal",
+      });
+    } catch (error) {
+      // LLM failures surface as the same 502 contract as the other
+      // LLM-backed services instead of an opaque 500.
+      throw upstreamError(error);
+    }
 
     const eventIds = new Set(eventSources.map((e) => e.eventId));
     const validated = this.validateEvidence(
@@ -322,9 +445,13 @@ export class PersonaUpdateService {
   }
 
   /**
-   * Re-evaluates every owned job's latest version against a persona version.
-   * Per-job failures are captured in the returned audit trail; one failure
-   * does not stop the rest.
+   * Re-evaluates the user's jobs against a persona version, oldest job
+   * first, bounded by `limit` (capped at MAX_REEVALUATE_JOBS). Jobs already
+   * scored for this persona version are skipped so repeated passes make
+   * forward progress instead of re-processing the same oldest batch.
+   * Per-job failures are captured in the audit trail; one failure does not
+   * stop the rest. `remainingJobs` tells the caller how many unscored jobs
+   * were not processed in this pass.
    */
   async reEvaluateAll(
     user: AuthenticatedUser,
@@ -340,25 +467,52 @@ export class PersonaUpdateService {
           duplicate: boolean;
         }>;
       };
+      limit?: number;
     },
-  ): Promise<
-    Array<
+  ): Promise<{
+    audit: Array<
       | { jobId: string; status: "scored"; scoreId: string }
       | { jobId: string; status: "failed"; code: string }
-    >
-  > {
+    >;
+    remainingJobs: number;
+  }> {
     this.baseVersion(user, personaVersionId);
-    const jobRows = this.connection.db
+    const effectiveLimit = Math.max(
+      0,
+      Math.min(options.limit ?? MAX_REEVALUATE_JOBS, MAX_REEVALUATE_JOBS),
+    );
+    const totalJobs = this.connection.db
       .select({ id: jobs.id })
       .from(jobs)
       .where(eq(jobs.userId, user.id))
+      .orderBy(asc(jobs.createdAt), asc(jobs.id))
       .all();
 
+    // A job counts as done for this pass once any score pins it to this
+    // persona version; scoring itself dedupes per (persona, job version),
+    // so re-selecting it would only stall the batch window.
+    const scoredJobIds = new Set(
+      this.connection.db
+        .select({ jobId: jobVersions.jobId })
+        .from(matchScores)
+        .innerJoin(jobVersions, eq(jobVersions.id, matchScores.jobVersionId))
+        .where(
+          and(
+            eq(matchScores.userId, user.id),
+            eq(matchScores.personaVersionId, personaVersionId),
+          ),
+        )
+        .all()
+        .map((row) => row.jobId),
+    );
+    const pendingJobs = totalJobs.filter((job) => !scoredJobIds.has(job.id));
+
+    const targets = pendingJobs.slice(0, effectiveLimit);
     const audit: Array<
       | { jobId: string; status: "scored"; scoreId: string }
       | { jobId: string; status: "failed"; code: string }
     > = [];
-    for (const job of jobRows) {
+    for (const job of targets) {
       try {
         const result = await options.scoring.evaluate(user.id, job.id, {
           personaVersionId,
@@ -379,6 +533,9 @@ export class PersonaUpdateService {
         });
       }
     }
-    return audit;
+    return {
+      audit,
+      remainingJobs: Math.max(0, pendingJobs.length - targets.length),
+    };
   }
 }
