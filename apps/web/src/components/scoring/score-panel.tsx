@@ -98,6 +98,7 @@ export function ScoreEvaluateButton({
     <div className="score-panel">
       <button
         type="button"
+        className="button button-primary"
         onClick={() => {
           void onEvaluate();
         }}

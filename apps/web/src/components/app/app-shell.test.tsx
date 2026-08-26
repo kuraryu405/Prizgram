@@ -77,8 +77,9 @@ describe("AppShell", () => {
       "ホーム",
       "ペルソナ",
       "求人",
-      "応募管理",
-      "リマインダー",
+      "応募",
+      "締切",
+      "通知",
     ]) {
       expect(screen.getByRole("link", { name: label }).textContent).toBe(label);
     }
