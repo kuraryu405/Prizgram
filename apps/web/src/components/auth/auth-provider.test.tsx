@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 function Probe() {
-  const { user, status, login, register, logout } = useAuth();
+  const { user, status, login, register, logout, reloadSession } = useAuth();
   return (
     <div>
       <p data-testid="status">{status}</p>
@@ -37,6 +37,9 @@ function Probe() {
       </button>
       <button onClick={() => void logout()} type="button">
         signout
+      </button>
+      <button onClick={reloadSession} type="button">
+        reload
       </button>
     </div>
   );
@@ -172,4 +175,44 @@ describe("AuthProvider", () => {
       ),
     );
   });
+
+  test("treats transient /api/auth/me failures as unavailable, not logged out", async () => {
+    stubFetch(() => Promise.reject(new TypeError("network down")));
+    renderProvider();
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("status").textContent).toContain(
+          "unavailable",
+        ),
+      { timeout: 5000 },
+    );
+
+    // The session cookie was never invalid, so recovery must not require a
+    // fresh login.
+    stubFetch((url) =>
+      url === "/api/auth/me"
+        ? okEnvelope({ user: { id: "u1", loginId: "user" } })
+        : errorEnvelope(404, "NOT_FOUND"),
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "reload" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("status").textContent).toContain(
+        "authenticated",
+      ),
+    );
+  }, 10_000);
+
+  test("a 5xx probe response is retried instead of clearing the session", async () => {
+    stubFetch(() => errorEnvelope(500, "INTERNAL_ERROR"));
+    renderProvider();
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("status").textContent).toContain(
+          "unavailable",
+        ),
+      { timeout: 5000 },
+    );
+    expect(screen.getByTestId("user").textContent).toContain("none");
+  }, 10_000);
 });
