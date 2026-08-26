@@ -104,6 +104,31 @@ export function safeZonedToIso(local: string, timeZone: string): string {
   }
 }
 
+function wallTimeInZone(timestamp: number, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(timestamp));
+  const values: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") values[part.type] = part.value;
+  }
+  const year = values.year ?? "1970";
+  const month = values.month ?? "01";
+  const day = values.day ?? "01";
+  let hour = Number(values.hour ?? "0");
+  // Midnight may be reported as 24 in some locales
+  if (hour === 24) hour = 0;
+  const hourStr = String(hour).padStart(2, "0");
+  const minute = (values.minute ?? "00").padStart(2, "0");
+  return `${year}-${month}-${day}T${hourStr}:${minute}`;
+}
+
 export function zonedDateTimeToIso(local: string, timeZone: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(local);
   if (match === null) {
@@ -124,6 +149,21 @@ export function zonedDateTimeToIso(local: string, timeZone: string): string {
     if (adjusted === timestamp) break;
     timestamp = adjusted;
   }
+  // DST gap detection: if the wall time does not exist, the round-trip
+  // will land on a different wall-clock time. Reject instead of silently
+  // normalizing to a neighboring valid instant.
+  const roundTripped = wallTimeInZone(timestamp, timeZone);
+  if (roundTripped !== local) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "This local time does not exist in the selected timezone (DST gap)",
+      400,
+    );
+  }
+  // Ambiguous fall-back times (e.g. 01:30 occurring twice) intentionally
+  // resolve to the earlier occurrence. The round-trip check passes for
+  // either occurrence, so we keep the deterministic result from the
+  // iteration above.
   return new Date(timestamp).toISOString();
 }
 

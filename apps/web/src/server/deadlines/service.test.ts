@@ -77,6 +77,64 @@ describe("zonedDateTimeToIso", () => {
       "2026-07-15T19:00:00.000Z",
     );
   });
+
+  it("rejects nonexistent local times in DST gaps", () => {
+    // 2026-03-08 is spring-forward in America/Los_Angeles: 02:00-03:00 does not exist
+    expect(
+      syncErrorCode(() =>
+        zonedDateTimeToIso("2026-03-08T02:30", "America/Los_Angeles"),
+      ),
+    ).toBe("VALIDATION_ERROR");
+  });
+
+  it("handles ambiguous fall-back times deterministically (earlier occurrence)", () => {
+    // 2026-11-01 is fall-back: 01:30 occurs twice. Should not throw and should map to first occurrence.
+    const iso = zonedDateTimeToIso("2026-11-01T01:30", "America/Los_Angeles");
+    // Earlier occurrence is PDT (UTC-7) => 08:30 UTC
+    expect(iso).toBe("2026-11-01T08:30:00.000Z");
+    // Round-trip should reproduce the same wall time
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(new Date(iso));
+    const map: Record<string, string> = {};
+    for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+    const wall = `${map.year}-${map.month}-${map.day}T${String(Number(map.hour) % 24).padStart(2, "0")}:${map.minute}`;
+    expect(wall).toBe("2026-11-01T01:30");
+  });
+
+  it("round-trips normal times through the selected timezone", () => {
+    const cases: Array<[string, string]> = [
+      ["2026-08-26T18:00", "Asia/Tokyo"],
+      ["2026-06-01T09:00", "UTC"],
+      ["2026-12-15T14:30", "America/New_York"],
+    ];
+    for (const [local, tz] of cases) {
+      const iso = zonedDateTimeToIso(local, tz);
+      // Converting back should reproduce the original wall time
+      const wall = (() => {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          hour12: false,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).formatToParts(new Date(iso));
+        const m: Record<string, string> = {};
+        for (const p of parts) if (p.type !== "literal") m[p.type] = p.value;
+        const h = String(Number(m.hour) % 24).padStart(2, "0");
+        return `${m.year}-${m.month}-${m.day}T${h}:${m.minute}`;
+      })();
+      expect(wall).toBe(local);
+    }
+  });
 });
 
 describe("DeadlineService", () => {
