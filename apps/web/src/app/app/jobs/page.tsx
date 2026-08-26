@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { JobDiscovery } from "@/components/jobs/job-discovery";
 import { JobImportForm } from "@/components/jobs/job-import-form";
 import { getDatabase } from "@/server/database";
 import { JobService } from "@/server/jobs/service";
@@ -30,9 +31,10 @@ export default async function JobsPage() {
     <div className="page">
       <h1>求人</h1>
       <p className="page-lead">
-        求人票を貼り付けて取り込むと、要件・難易度・文化が構造化されて保存され、3軸評価の対象になります。
+        ペルソナから求人候補を探索するか、求人票を貼り付けて取り込めます。取り込んだ求人は要件・難易度・文化が構造化されて保存され、3軸評価の対象になります。
       </p>
 
+      <JobDiscovery />
       <JobImportForm />
 
       <section aria-labelledby="jobs-list" className="card">
