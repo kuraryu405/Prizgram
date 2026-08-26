@@ -325,10 +325,13 @@ a {
 }
 
 /* App shell
-   Mobile-first: sticky top bar + fixed bottom tab bar (safe-area aware).
-   >=900px: the header becomes a Twitter-like left sidebar with labels and
-   the content becomes a centered single column. The DOM is shared; only
-   presentation changes between the two modes. */
+   Responsive strategy (chosen approach for this app):
+   - <900px: sticky top bar (brand + account) and a fixed bottom tab bar
+     (safe-area aware). A drawer/collapse was considered and rejected:
+     the 6 top-level destinations fit a tab bar and stay one tap away.
+   - >=900px: the header becomes a Twitter-like left sidebar with labels
+     and the content becomes a centered single/multi column. The DOM is
+     shared; only presentation changes between the two modes. */
 
 .app-shell {
   min-height: 100vh;
@@ -426,7 +429,7 @@ a {
   color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   gap: 0.125rem;
   justify-content: center;
@@ -449,6 +452,7 @@ a {
 .app-nav a[aria-current="page"] {
   background: transparent;
   color: var(--color-primary);
+  font-weight: 700;
 }
 
 .app-main {
@@ -495,7 +499,7 @@ a {
   }
 
   .app-nav ul {
-    gap: 0.25rem;
+    gap: 0.5rem;
     grid-template-columns: none;
   }
 
@@ -504,8 +508,8 @@ a {
     flex-direction: row;
     font-size: 0.9375rem;
     gap: 0.875rem;
-    min-height: 2.75rem;
-    padding: 0 0.875rem;
+    min-height: 3rem;
+    padding: 0 1rem;
   }
 
   .app-nav svg {
@@ -515,24 +519,28 @@ a {
   }
 
   .app-nav a[aria-current="page"] {
-    background: var(--color-primary-soft);
-    color: var(--color-primary-strong);
+    background: var(--color-primary);
+    color: var(--color-surface);
+    font-weight: 700;
   }
 
   .app-nav a:hover[aria-current="page"] {
-    background: var(--color-primary-soft);
+    background: var(--color-primary-strong);
+    color: var(--color-surface);
   }
 
   .app-header-account {
-    border-top: 1px solid #e4eae5;
+    border-top: 1px solid var(--color-border);
     flex-direction: column;
     align-items: stretch;
-    gap: 0.5rem;
+    gap: 0.625rem;
     margin-top: auto;
-    padding-top: 1rem;
+    padding-top: 1.25rem;
   }
 
   .app-login-id {
+    color: var(--color-text-soft);
+    font-size: 0.8125rem;
     white-space: normal;
     overflow-wrap: anywhere;
   }
