@@ -14,7 +14,7 @@ declare global {
 function initializeDatabase(): DatabaseConnection {
   loadPrizgramEnvironment();
   const migrationsFolder =
-    process.env.PRIZGRAM_MIGRATIONS_DIR?.trim() || undefined;
+    process.env["PRIZGRAM_MIGRATIONS_DIR"]?.trim() || undefined;
 
   return createDatabase(
     databaseUrlFromEnvironment(),
