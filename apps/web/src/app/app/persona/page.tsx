@@ -66,6 +66,11 @@ export default async function PersonaPage() {
       <p className="hint-text">
         すべての項目はヒアリングの回答のみを根拠にしています。推測は含まれません。
       </p>
+      <p>
+        <Link className="button button-secondary" href="/app/persona/update">
+          選考結果からペルソナを更新する
+        </Link>
+      </p>
 
       <section aria-labelledby="persona-confidence" className="card">
         <h2 id="persona-confidence">確信度</h2>

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -32,12 +32,24 @@ export const jobImportRequestSchema = z
     body: z.string().trim().min(40).max(MAX_BODY_CHARS),
     /** Optional logical job to append a new immutable version to. */
     jobId: z.string().trim().min(1).max(128).optional(),
-    companyHint: z.string().trim().min(1).max(200).optional(),
+    companyName: z.string().trim().min(1).max(200).optional(),
     employmentTypeHint: z.enum(employmentTypes).optional(),
     sourceName: z.string().trim().min(1).max(200).optional(),
     sourceUrl: z.url().max(2_048).optional(),
+    /** Provider provenance; both fields must travel together or not at all. */
+    sourceKind: z.enum(["official_api", "licensed_source"]).optional(),
+    sourceExternalId: z.string().trim().min(1).max(300).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) =>
+      (input.sourceKind === undefined) ===
+      (input.sourceExternalId === undefined),
+    {
+      message: "sourceKind and sourceExternalId must be provided together",
+      path: ["sourceKind"],
+    },
+  );
 
 export type JobImportInput = z.infer<typeof jobImportRequestSchema>;
 
@@ -77,11 +89,11 @@ export type JobDetail = Readonly<{
 
 /** Builds the chat messages for one job-posting import. */
 export function buildJobImportMessages(
-  input: Pick<JobImportInput, "body" | "companyHint" | "employmentTypeHint">,
+  input: Pick<JobImportInput, "body" | "companyName" | "employmentTypeHint">,
 ): readonly ChatMessage[] {
   const hints: string[] = [];
-  if (input.companyHint !== undefined)
-    hints.push(`- 会社名のヒント: ${input.companyHint}`);
+  if (input.companyName !== undefined)
+    hints.push(`- 会社名: ${input.companyName}`);
   if (input.employmentTypeHint !== undefined)
     hints.push(`- 雇用形態のヒント: ${input.employmentTypeHint}`);
 
@@ -195,12 +207,51 @@ export class JobService {
     const now = options.now ?? (() => new Date());
     const retrievedAt = now().toISOString();
 
+    // Provider provenance identifies the posting across fetches; when it is
+    // already stored for this user the import is a no-op duplicate and no
+    // language-model call is spent re-structuring the same listing.
+    const externalProvenance =
+      input.sourceKind === undefined || input.sourceExternalId === undefined
+        ? undefined
+        : { kind: input.sourceKind, externalId: input.sourceExternalId };
+    if (externalProvenance !== undefined) {
+      const knownJob = this.connection.db
+        .select({
+          jobId: jobs.id,
+          jobVersionId: jobVersions.id,
+          version: jobVersions.version,
+        })
+        .from(jobs)
+        .innerJoin(jobVersions, eq(jobVersions.jobId, jobs.id))
+        .where(
+          and(
+            eq(jobs.userId, user.id),
+            eq(jobs.sourceKind, externalProvenance.kind),
+            eq(jobs.sourceExternalId, externalProvenance.externalId),
+          ),
+        )
+        .orderBy(desc(jobVersions.version))
+        .limit(1)
+        .get();
+      if (knownJob !== undefined) {
+        return {
+          jobId: knownJob.jobId,
+          jobVersionId: knownJob.jobVersionId,
+          version: knownJob.version,
+          duplicate: true,
+        };
+      }
+    }
+
     const generation = {
       messages: buildJobImportMessages(input),
       output: createJobStructuredOutput({
-        kind: "user_provided",
+        kind: input.sourceKind ?? "user_provided",
         name: input.sourceName ?? "ユーザー提供の求人票",
         ...(input.sourceUrl === undefined ? {} : { url: input.sourceUrl }),
+        ...(input.sourceExternalId === undefined
+          ? {}
+          : { externalId: input.sourceExternalId }),
         retrievedAt,
       }),
       schemaName: "job_snapshot",
@@ -246,7 +297,19 @@ export class JobService {
       if (targetJobId === undefined) {
         jobId = randomUUID();
         nextVersion = 1;
-        transaction.insert(jobs).values({ id: jobId, userId: user.id }).run();
+        transaction
+          .insert(jobs)
+          .values({
+            id: jobId,
+            userId: user.id,
+            ...(externalProvenance === undefined
+              ? {}
+              : {
+                  sourceKind: externalProvenance.kind,
+                  sourceExternalId: externalProvenance.externalId,
+                }),
+          })
+          .run();
       } else {
         const ownedJob = transaction
           .select({ id: jobs.id })

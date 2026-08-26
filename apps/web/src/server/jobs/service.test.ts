@@ -18,6 +18,7 @@ import {
   JobService,
   buildJobImportMessages,
   jobContentHash,
+  jobImportRequestSchema,
   type ImportedJob,
   type JobDetail,
   type JobListItem,
@@ -333,5 +334,109 @@ describe("JobService.importJob", () => {
         ),
       ),
     ).resolves.toBe("NOT_FOUND");
+  });
+});
+
+describe("JobService.importJob with provider provenance", () => {
+  const externalSource = {
+    sourceName: "Careerjet",
+    sourceUrl: "https://jobviewtrack.example.test/v2/abc",
+    sourceKind: "licensed_source" as const,
+    sourceExternalId: "external-1",
+  };
+
+  it("requires sourceKind and sourceExternalId to travel together", () => {
+    const result = jobImportRequestSchema.safeParse({
+      body: postingText(),
+      sourceKind: "licensed_source",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("stores provenance on the logical job and the snapshot", async () => {
+    const service = new JobService(connection);
+    const imported = await service.importJob(
+      userA,
+      { body: postingText(), ...externalSource },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+
+    expect(imported.duplicate).toBe(false);
+    const row = connection.sqlite
+      .prepare("select source_kind, source_external_id from jobs where id = ?")
+      .get(imported.jobId) as {
+      source_kind: string | null;
+      source_external_id: string | null;
+    };
+    expect(row.source_kind).toBe("licensed_source");
+    expect(row.source_external_id).toBe("external-1");
+
+    const detail = service.getJobDetail(userA.id, imported.jobId);
+    expect(detail.latest.snapshot.source.kind).toBe("licensed_source");
+    expect(detail.latest.snapshot.source.name).toBe("Careerjet");
+    expect(detail.latest.snapshot.source.externalId).toBe("external-1");
+    expect(detail.latest.snapshot.source.url).toBe(externalSource.sourceUrl);
+  });
+
+  it("short-circuits re-imports of a known external id without an LLM call", async () => {
+    const service = new JobService(connection);
+    const first = await service.importJob(
+      userA,
+      { body: postingText(), ...externalSource },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+
+    const clientSpy = vi.fn<typeof fetch>().mockImplementation(() => {
+      throw new Error("LLM must not be called for a known external id");
+    });
+    const second = await service.importJob(
+      userA,
+      {
+        body: `${postingText()}改稿後に取得し直した本文で文言が変わっても\n`,
+        ...externalSource,
+        sourceUrl: "https://jobviewtrack.example.test/v2/abc?ref=x",
+      },
+      {
+        client: new OpenAiCompatibleClient(
+          {
+            baseUrl: "https://llm.example.test/v1",
+            apiKey: "test-key",
+            model: "test-model",
+            timeoutMs: 100,
+          },
+          clientSpy,
+        ),
+        model: "test-model",
+      },
+    );
+
+    expect(second.duplicate).toBe(true);
+    expect(second.jobVersionId).toBe(first.jobVersionId);
+    expect(service.getJobDetail(userA.id, first.jobId).versions).toHaveLength(
+      1,
+    );
+  });
+
+  it("scopes external-id dedupe per user", async () => {
+    const service = new JobService(connection);
+    await service.importJob(
+      userA,
+      { body: postingText(), ...externalSource },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    const forUserB = await service.importJob(
+      userB,
+      { body: postingText(), ...externalSource },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+
+    expect(forUserB.duplicate).toBe(false);
+    expect(forUserB.jobId).not.toBe(
+      (
+        connection.sqlite
+          .prepare("select id from jobs where user_id = ?")
+          .get(userA.id) as { id: string }
+      ).id,
+    );
   });
 });

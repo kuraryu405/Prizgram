@@ -24,6 +24,12 @@ const codeMessages: Readonly<Record<string, string>> = {
     "AIサービスが一時的に利用できません。時間をおいて再度お試しください。",
   UPSTREAM_INVALID_RESPONSE:
     "AIの応答が処理できませんでした。時間をおいて再度お試しください。",
+  PROVIDER_RATE_LIMITED:
+    "求人検索APIの利用制限に達しました。時間をおいて再度お試しください。",
+  PROVIDER_LOCATION_UNRESOLVED:
+    "指定された勤務地を求人検索APIが解決できませんでした。勤務地の指定を変えて再度お試しください。",
+  SEARCH_QUERY_REQUIRED:
+    "検索条件を生成できませんでした。キーワードを入力して再度お試しください。",
   INTERNAL_ERROR:
     "サーバーで問題が発生しました。しばらくしてから再度お試しください。",
   NETWORK_ERROR:
