@@ -32,7 +32,7 @@ export const jobImportRequestSchema = z
     body: z.string().trim().min(40).max(MAX_BODY_CHARS),
     /** Optional logical job to append a new immutable version to. */
     jobId: z.string().trim().min(1).max(128).optional(),
-    companyHint: z.string().trim().min(1).max(200).optional(),
+    companyName: z.string().trim().min(1).max(200).optional(),
     employmentTypeHint: z.enum(employmentTypes).optional(),
     sourceName: z.string().trim().min(1).max(200).optional(),
     sourceUrl: z.url().max(2_048).optional(),
@@ -89,11 +89,11 @@ export type JobDetail = Readonly<{
 
 /** Builds the chat messages for one job-posting import. */
 export function buildJobImportMessages(
-  input: Pick<JobImportInput, "body" | "companyHint" | "employmentTypeHint">,
+  input: Pick<JobImportInput, "body" | "companyName" | "employmentTypeHint">,
 ): readonly ChatMessage[] {
   const hints: string[] = [];
-  if (input.companyHint !== undefined)
-    hints.push(`- 会社名のヒント: ${input.companyHint}`);
+  if (input.companyName !== undefined)
+    hints.push(`- 会社名: ${input.companyName}`);
   if (input.employmentTypeHint !== undefined)
     hints.push(`- 雇用形態のヒント: ${input.employmentTypeHint}`);
 

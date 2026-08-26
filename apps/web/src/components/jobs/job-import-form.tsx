@@ -29,7 +29,7 @@ const fieldLabels: Readonly<Record<string, string>> = {
 export function JobImportForm() {
   const router = useRouter();
   const [body, setBody] = useState("");
-  const [companyHint, setCompanyHint] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [pending, setPending] = useState(false);
@@ -57,9 +57,9 @@ export function JobImportForm() {
         "/api/jobs",
         jsonRequestInit("POST", {
           body,
-          ...(companyHint.trim() === ""
+          ...(companyName.trim() === ""
             ? {}
-            : { companyHint: companyHint.trim() }),
+            : { companyName: companyName.trim() }),
           ...(sourceName.trim() === ""
             ? {}
             : { sourceName: sourceName.trim() }),
@@ -67,7 +67,7 @@ export function JobImportForm() {
         }),
       );
       setBody("");
-      setCompanyHint("");
+      setCompanyName("");
       setSourceName("");
       setSourceUrl("");
       setSuccessMessage(
@@ -136,12 +136,12 @@ export function JobImportForm() {
       </div>
       <div className="field-row">
         <div className="field">
-          <label htmlFor="job-company-hint">会社名のヒント（任意）</label>
+          <label htmlFor="job-company-name">会社名（任意）</label>
           <input
-            id="job-company-hint"
-            onChange={(event) => setCompanyHint(event.target.value)}
+            id="job-company-name"
+            onChange={(event) => setCompanyName(event.target.value)}
             type="text"
-            value={companyHint}
+            value={companyName}
           />
         </div>
         <div className="field">
