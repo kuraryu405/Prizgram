@@ -425,9 +425,13 @@ a {
 }
 
 @media (min-width: 900px) {
+  .app-layout {
+    flex-direction: row;
+  }
+
   .app-header {
     align-items: stretch;
-    align-self: stretch;
+    flex: none;
     border-bottom: none;
     border-right: 1px solid #dde4df;
     flex-direction: column;
@@ -501,6 +505,10 @@ a {
   .app-main {
     max-width: none;
     padding: 2rem 1.5rem 3rem;
+  }
+
+  .app-shell-alert {
+    flex: 1;
   }
 
   .app-main > .page,
