@@ -139,7 +139,10 @@ export default async function AppHome() {
                   <p className="hint-text">
                     ヒアリングに答えると、スキル・経験・価値観が整理され、求人評価の基準になります。
                   </p>
-                  <Link href="/app/persona/intake">
+                  <Link
+                    className="button button-primary"
+                    href="/app/persona/intake"
+                  >
                     ペルソナ・ヒアリングを始める
                   </Link>
                 </li>
@@ -259,10 +262,14 @@ export default async function AppHome() {
                 )}
               </>
             )}
-            <p className="dashboard-links">
-              <Link href="/app/deadlines">締切一覧へ</Link>
-              <Link href="/app/reminders">リマインダー一覧へ</Link>
-            </p>
+            <div className="card-footer">
+              <Link className="button button-secondary" href="/app/deadlines">
+                締切一覧へ
+              </Link>
+              <Link className="button button-secondary" href="/app/reminders">
+                リマインダー一覧へ
+              </Link>
+            </div>
           </section>
         </div>
 
@@ -275,9 +282,14 @@ export default async function AppHome() {
                   まだ応募がありません。取り込んだ求人から応募を登録すると、このカードに選考の進捗が表示されます。
                 </p>
                 {actionHrefs.has("/app/applications") ? null : (
-                  <p className="dashboard-links">
-                    <Link href="/app/applications">応募を登録する</Link>
-                  </p>
+                  <div className="card-footer">
+                    <Link
+                      className="button button-secondary"
+                      href="/app/applications"
+                    >
+                      応募を登録する
+                    </Link>
+                  </div>
                 )}
               </>
             ) : (
@@ -293,9 +305,14 @@ export default async function AppHome() {
                     </li>
                   ))}
                 </ul>
-                <p className="dashboard-links">
-                  <Link href="/app/applications">応募一覧へ</Link>
-                </p>
+                <div className="card-footer">
+                  <Link
+                    className="button button-secondary"
+                    href="/app/applications"
+                  >
+                    応募一覧へ
+                  </Link>
+                </div>
               </>
             )}
           </section>
@@ -308,9 +325,11 @@ export default async function AppHome() {
                   求人がまだありません。求人票を貼り付けて取り込むと、このカードに一覧と評価が表示されます。
                 </p>
                 {actionHrefs.has("/app/jobs") ? null : (
-                  <p className="dashboard-links">
-                    <Link href="/app/jobs">求人取り込みへ</Link>
-                  </p>
+                  <div className="card-footer">
+                    <Link className="button button-secondary" href="/app/jobs">
+                      求人取り込みへ
+                    </Link>
+                  </div>
                 )}
               </>
             ) : (
@@ -341,9 +360,11 @@ export default async function AppHome() {
                   })}
                 </ul>
                 {jobList.length > 5 && (
-                  <p className="dashboard-links">
-                    <Link href="/app/jobs">求人一覧へ</Link>
-                  </p>
+                  <div className="card-footer">
+                    <Link className="button button-secondary" href="/app/jobs">
+                      求人一覧へ
+                    </Link>
+                  </div>
                 )}
               </>
             )}
@@ -369,9 +390,11 @@ export default async function AppHome() {
                   件・強み {persona.snapshot.strengths.length}
                   件・価値観 {persona.snapshot.values.length} 件を整理済み
                 </p>
-                <p className="dashboard-links">
-                  <Link href="/app/persona">詳細を見る</Link>
-                </p>
+                <div className="card-footer">
+                  <Link className="button button-secondary" href="/app/persona">
+                    詳細を見る
+                  </Link>
+                </div>
               </>
             )}
           </section>
