@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -10,7 +10,7 @@ import {
   type AuthenticatedUser,
   type PersonaSnapshot,
 } from "@prizgram/shared";
-import { applicationStageEvents, personaVersions, jobs } from "@prizgram/db";
+import { applicationStageEvents, jobs, personaVersions } from "@prizgram/db";
 
 import type { DatabaseConnection } from "@prizgram/db";
 import { AppError } from "../api";
@@ -46,6 +46,21 @@ export type ApproveInput = z.infer<typeof approveRequestSchema>;
 
 const REFLECTION_PREFIX = "reflection:";
 const EVENT_PREFIX = "event:";
+
+const VERSION_UNIQUE_VIOLATION =
+  /unique constraint failed: .*persona_versions.*user_id.*version|persona_versions_user_version_unique/i;
+
+/** Matches only the persona_versions (user_id, version) unique violation. */
+export function isPersonaVersionUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return (
+    typeof code === "string" &&
+    code.startsWith("SQLITE_CONSTRAINT") &&
+    typeof message === "string" &&
+    VERSION_UNIQUE_VIOLATION.test(message)
+  );
+}
 
 export interface EventEvidenceSource {
   eventId: string;
@@ -219,6 +234,13 @@ export class PersonaUpdateService {
     input: ApproveInput,
   ): { personaVersionId: string; version: number } {
     const base = this.baseVersion(user, input.basePersonaVersionId);
+
+    // Idempotency: a retried approval (e.g. the response was lost after the
+    // insert committed) must return the stored version instead of minting
+    // another one for the same requestId.
+    const replayed = this.findVersionByRequestId(user.id, input.requestId);
+    if (replayed !== undefined) return replayed;
+
     const baseEvidence = new Set(base.snapshot.evidence.map((e) => e.id));
     const eventSources =
       input.applicationId === undefined
@@ -233,34 +255,86 @@ export class PersonaUpdateService {
       input.snapshot,
     );
 
-    const maxVersion = this.connection.sqlite
-      .prepare(
-        "select max(version) as value from persona_versions where user_id = ?",
-      )
-      .get(user.id) as { value: number | null };
-    const version = Number(maxVersion.value ?? 0) + 1;
-    const personaVersionId = randomUUID();
-    this.connection.db
-      .insert(personaVersions)
-      .values({
-        id: personaVersionId,
-        userId: user.id,
-        version,
-        snapshot: validated,
-        provenance: {
-          source: "llm",
-          sourceIds: [
-            `update-of:${base.id}`,
-            ...eventSources.map((e) => `${EVENT_PREFIX}${e.eventId}`),
-            `${REFLECTION_PREFIX}${input.requestId}`,
-          ],
-          generatedAt: new Date().toISOString(),
-          model: "human-approved",
-          promptVersion: "feedback-v1",
-        },
-      })
-      .run();
-    return { personaVersionId, version };
+    let lastError: unknown;
+    // Version numbers are computed and inserted inside one transaction, and
+    // a unique (user_id, version) violation from another writer is retried
+    // once with a fresh number — mirroring generatePersona.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return this.connection.db.transaction((transaction) => {
+          const maxVersion = transaction
+            .select({
+              value: sql<number>`coalesce(max(${personaVersions.version}), 0)`,
+            })
+            .from(personaVersions)
+            .where(eq(personaVersions.userId, user.id))
+            .get();
+          const version = Number(maxVersion?.value ?? 0) + 1;
+          const personaVersionId = randomUUID();
+          transaction
+            .insert(personaVersions)
+            .values({
+              id: personaVersionId,
+              userId: user.id,
+              version,
+              snapshot: validated,
+              provenance: {
+                source: "llm",
+                sourceIds: [
+                  `update-of:${base.id}`,
+                  ...eventSources.map((e) => `${EVENT_PREFIX}${e.eventId}`),
+                  `${REFLECTION_PREFIX}${input.requestId}`,
+                ],
+                generatedAt: new Date().toISOString(),
+                model: "human-approved",
+                promptVersion: "feedback-v1",
+              },
+            })
+            .run();
+          return { personaVersionId, version };
+        });
+      } catch (error) {
+        lastError = error;
+        if (!isPersonaVersionUniqueViolation(error)) throw error;
+      }
+    }
+    throw lastError;
+  }
+
+  /**
+   * Finds an already-approved persona version carrying this exact request
+   * id in its provenance, so duplicate submissions are absorbed.
+   */
+  private findVersionByRequestId(
+    userId: string,
+    requestId: string,
+  ): { personaVersionId: string; version: number } | undefined {
+    const rows = this.connection.db
+      .select({ id: personaVersions.id, version: personaVersions.version })
+      .from(personaVersions)
+      .where(eq(personaVersions.userId, userId))
+      .all();
+    const marker = `${REFLECTION_PREFIX}${requestId}`;
+    for (const row of rows) {
+      const raw = this.connection.sqlite
+        .prepare("select provenance from persona_versions where id = ?")
+        .get(row.id) as { provenance: string } | undefined;
+      if (raw === undefined) continue;
+      try {
+        const provenance = JSON.parse(raw.provenance) as {
+          sourceIds?: unknown;
+        };
+        if (
+          Array.isArray(provenance.sourceIds) &&
+          provenance.sourceIds.includes(marker)
+        ) {
+          return { personaVersionId: row.id, version: row.version };
+        }
+      } catch {
+        // Undecodable provenance cannot match any requestId.
+      }
+    }
+    return undefined;
   }
 
   /** Builds the prompt digest of selection events for proposals. */
@@ -322,8 +396,6 @@ export class PersonaUpdateService {
       },
     ];
 
-    // The provider schema above is the persona one; reuse its normalization
-    // by parsing through the structured contract for parity.
     let raw: PersonaSnapshot;
     try {
       raw = await client.generateStructured({

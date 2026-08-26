@@ -177,6 +177,22 @@ describe("PersonaUpdateService", () => {
       }),
     ).toThrow(AppError);
   });
+
+  it("returns the stored version when the same requestId is replayed", () => {
+    const ids = seedBaseAndApplication();
+    const input = {
+      basePersonaVersionId: ids.personaVersionId,
+      requestId: "req-replay-1",
+      snapshot: proposedSnapshot(),
+    };
+
+    const first = service.approve(userA, input);
+    const second = service.approve(userA, input);
+
+    expect(second.personaVersionId).toBe(first.personaVersionId);
+    expect(second.version).toBe(first.version);
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(2);
+  });
 });
 
 describe("PersonaUpdateService.propose error contract", () => {
