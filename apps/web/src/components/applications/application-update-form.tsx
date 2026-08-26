@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
@@ -11,6 +11,8 @@ export type ApplicationUpdateFormProps = Readonly<{
   currentStatus: string;
   allowedNextStatuses: readonly string[];
   statusLabels: Readonly<Record<string, string>>;
+  initialNextAction?: string;
+  initialNote?: string;
 }>;
 
 export function ApplicationUpdateForm({
@@ -18,14 +20,35 @@ export function ApplicationUpdateForm({
   currentStatus,
   allowedNextStatuses,
   statusLabels,
+  initialNextAction,
+  initialNote,
 }: ApplicationUpdateFormProps) {
   const router = useRouter();
   const [status, setStatus] = useState("");
-  const [nextAction, setNextAction] = useState("");
-  const [note, setNote] = useState("");
+  const [nextAction, setNextAction] = useState(initialNextAction ?? "");
+  const [note, setNote] = useState(initialNote ?? "");
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Keep form in sync when the server-provided initial values change after refresh.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
+    setNextAction(initialNextAction ?? "");
+  }, [initialNextAction]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
+    setNote(initialNote ?? "");
+  }, [initialNote]);
+
+  const hasStatusChange = status !== "";
+  const nextActionTrimmed = nextAction.trim();
+  const noteTrimmed = note.trim();
+  const initialNextActionTrimmed = (initialNextAction ?? "").trim();
+  const initialNoteTrimmed = (initialNote ?? "").trim();
+  const nextActionDirty = nextActionTrimmed !== initialNextActionTrimmed;
+  const noteDirty = noteTrimmed !== initialNoteTrimmed;
+  const canSubmit = hasStatusChange || nextActionDirty || noteDirty;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,16 +62,25 @@ export function ApplicationUpdateForm({
         {
           ...jsonRequestInit("PATCH", {
             ...(status !== "" ? { status } : {}),
-            ...(nextAction.trim() === ""
-              ? {}
-              : { nextAction: nextAction.trim() }),
-            ...(note.trim() === "" ? {} : { note: note.trim() }),
+            ...(nextActionDirty
+              ? {
+                  nextAction:
+                    nextActionTrimmed === "" ? null : nextActionTrimmed,
+                }
+              : {}),
+            ...(noteDirty
+              ? { note: noteTrimmed === "" ? null : noteTrimmed }
+              : {}),
           }),
           method: "PATCH",
         },
       );
       setStatus("");
-      setNote("");
+      // Keep form in sync with server after successful mutation.
+      // If the field was cleared (sent null), the server will have null,
+      // otherwise it will have the new trimmed value.
+      if (nextActionDirty) setNextAction(nextActionTrimmed);
+      if (noteDirty) setNote(noteTrimmed);
       setSuccessMessage("更新しました。");
       router.refresh();
     } catch (error) {
@@ -101,10 +133,17 @@ export function ApplicationUpdateForm({
           id="application-next-action-input"
           maxLength={500}
           onChange={(event) => setNextAction(event.target.value)}
-          placeholder="空欄なら変更しません"
+          placeholder={
+            initialNextAction === undefined
+              ? "例: ESを書く"
+              : "空にすると削除されます"
+          }
           type="text"
           value={nextAction}
         />
+        {initialNextAction !== undefined && (
+          <p className="hint-text">現在: {initialNextAction}</p>
+        )}
       </div>
       <div className="field">
         <label htmlFor="application-note-input">
@@ -114,17 +153,20 @@ export function ApplicationUpdateForm({
           id="application-note-input"
           maxLength={2000}
           onChange={(event) => setNote(event.target.value)}
+          placeholder={
+            initialNote === undefined ? "任意" : "空にすると削除されます"
+          }
           rows={3}
           value={note}
         />
+        {initialNote !== undefined && (
+          <p className="hint-text">現在のメモがあります</p>
+        )}
       </div>
       <button
         aria-busy={pending}
         className="button button-primary"
-        disabled={
-          pending ||
-          (status === "" && nextAction.trim() === "" && note.trim() === "")
-        }
+        disabled={pending || !canSubmit}
         type="submit"
       >
         {pending ? "更新中…" : "更新する"}
