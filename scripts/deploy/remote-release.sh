@@ -61,6 +61,10 @@ cd "$release_directory"
 "$pnpm_binary" build
 
 standalone_web_directory="$release_directory/apps/web/.next/standalone/apps/web"
+standalone_migrations_directory="$standalone_web_directory/.next/drizzle"
+mkdir -p "$standalone_migrations_directory"
+cp -a "$release_directory/packages/db/drizzle/." "$standalone_migrations_directory/"
+
 if [[ -d "$release_directory/apps/web/.next/static" ]]; then
   mkdir -p "$standalone_web_directory/.next"
   cp -a "$release_directory/apps/web/.next/static" "$standalone_web_directory/.next/"
