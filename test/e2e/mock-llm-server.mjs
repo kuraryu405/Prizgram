@@ -60,6 +60,23 @@ const jobSnapshot = {
   difficultyEvidence: [{ section: "requirements", index: 0 }],
 };
 
+/**
+ * Extraction is content-dependent: postings fetched from the discovery mock
+ * carry their own employer, which the snapshot must reflect so the common
+ * import pipeline demonstrably structures the supplied text.
+ */
+function jobPayloadFor(body) {
+  if (typeof body === "string" && body.includes("株式会社キャリアジェット")) {
+    return {
+      ...jobSnapshot,
+      company: "株式会社キャリアジェット",
+      description:
+        "ReactとTypeScriptを用いたフロントエンド開発インターン。メンターが付き、コードレビューを通じて実務スキルを伸ばせます。",
+    };
+  }
+  return jobSnapshot;
+}
+
 const scoring = {
   skillFit: {
     score: 72,
@@ -78,15 +95,25 @@ const scoring = {
   },
 };
 
-function payloadFor(schemaName) {
+/** Job discovery provider payload (normalized by DiscoveryService afterwards). */
+const jobSearchQuery = {
+  keywords: "フロントエンド エンジニア",
+  location: "",
+  contractType: "",
+  workHours: "",
+};
+
+function payloadFor(schemaName, body) {
   switch (schemaName) {
     case "persona_snapshot":
     case "persona_update_proposal":
       return personaSnapshot;
     case "job_snapshot":
-      return jobSnapshot;
+      return jobPayloadFor(body);
     case "job_scoring":
       return scoring;
+    case "job_search_query":
+      return jobSearchQuery;
     default:
       return null;
   }
@@ -103,6 +130,7 @@ const server = createServer((request, response) => {
   });
   request.on("end", () => {
     let schemaName = "";
+    let userContent = "";
     try {
       const parsed = /** @type {any} */ (JSON.parse(body));
       schemaName = String(
@@ -110,11 +138,14 @@ const server = createServer((request, response) => {
           parsed?.response_format?.name ??
           "",
       );
+      const messages = Array.isArray(parsed?.messages) ? parsed.messages : [];
+      const lastUser = [...messages].reverse().find((m) => m?.role === "user");
+      userContent = String(lastUser?.content ?? "");
     } catch {
       response.writeHead(400).end();
       return;
     }
-    const payload = payloadFor(schemaName);
+    const payload = payloadFor(schemaName, userContent);
     if (payload === null) {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
