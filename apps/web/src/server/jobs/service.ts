@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -207,22 +207,20 @@ export class JobService {
     const now = options.now ?? (() => new Date());
     const retrievedAt = now().toISOString();
 
-    // Provider provenance identifies the posting across fetches; when it is
-    // already stored for this user the import is a no-op duplicate and no
-    // language-model call is spent re-structuring the same listing.
+    // Provider provenance identifies the logical job; its content may have
+    // changed since last fetch, so we resolve the logical job id here but
+    // defer duplicate handling until after the posting is structured and its
+    // content hash is known. This allows updated postings to append a new
+    // immutable version instead of being silently treated as duplicates.
     const externalProvenance =
       input.sourceKind === undefined || input.sourceExternalId === undefined
         ? undefined
         : { kind: input.sourceKind, externalId: input.sourceExternalId };
+    let provisionedJobId: string | undefined;
     if (externalProvenance !== undefined) {
-      const knownJob = this.connection.db
-        .select({
-          jobId: jobs.id,
-          jobVersionId: jobVersions.id,
-          version: jobVersions.version,
-        })
+      const provisioned = this.connection.db
+        .select({ id: jobs.id })
         .from(jobs)
-        .innerJoin(jobVersions, eq(jobVersions.jobId, jobs.id))
         .where(
           and(
             eq(jobs.userId, user.id),
@@ -230,17 +228,8 @@ export class JobService {
             eq(jobs.sourceExternalId, externalProvenance.externalId),
           ),
         )
-        .orderBy(desc(jobVersions.version))
-        .limit(1)
         .get();
-      if (knownJob !== undefined) {
-        return {
-          jobId: knownJob.jobId,
-          jobVersionId: knownJob.jobVersionId,
-          version: knownJob.version,
-          duplicate: true,
-        };
-      }
+      provisionedJobId = provisioned?.id;
     }
 
     const generation = {
@@ -289,6 +278,45 @@ export class JobService {
           version: currentVersion?.version ?? 1,
           duplicate: true,
         };
+      }
+
+      // Provider-identified logical job takes precedence: if an existing job
+      // shares the same external identity, updates belong to it regardless of
+      // whether the caller supplied an explicit jobId (unless mismatched).
+      if (provisionedJobId !== undefined) {
+        if (input.jobId !== undefined && input.jobId !== provisionedJobId) {
+          throw new AppError(
+            "VALIDATION_ERROR",
+            "jobId does not match the provider's logical job",
+            400,
+          );
+        }
+        const jobId = provisionedJobId;
+        const maxVersion = transaction
+          .select({
+            value: sql<number>`coalesce(max(${jobVersions.version}), 0)`,
+          })
+          .from(jobVersions)
+          .where(
+            and(eq(jobVersions.userId, user.id), eq(jobVersions.jobId, jobId)),
+          )
+          .get();
+        const nextVersion = Number(maxVersion?.value ?? 0) + 1;
+        const jobVersionId = randomUUID();
+        transaction
+          .insert(jobVersions)
+          .values({
+            id: jobVersionId,
+            userId: user.id,
+            jobId,
+            version: nextVersion,
+            snapshot,
+            contentHash,
+            ...(model === null ? {} : { model }),
+            promptVersion: JOB_IMPORT_PROMPT_VERSION,
+          })
+          .run();
+        return { jobId, jobVersionId, version: nextVersion, duplicate: false };
       }
 
       const targetJobId = input.jobId;
