@@ -259,13 +259,17 @@ describe("withApiHandler", () => {
     });
   });
 
-  it("includes typed cause identities for diagnosable upstream faults", async () => {
+  it("includes message only for causes marked as log-safe", async () => {
     const errorSpy = spyConsoleError();
     const providerFailure = new Error(
       "The language model returned HTTP 401",
-    ) as Error & { code: string };
+    ) as Error & { code: string } & { logSafeMessage?: true };
     providerFailure.name = "LlmClientError";
     providerFailure.code = "HTTP_ERROR";
+    providerFailure.logSafeMessage = true;
+    const opaqueFailure = new Error(
+      "user input fragment and session token leak",
+    );
     await withApiHandler(() => {
       throw new AppError(
         "UPSTREAM_INVALID_RESPONSE",
@@ -276,22 +280,33 @@ describe("withApiHandler", () => {
         { cause: providerFailure },
       );
     })(new Request("https://example.test/api/persona/generate"));
+    await withApiHandler(() => {
+      throw new AppError(
+        "UPSTREAM_INVALID_RESPONSE",
+        "The persona could not be generated right now",
+        502,
+        undefined,
+        undefined,
+        { cause: opaqueFailure },
+      );
+    })(new Request("https://example.test/api/persona/generate"));
 
-    expect(loggedErrors(errorSpy)).toHaveLength(1);
-    const payload = JSON.parse(loggedErrors(errorSpy)[0] ?? "{}") as Record<
-      string,
-      unknown
-    >;
-    expect(payload).toMatchObject({
-      code: "UPSTREAM_INVALID_RESPONSE",
-      causes: [
-        {
-          name: "LlmClientError",
-          code: "HTTP_ERROR",
-          message: "The language model returned HTTP 401",
-        },
-      ],
-    });
+    const payloads = loggedErrors(errorSpy).map(
+      (line) => JSON.parse(line) as Record<string, unknown>,
+    );
+    // Marked cause: full identity including its static message.
+    expect(payloads[0]?.causes).toEqual([
+      {
+        name: "LlmClientError",
+        code: "HTTP_ERROR",
+        message: "The language model returned HTTP 401",
+      },
+    ]);
+    // Unmarked cause: identity only; dynamic content stays out of logs.
+    expect(payloads[1]?.causes).toEqual([{ name: "Error" }]);
+    expect(loggedErrors(errorSpy).join("\n")).not.toContain(
+      "session token leak",
+    );
   });
 
   it("omits the causes field when an app error has no cause chain", async () => {
@@ -348,8 +363,8 @@ describe("withApiHandler", () => {
       (line) => JSON.parse(line) as Record<string, unknown>,
     );
     expect(payloads[0]?.causes).toEqual([
-      { name: "AppError", code: "INTERNAL_ERROR", message: "mid" },
-      { name: "AppError", code: "INTERNAL_ERROR", message: "leaf" },
+      { name: "AppError", code: "INTERNAL_ERROR" },
+      { name: "AppError", code: "INTERNAL_ERROR" },
     ]);
     expect(payloads[1]?.causes).toHaveLength(3);
   });

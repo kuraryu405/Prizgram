@@ -3,6 +3,8 @@ import "server-only";
 import type { StructuredOutputContract } from "@prizgram/shared";
 import { z } from "zod";
 
+import type { LogSafeCause } from "../api";
+
 const configSchema = z
   .object({
     baseUrl: z.url(),
@@ -41,8 +43,13 @@ export type LlmErrorCode =
   | "INVALID_RESPONSE"
   | "SCHEMA_VALIDATION_FAILED";
 
-export class LlmClientError extends Error {
+/**
+ * Every message is a developer-defined constant (HTTP statuses aside) and
+ * never embeds request data, so causes of this class may be logged.
+ */
+export class LlmClientError extends Error implements LogSafeCause {
   override readonly name = "LlmClientError";
+  readonly logSafeMessage = true as const;
 
   constructor(
     readonly code: LlmErrorCode,

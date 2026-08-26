@@ -123,31 +123,46 @@ function errorResponse(
   );
 }
 
+/**
+ * Opt-in marker for error classes whose `message` is a developer-defined,
+ * data-free constant that is safe to write into server logs verbatim.
+ * Causes without this marker are logged by identity only (name and typed
+ * code); their message may embed dynamic content such as response
+ * fragments or user input, so it never reaches the log.
+ */
+export interface LogSafeCause {
+  readonly logSafeMessage: true;
+}
+
 type LoggedErrorCause = {
   name: string;
   code?: string;
-  message: string;
+  message?: string;
 };
 
 /** Upper bound so circular or pathological cause chains cannot spin. */
 const MAX_CAUSE_CHAIN_DEPTH = 3;
 
 /**
- * Summarizes an AppError's cause chain as developer-defined identities
- * (name, typed code, static message) so upstream faults such as "provider
- * returned HTTP 401" are diagnosable from logs alone without SSH access to
- * re-run requests. The chain is truncated defensively.
+ * Summarizes an AppError's cause chain as log-safe identities: always the
+ * error name and typed code when present, plus the message only for classes
+ * that explicitly implement {@link LogSafeCause}. The chain is truncated
+ * defensively.
  */
 export function describeAppErrorCauses(error: AppError): LoggedErrorCause[] {
   const causes: LoggedErrorCause[] = [];
   let current: unknown = error.cause;
   for (let depth = 0; depth < MAX_CAUSE_CHAIN_DEPTH; depth += 1) {
     if (!(current instanceof Error)) break;
-    const typedCode = (current as unknown as { code?: unknown }).code;
+    const candidate = current as unknown as {
+      code?: unknown;
+    } & Partial<LogSafeCause>;
     causes.push({
       name: current.name,
-      ...(typeof typedCode === "string" ? { code: typedCode } : {}),
-      message: current.message,
+      ...(typeof candidate.code === "string" ? { code: candidate.code } : {}),
+      ...(candidate.logSafeMessage === true
+        ? { message: current.message }
+        : {}),
     });
     current = current.cause;
   }
@@ -184,14 +199,13 @@ export function logApiServerError(
     // with their developer-defined code and message, which never embed
     // request data.
     if (error.status < 500) return;
+    const causes = describeAppErrorCauses(error);
     console.error(
       JSON.stringify({
         ...base,
         code: error.code,
         message: error.message,
-        ...(describeAppErrorCauses(error).length > 0
-          ? { causes: describeAppErrorCauses(error) }
-          : {}),
+        ...(causes.length > 0 ? { causes } : {}),
       }),
     );
     return;
