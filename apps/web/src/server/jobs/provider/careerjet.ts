@@ -141,6 +141,12 @@ function cleanText(raw: string | null | undefined): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
+function cleanDescription(raw: string | null | undefined): string | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (!/<\/?b>/i.test(raw)) return cleanText(raw);
+  return cleanText(raw.replace(/<\/?b>/gi, "").replace(/\s+/g, " "));
+}
+
 /**
  * Stable external identity for a posting. The Careerjet v4 response carries
  * no explicit job id, so the posting URL — stable per listing — is hashed.
@@ -167,7 +173,7 @@ export function normalizeCareerjetJob(raw: unknown): JobCandidate | undefined {
   // structured, or revisited; dropping it beats persisting garbage.
   if (title === undefined) return undefined;
   const company = cleanText(job.company);
-  const description = cleanText(job.description);
+  const description = cleanDescription(job.description);
   const location = cleanText(job.locations);
   const salaryText = cleanText(job.salary);
   const postedAt = parseIsoDate(job.date);

@@ -79,6 +79,38 @@ describe("normalizeCareerjetJob", () => {
     expect(candidate).not.toHaveProperty("postedAt");
   });
 
+  it.each([
+    [
+      "エンジニアのキャリアを<b>デザイン</b>する",
+      "エンジニアのキャリアをデザインする",
+    ],
+    ["<B>強調</B>", "強調"],
+    ["<b>一</b><b>二</b>", "一二"],
+    ["前  <b>強調</b>  後", "前 強調 後"],
+  ])("removes bold tags from descriptions", (description, expected) => {
+    expect(
+      normalizeCareerjetJob({ ...sampleJob, description })?.description,
+    ).toBe(expected);
+  });
+
+  it.each(["タグのない説明文", "  前後の空白のみ除去  "])(
+    "preserves the existing plain-text normalization",
+    (description) => {
+      expect(
+        normalizeCareerjetJob({ ...sampleJob, description })?.description,
+      ).toBe(description.trim());
+    },
+  );
+
+  it.each([null, "", "   "])(
+    "keeps blank descriptions absent",
+    (description) => {
+      expect(
+        normalizeCareerjetJob({ ...sampleJob, description }),
+      ).not.toHaveProperty("description");
+    },
+  );
+
   it("produces a stable external id per posting URL", () => {
     expect(careerjetExternalId("https://a.example/1")).toBe(
       careerjetExternalId("https://a.example/1"),
