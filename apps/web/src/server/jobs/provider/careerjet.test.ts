@@ -162,15 +162,27 @@ describe("CareerjetProvider.search", () => {
       jsonResponse({
         type: "LOCATIONS",
         locations: [],
-        message: "no matching location found",
+        message: "no matching location found for 存在しない場所",
       }),
     );
-    await expect(
-      provider(fetcher).search({ location: "存在しない場所" }, context),
-    ).rejects.toMatchObject({
-      code: "PROVIDER_LOCATION_UNRESOLVED",
-      retryable: false,
-    });
+    const caught: unknown = await provider(fetcher)
+      .search({ location: "存在しない場所" }, context)
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    if (!(caught instanceof JobSearchProviderError)) {
+      throw new Error("expected JobSearchProviderError");
+    }
+    expect(caught.code).toBe("PROVIDER_LOCATION_UNRESOLVED");
+    expect(caught.retryable).toBe(false);
+    // The message must stay a developer-defined constant: instances of this
+    // class are logged verbatim as cause chains, so upstream response text
+    // (which may echo query data) must never be embedded (#92).
+    expect(caught.message).toBe(
+      "The provider could not resolve the requested location",
+    );
+    expect(caught.message).not.toContain("存在しない場所");
   });
 
   it("classifies rate limiting as retryable", async () => {

@@ -259,6 +259,116 @@ describe("withApiHandler", () => {
     });
   });
 
+  it("includes message only for causes marked as log-safe", async () => {
+    const errorSpy = spyConsoleError();
+    const providerFailure = new Error(
+      "The language model returned HTTP 401",
+    ) as Error & { code: string } & { logSafeMessage?: true };
+    providerFailure.name = "LlmClientError";
+    providerFailure.code = "HTTP_ERROR";
+    providerFailure.logSafeMessage = true;
+    const opaqueFailure = new Error(
+      "user input fragment and session token leak",
+    );
+    await withApiHandler(() => {
+      throw new AppError(
+        "UPSTREAM_INVALID_RESPONSE",
+        "The persona could not be generated right now",
+        502,
+        undefined,
+        undefined,
+        { cause: providerFailure },
+      );
+    })(new Request("https://example.test/api/persona/generate"));
+    await withApiHandler(() => {
+      throw new AppError(
+        "UPSTREAM_INVALID_RESPONSE",
+        "The persona could not be generated right now",
+        502,
+        undefined,
+        undefined,
+        { cause: opaqueFailure },
+      );
+    })(new Request("https://example.test/api/persona/generate"));
+
+    const payloads = loggedErrors(errorSpy).map(
+      (line) => JSON.parse(line) as Record<string, unknown>,
+    );
+    // Marked cause: full identity including its static message.
+    expect(payloads[0]?.causes).toEqual([
+      {
+        name: "LlmClientError",
+        code: "HTTP_ERROR",
+        message: "The language model returned HTTP 401",
+      },
+    ]);
+    // Unmarked cause: identity only; dynamic content stays out of logs.
+    expect(payloads[1]?.causes).toEqual([{ name: "Error" }]);
+    expect(loggedErrors(errorSpy).join("\n")).not.toContain(
+      "session token leak",
+    );
+  });
+
+  it("omits the causes field when an app error has no cause chain", async () => {
+    const errorSpy = spyConsoleError();
+    await withApiHandler(() => {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "Origin is not configured",
+        500,
+      );
+    })(new Request("https://example.test"));
+    const payload = JSON.parse(loggedErrors(errorSpy)[0] ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(payload.causes).toBeUndefined();
+  });
+
+  it("truncates deep or cyclic cause chains defensively", async () => {
+    const errorSpy = spyConsoleError();
+    const cyclic = new Error("cycle-entry") as Error & { cause?: unknown };
+    cyclic.cause = cyclic;
+    const nested = new AppError(
+      "INTERNAL_ERROR",
+      "wrapped",
+      500,
+      undefined,
+      undefined,
+      {
+        cause: new AppError(
+          "INTERNAL_ERROR",
+          "mid",
+          500,
+          undefined,
+          undefined,
+          {
+            cause: new AppError("INTERNAL_ERROR", "leaf", 500),
+          },
+        ),
+      },
+    );
+    for (const error of [
+      nested,
+      new AppError("INTERNAL_ERROR", "cycle", 500, undefined, undefined, {
+        cause: cyclic,
+      }),
+    ]) {
+      await withApiHandler(() => {
+        throw error;
+      })(new Request("https://example.test"));
+    }
+
+    const payloads = loggedErrors(errorSpy).map(
+      (line) => JSON.parse(line) as Record<string, unknown>,
+    );
+    expect(payloads[0]?.causes).toEqual([
+      { name: "AppError", code: "INTERNAL_ERROR" },
+      { name: "AppError", code: "INTERNAL_ERROR" },
+    ]);
+    expect(payloads[1]?.causes).toHaveLength(3);
+  });
+
   it("propagates AppError response headers such as Retry-After", async () => {
     const response = await withApiHandler(() => {
       throw new AppError("RATE_LIMITED", "Too many attempts", 429, undefined, {

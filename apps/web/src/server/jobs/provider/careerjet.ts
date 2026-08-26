@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
+import type { LogSafeCause } from "../../api";
+
 export const CAREERJET_PROVIDER_NAME = "Careerjet";
 /** Careerjet is an external-use-licensed search API, not an official board. */
 export const CAREERJET_SOURCE_KIND = "licensed_source" as const;
@@ -55,8 +57,14 @@ export type JobSearchProviderErrorCode =
   | "PROVIDER_INVALID_RESPONSE"
   | "PROVIDER_LOCATION_UNRESOLVED";
 
-export class JobSearchProviderError extends Error {
+/**
+ * Every message is a developer-defined constant (HTTP statuses aside) and
+ * never embeds provider response bodies, so causes of this class may be
+ * logged.
+ */
+export class JobSearchProviderError extends Error implements LogSafeCause {
   override readonly name = "JobSearchProviderError";
+  readonly logSafeMessage = true as const;
 
   constructor(
     readonly code: JobSearchProviderErrorCode,
@@ -400,10 +408,12 @@ export class CareerjetProvider {
 
       const locationEnvelope = locationsEnvelopeSchema.safeParse(decoded);
       if (locationEnvelope.success) {
+        // The provider message may echo query data, so it stays out of the
+        // error message; this class guarantees developer-defined constants
+        // because its instances are logged verbatim as causes (#92).
         throw new JobSearchProviderError(
           "PROVIDER_LOCATION_UNRESOLVED",
-          locationEnvelope.data.message ??
-            "The provider could not resolve the requested location",
+          "The provider could not resolve the requested location",
           false,
         );
       }
