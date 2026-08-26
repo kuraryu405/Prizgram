@@ -2,23 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ApplicationUpdateForm } from "@/components/applications/application-update-form";
+import { applicationStatusLabels as statusLabels } from "@/lib/labels";
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
 import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
-
-const statusLabels: Readonly<Record<string, string>> = {
-  accepted: "内定承諾",
-  applying: "応募中",
-  interview: "面接",
-  offer: "内定",
-  rejected: "落選",
-  saved: "保存済み",
-  screening: "書類選考",
-  submitted: "応募送信済み",
-  withdrawn: "辞退",
-};
 
 function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat("ja-JP", {

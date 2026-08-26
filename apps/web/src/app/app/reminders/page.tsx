@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { DeadlineToggle } from "@/components/deadlines/deadline-components";
+import { ReminderDismissButton } from "@/components/reminders/reminder-dismiss-button";
 import { ReminderService } from "@prizgram/db";
 import { getDatabase } from "@/server/database";
 import { requireSessionUserPage } from "@/server/page-session";
@@ -49,7 +49,7 @@ export default async function RemindersPage() {
               </p>
               <p>{reminder.message}</p>
               <p className="hint-text">検知時刻: {formatInZone(reminder)}</p>
-              <DeadlineToggle deadlineId={reminder.id} completed={false} />
+              <ReminderDismissButton reminderId={reminder.id} />
             </li>
           ))}
         </ul>

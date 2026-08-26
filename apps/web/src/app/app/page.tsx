@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 
 import { ReminderService } from "@prizgram/db";
 
+import { applicationStatusLabels, deadlineKindLabels } from "@/lib/labels";
 import { ApplicationService } from "@/server/applications/service";
 import { AuthService, sessionCookieName } from "@/server/auth";
 import { buildNextActions } from "@/server/dashboard/actions";
@@ -12,24 +13,6 @@ import { JobService } from "@/server/jobs/service";
 import { PersonaService } from "@/server/persona/service";
 import { ScoringService } from "@/server/scoring/service";
 import type { ScoreDetail } from "@/server/scoring/service";
-
-const statusLabels: Readonly<Record<string, string>> = {
-  saved: "保存済み",
-  applying: "応募書類準備中",
-  submitted: "応募済み",
-  screening: "書類選考中",
-  interview: "面接",
-  offer: "内定",
-  accepted: "承諾",
-  rejected: "辞退/不採用",
-};
-
-const deadlineKindLabels: Readonly<Record<string, string>> = {
-  es: "ES締切",
-  interview: "面接",
-  offer_deadline: "内定承諾期限",
-  other: "その他",
-};
 
 function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -179,7 +162,7 @@ export default async function AppHome() {
             <ul>
               {activeStatuses.map(([status, count]) => (
                 <li key={status}>
-                  {statusLabels[status] ?? status}: {count} 件
+                  {applicationStatusLabels[status] ?? status}: {count} 件
                 </li>
               ))}
             </ul>

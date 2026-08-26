@@ -119,6 +119,23 @@ await waitFor("http://localhost:4141/chat/completions", 10_000).catch(
   },
 );
 
+// 2b. Mock licensed job search API (Careerjet wire contract).
+const mockCareerjet = spawn(
+  process.execPath,
+  [path.join(here, "mock-careerjet-server.mjs")],
+  {
+    cwd: repoRoot,
+    env: { ...process.env, MOCK_CAREERJET_PORT: "4142" },
+    stdio: "inherit",
+  },
+);
+children.push(mockCareerjet);
+await waitFor("http://localhost:4142/v4/query", 10_000).catch(async () => {
+  await fetch("http://localhost:4142/", { method: "HEAD" }).catch(
+    () => undefined,
+  );
+});
+
 // 3. Production Next.js server wired to the mock LLM.
 const nextServer = spawn("npx", ["next", "start", "-p", String(PORT)], {
   cwd: webDir,
@@ -131,6 +148,10 @@ const nextServer = spawn("npx", ["next", "start", "-p", String(PORT)], {
     OPENAI_API_KEY: "e2e-mock-key",
     OPENAI_MODEL: "e2e-mock-model",
     OPENAI_TIMEOUT_MS: "20000",
+    CAREERJET_API_KEY: "e2e-mock-careerjet-key",
+    CAREERJET_LOCALE_CODE: "ja_JP",
+    CAREERJET_BASE_URL: "http://localhost:4142/v4/query",
+    CAREERJET_TIMEOUT_MS: "15000",
   },
   stdio: "inherit",
 });

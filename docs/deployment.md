@@ -33,6 +33,8 @@ APP_ORIGIN=https://<your-domain>
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=...        # server-only
 OPENAI_MODEL=...
+CAREERJET_API_KEY=...     # server-only / 求人探索（https://www.careerjet.com/partners/api）
+# CAREERJET_LOCALE_CODE=ja_JP
 # rate limit既定値は .env.example 参照
 ```
 
