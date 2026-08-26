@@ -20,9 +20,6 @@ export function authenticateMutationRequest(
   enforceAuthRateLimit(request, options?.rateLimiter);
 }
 
-// Compatibility export; origin validation is implemented by the API boundary.
-export { assertSameOrigin } from "../api";
-
 export function withNoStore(
   handler: (request: Request) => Response | Promise<Response>,
 ) {
