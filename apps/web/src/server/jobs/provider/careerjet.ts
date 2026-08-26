@@ -75,6 +75,8 @@ const configSchema = z
       .string()
       .trim()
       .regex(/^[a-z]{2}_[A-Z]{2}$/),
+    /** Registered partner site origin sent as the Referer header. */
+    siteUrl: z.url(),
     baseUrl: z.url().default("https://search.api.careerjet.net/v4/query"),
     timeoutMs: z.number().int().min(1_000).max(60_000).default(15_000),
     maxResponseBytes: z
@@ -235,6 +237,18 @@ export class CareerjetProvider {
         false,
       );
     }
+    // The provider rejects requests without a Referer identifying the
+    // registered partner site ("Undeclared referrer"), so the deployment
+    // must declare it — CAREERJET_SITE_URL, falling back to APP_ORIGIN.
+    const siteUrl =
+      process.env.CAREERJET_SITE_URL?.trim() || process.env.APP_ORIGIN?.trim();
+    if (siteUrl === undefined || siteUrl === "") {
+      throw new JobSearchProviderError(
+        "PROVIDER_NOT_CONFIGURED",
+        "CAREERJET_SITE_URL or APP_ORIGIN must be set to a non-empty value",
+        false,
+      );
+    }
     const localeCode = process.env.CAREERJET_LOCALE_CODE?.trim() ?? "ja_JP";
     const timeoutRaw = process.env.CAREERJET_TIMEOUT_MS;
     let timeoutMs = 15_000;
@@ -254,6 +268,7 @@ export class CareerjetProvider {
       {
         apiKey,
         localeCode,
+        siteUrl,
         timeoutMs,
         ...(baseUrl === undefined ? {} : { baseUrl }),
       },
@@ -302,6 +317,9 @@ export class CareerjetProvider {
         headers: {
           // Basic auth: API key as username, empty password.
           authorization: `Basic ${Buffer.from(`${this.config.apiKey}:`).toString("base64")}`,
+          // The partner contract requires the registered site origin;
+          // requests without it are rejected as "Undeclared referrer".
+          referer: this.config.siteUrl,
         },
         signal: timeoutController.signal,
       });

@@ -22,6 +22,7 @@ function provider(
     {
       apiKey: "secret-key",
       localeCode: "ja_JP",
+      siteUrl: "https://prizgram.example.test",
       timeoutMs: 1000,
       ...overrides,
     },
@@ -136,6 +137,7 @@ describe("CareerjetProvider.search", () => {
     // Basic auth: API key as username, empty password.
     expect(init.headers).toMatchObject({
       authorization: `Basic ${Buffer.from("secret-key:").toString("base64")}`,
+      referer: "https://prizgram.example.test",
     });
 
     expect(result.hits).toBe(1);
@@ -261,8 +263,39 @@ describe("CareerjetProvider.search", () => {
     );
   });
 
+  it("requires a site origin for the Referer header", () => {
+    vi.stubEnv("CAREERJET_API_KEY", "env-key");
+    vi.stubEnv("APP_ORIGIN", "");
+    vi.stubEnv("CAREERJET_SITE_URL", "");
+    expect(() => CareerjetProvider.fromEnvironment()).toThrowError(
+      /CAREERJET_SITE_URL or APP_ORIGIN/,
+    );
+  });
+
+  it("falls back to APP_ORIGIN for the site origin", () => {
+    vi.stubEnv("CAREERJET_API_KEY", "env-key");
+    vi.stubEnv("APP_ORIGIN", "https://prizgram.example.test");
+    const instance = CareerjetProvider.fromEnvironment();
+    expect(instance).toBeInstanceOf(CareerjetProvider);
+  });
+
+  it("prefers CAREERJET_SITE_URL over APP_ORIGIN and sends it as Referer", async () => {
+    vi.stubEnv("CAREERJET_API_KEY", "env-key");
+    vi.stubEnv("APP_ORIGIN", "https://stale.example.test");
+    vi.stubEnv("CAREERJET_SITE_URL", "https://prizgram.example.test");
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ type: "JOBS", hits: 0, jobs: [] }));
+    await CareerjetProvider.fromEnvironment(fetcher).search({}, context);
+    const [, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).toMatchObject({
+      referer: "https://prizgram.example.test",
+    });
+  });
+
   it("builds itself from environment configuration", () => {
     vi.stubEnv("CAREERJET_API_KEY", "env-key");
+    vi.stubEnv("APP_ORIGIN", "https://prizgram.example.test");
     vi.stubEnv("CAREERJET_LOCALE_CODE", "ja_JP");
     vi.stubEnv("CAREERJET_TIMEOUT_MS", "5000");
     const instance = CareerjetProvider.fromEnvironment();
@@ -271,6 +304,7 @@ describe("CareerjetProvider.search", () => {
 
   it("rejects out-of-range timeout configuration", () => {
     vi.stubEnv("CAREERJET_API_KEY", "env-key");
+    vi.stubEnv("APP_ORIGIN", "https://prizgram.example.test");
     vi.stubEnv("CAREERJET_TIMEOUT_MS", "10");
     expect(() => CareerjetProvider.fromEnvironment()).toThrowError(
       /CAREERJET_TIMEOUT_MS/,
