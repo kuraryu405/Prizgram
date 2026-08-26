@@ -27,3 +27,10 @@ export const deadlineKindLabels: Readonly<Record<string, string>> = {
   offer_response: "内定承諾",
   other: "その他",
 } satisfies Record<(typeof deadlineKinds)[number], string>;
+
+export const reminderPriorityLabels: Readonly<Record<string, string>> = {
+  urgent: "緊急",
+  high: "高",
+  medium: "中",
+  low: "低",
+};
