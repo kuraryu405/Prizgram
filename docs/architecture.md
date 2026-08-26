@@ -30,7 +30,9 @@ docs/               product / architecture / development
 
 ## 所有者境界
 
-認証は外部サービスに依存せず、正規化した login ID と scrypt password hashを `user_credentials` に保存します。生のpasswordとsession tokenは保存せず、sessionはSHA-256 hash、期限、user IDのみを `auth_sessions` に保持します。認証mutationはsame-originを要求し、session cookieはHttpOnly、SameSite=Lax、本番Secureです。連続失敗はユーザー単位で一時lockします。
+認証は外部サービスに依存せず、正規化した login ID と scrypt password hashを `user_credentials` に保存します。生のpasswordとsession tokenは保存せず、sessionはSHA-256 hash、期限、user IDのみを `auth_sessions` に保持します。session cookieはHttpOnly、SameSite=Lax、本番Secureです。連続失敗はユーザー単位で一時lockします。
+
+ブラウザからのすべての状態変更 API（`POST`、`PUT`、`PATCH`、`DELETE`）は、共通 Route Handler 境界で `APP_ORIGIN` との same-origin 検証を必須にします。Origin header の欠落・不一致は処理本体へ到達する前に拒否し、認証やその他の rate-limit 予算も消費しません。`GET`、`HEAD`、`OPTIONS` は対象外です。MVP は Origin header のない外部 mutation client、モバイルアプリ、server-to-server 呼び出しをサポートしません。
 
 すべてのユーザー所有テーブルに `user_id` を保持します。子テーブルは可能な限り `(user_id, resource_id)` の複合外部キーを使い、別ユーザーの Job、Persona、Application、Deadline を参照できないよう SQLite 側でも制約します。
 

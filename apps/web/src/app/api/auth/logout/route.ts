@@ -1,5 +1,4 @@
 import {
-  assertSameOrigin,
   AuthService,
   clearSessionCookie,
   sessionTokenFromRequest,
@@ -9,7 +8,6 @@ import { apiNoContent, withApiHandler } from "@/server/api";
 import { getDatabase } from "@/server/database";
 
 const logout = withApiHandler((request) => {
-  assertSameOrigin(request);
   new AuthService(getDatabase()).logout(sessionTokenFromRequest(request));
   return apiNoContent({ "set-cookie": clearSessionCookie() });
 });
