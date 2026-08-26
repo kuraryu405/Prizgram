@@ -45,6 +45,26 @@ type MigrationMetaList = ReturnType<typeof readMigrationFiles>;
 
 const migrationMetaCache = new Map<string, MigrationMetaList>();
 
+// These historical migrations were amended to make trigger recreation
+// idempotent after they had already been applied in production. Keep their
+// original journal hashes valid so existing databases do not need their
+// migration history rewritten; all other hash drift remains a readiness
+// failure.
+const legacyMigrationHashes = new Map<number, ReadonlySet<string>>([
+  [
+    1787643815273,
+    new Set([
+      "37f2c60cbe1f34146289924b6f5d0bb24ac93e2f4424ff41ea25410b0a1ce811",
+    ]),
+  ],
+  [
+    1787645473683,
+    new Set([
+      "954c55002a004e4e2d83e39e9bc5aa6e043eace5cfa50d78aadef509ba6199f3",
+    ]),
+  ],
+]);
+
 function bundledMigrations(migrationsFolder: string): MigrationMetaList {
   let migrations = migrationMetaCache.get(migrationsFolder);
   if (migrations === undefined) {
@@ -196,7 +216,11 @@ export function createDatabase(
           const appliedRow = appliedRows[index];
           return (
             appliedRow !== undefined &&
-            appliedRow.hash === migration.hash &&
+            (appliedRow.hash === migration.hash ||
+              (legacyMigrationHashes
+                .get(migration.folderMillis)
+                ?.has(appliedRow.hash) ??
+                false)) &&
             Number(appliedRow.created_at) === migration.folderMillis
           );
         });
