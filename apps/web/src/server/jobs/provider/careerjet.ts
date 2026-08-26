@@ -390,10 +390,12 @@ export class CareerjetProvider {
 
       const locationEnvelope = locationsEnvelopeSchema.safeParse(decoded);
       if (locationEnvelope.success) {
+        // The provider message may echo query data, so it stays out of the
+        // error message; this class guarantees developer-defined constants
+        // because its instances are logged verbatim as causes (#92).
         throw new JobSearchProviderError(
           "PROVIDER_LOCATION_UNRESOLVED",
-          locationEnvelope.data.message ??
-            "The provider could not resolve the requested location",
+          "The provider could not resolve the requested location",
           false,
         );
       }
