@@ -1,0 +1,1 @@
+CREATE INDEX `job_versions_user_hash_idx` ON `job_versions` (`user_id`,`content_hash`);

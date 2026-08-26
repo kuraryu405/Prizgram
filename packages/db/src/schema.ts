@@ -273,6 +273,7 @@ export const jobVersions = sqliteTable(
       table.contentHash,
     ),
     index("job_versions_user_created_idx").on(table.userId, table.createdAt),
+    index("job_versions_user_hash_idx").on(table.userId, table.contentHash),
     foreignKey({
       columns: [table.userId, table.jobId],
       foreignColumns: [jobs.userId, jobs.id],
