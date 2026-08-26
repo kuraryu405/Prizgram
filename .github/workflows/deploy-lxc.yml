@@ -1,0 +1,134 @@
+name: CD / Deploy LXC
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lxc-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Tailscale LXC
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: lxc-production
+    env:
+      DEPLOY_HOST: prizgram.tail0d4c05.ts.net
+      DEPLOY_USER: prizgram-deploy
+      DEPLOY_ROOT: /home/prizgram-deploy/prizgram
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Checkout deployed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Validate deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Unexpected deployment SHA: $DEPLOY_SHA" >&2
+            exit 1
+          }
+          [[ -n "${{ secrets.TAILSCALE_AUTHKEY }}" ]] || {
+            echo "TAILSCALE_AUTHKEY is not configured." >&2
+            exit 1
+          }
+          [[ -n "${{ secrets.PRIZGRAM_DEPLOY_SSH_KEY }}" ]] || {
+            echo "PRIZGRAM_DEPLOY_SSH_KEY is not configured." >&2
+            exit 1
+          }
+          [[ -n "${{ secrets.PRIZGRAM_DEPLOY_KNOWN_HOSTS }}" ]] || {
+            echo "PRIZGRAM_DEPLOY_KNOWN_HOSTS is not configured." >&2
+            exit 1
+          }
+
+      - name: Connect runner to Tailscale
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          version: latest
+
+      - name: Verify Tailscale path
+        shell: bash
+        run: |
+          set -euo pipefail
+          tailscale ping --timeout=15s "$DEPLOY_HOST"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.PRIZGRAM_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.PRIZGRAM_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/prizgram_deploy"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/prizgram_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Upload release source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i "$HOME/.ssh/prizgram_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p '$DEPLOY_ROOT/releases/$DEPLOY_SHA'"
+
+          tar --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.env' \
+            --exclude='*/.env' \
+            --exclude='data' \
+            --exclude='*.sqlite' \
+            --exclude='*.sqlite-shm' \
+            --exclude='*.sqlite-wal' \
+            -czf - . \
+            | ssh -i "$HOME/.ssh/prizgram_deploy" \
+                -o BatchMode=yes \
+                -o IdentitiesOnly=yes \
+                -o ConnectTimeout=15 \
+                "$DEPLOY_USER@$DEPLOY_HOST" \
+                "tar -xzf - -C '$DEPLOY_ROOT/releases/$DEPLOY_SHA'"
+
+      - name: Build and activate release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i "$HOME/.ssh/prizgram_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_ROOT='$DEPLOY_ROOT' DEPLOY_SHA='$DEPLOY_SHA' bash '$DEPLOY_ROOT/releases/$DEPLOY_SHA/scripts/deploy/remote-release.sh'"
+
+      - name: Verify deployed health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i "$HOME/.ssh/prizgram_deploy" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "curl --fail --silent --show-error http://127.0.0.1:3000/api/health"

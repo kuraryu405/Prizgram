@@ -1,0 +1,23 @@
+[Unit]
+Description=Prizgram web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/prizgram/current/apps/web/.next/standalone/apps/web
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=0.0.0.0
+Environment=PRIZGRAM_MIGRATIONS_DIR=%h/prizgram/current/apps/web/.next/standalone/apps/web/.next/drizzle
+Environment=PATH=%h/.local/node/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=%h/prizgram/shared/.env
+ExecStart=%h/.local/node/bin/node %h/prizgram/current/apps/web/.next/standalone/apps/web/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

@@ -13,7 +13,13 @@ declare global {
 
 function initializeDatabase(): DatabaseConnection {
   loadPrizgramEnvironment();
-  return createDatabase(databaseUrlFromEnvironment());
+  const migrationsFolder =
+    process.env["PRIZGRAM_MIGRATIONS_DIR"]?.trim() || undefined;
+
+  return createDatabase(
+    databaseUrlFromEnvironment(),
+    migrationsFolder === undefined ? undefined : { migrationsFolder },
+  );
 }
 
 export function getDatabase(): DatabaseConnection {

@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare Tunnel for Prizgram
+After=network-online.target prizgram-web.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/prizgram/current/scripts/deploy/run-cloudflared.sh
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
