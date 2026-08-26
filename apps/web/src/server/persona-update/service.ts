@@ -10,7 +10,13 @@ import {
   type AuthenticatedUser,
   type PersonaSnapshot,
 } from "@prizgram/shared";
-import { applicationStageEvents, jobs, personaVersions } from "@prizgram/db";
+import {
+  applicationStageEvents,
+  jobVersions,
+  jobs,
+  matchScores,
+  personaVersions,
+} from "@prizgram/db";
 
 import type { DatabaseConnection } from "@prizgram/db";
 import { AppError } from "../api";
@@ -440,10 +446,12 @@ export class PersonaUpdateService {
 
   /**
    * Re-evaluates the user's jobs against a persona version, oldest job
-   * first, bounded by `limit` (capped at MAX_REEVALUATE_JOBS). Per-job
-   * failures are captured in the audit trail; one failure does not stop
-   * the rest. `remainingJobs` tells the caller how many jobs were not
-   * processed in this pass.
+   * first, bounded by `limit` (capped at MAX_REEVALUATE_JOBS). Jobs already
+   * scored for this persona version are skipped so repeated passes make
+   * forward progress instead of re-processing the same oldest batch.
+   * Per-job failures are captured in the audit trail; one failure does not
+   * stop the rest. `remainingJobs` tells the caller how many unscored jobs
+   * were not processed in this pass.
    */
   async reEvaluateAll(
     user: AuthenticatedUser,
@@ -480,7 +488,26 @@ export class PersonaUpdateService {
       .orderBy(asc(jobs.createdAt), asc(jobs.id))
       .all();
 
-    const targets = totalJobs.slice(0, effectiveLimit);
+    // A job counts as done for this pass once any score pins it to this
+    // persona version; scoring itself dedupes per (persona, job version),
+    // so re-selecting it would only stall the batch window.
+    const scoredJobIds = new Set(
+      this.connection.db
+        .select({ jobId: jobVersions.jobId })
+        .from(matchScores)
+        .innerJoin(jobVersions, eq(jobVersions.id, matchScores.jobVersionId))
+        .where(
+          and(
+            eq(matchScores.userId, user.id),
+            eq(matchScores.personaVersionId, personaVersionId),
+          ),
+        )
+        .all()
+        .map((row) => row.jobId),
+    );
+    const pendingJobs = totalJobs.filter((job) => !scoredJobIds.has(job.id));
+
+    const targets = pendingJobs.slice(0, effectiveLimit);
     const audit: Array<
       | { jobId: string; status: "scored"; scoreId: string }
       | { jobId: string; status: "failed"; code: string }
@@ -508,7 +535,7 @@ export class PersonaUpdateService {
     }
     return {
       audit,
-      remainingJobs: Math.max(0, totalJobs.length - targets.length),
+      remainingJobs: Math.max(0, pendingJobs.length - targets.length),
     };
   }
 }

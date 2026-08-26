@@ -265,6 +265,22 @@ describe("PersonaUpdateService.reEvaluateAll", () => {
     };
   }
 
+  /** Persists what one pass produced so the next pass can observe it. */
+  function markScored(personaVersionId: string, jobIds: string[]): void {
+    for (const jobId of jobIds) {
+      connection.sqlite
+        .prepare(
+          "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, 1, '{}', 'hash')",
+        )
+        .run(`jv-${jobId}`, userA.id, jobId);
+      connection.sqlite
+        .prepare(
+          "insert into match_scores (id, user_id, persona_version_id, job_version_id, skill_fit_score, skill_fit_reasons, skill_fit_evidence_refs, culture_value_fit_score, culture_value_fit_reasons, culture_value_fit_evidence_refs, difficulty_gap_score, difficulty_gap_reasons, difficulty_gap_evidence_refs, model, prompt_version) values (?, ?, ?, ?, 50, '[]', '[]', 50, '[]', '[]', 50, '[]', '[]', 'test-model', 'test-prompt')",
+        )
+        .run(`score-${jobId}`, userA.id, personaVersionId, `jv-${jobId}`);
+    }
+  }
+
   it("caps the per-request fan-out and reports the remaining jobs", async () => {
     seedBaseAndApplication();
     seedJobs(MAX_REEVALUATE_JOBS + 7);
@@ -294,5 +310,28 @@ describe("PersonaUpdateService.reEvaluateAll", () => {
 
     expect(evaluated).toHaveLength(2);
     expect(result.remainingJobs).toBe(4);
+  });
+
+  it("skips jobs already scored for the persona so repeated passes converge", async () => {
+    seedBaseAndApplication();
+    seedJobs(MAX_REEVALUATE_JOBS + 7);
+    const { evaluated, scoring } = scoringStub();
+
+    const first = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+    });
+    expect(first.remainingJobs).toBe(8);
+    const firstBatch = new Set(evaluated);
+    markScored("persona-base", [...evaluated]);
+
+    const second = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+    });
+
+    expect(second.audit).toHaveLength(first.remainingJobs);
+    for (const entry of second.audit) {
+      expect(firstBatch.has(entry.jobId)).toBe(false);
+    }
+    expect(second.remainingJobs).toBe(0);
   });
 });
