@@ -72,7 +72,11 @@ import { POST as reEvaluatePost } from "./persona/update/re-evaluate/route";
 function jsonRequest(path: string, body: unknown): Request {
   return new Request(`https://prizgram.test${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      // Mutations must originate from the application host (#75).
+      origin: "https://prizgram.test",
+    },
     body: JSON.stringify(body),
   });
 }
@@ -93,6 +97,7 @@ const operations = [
       scorePost(
         new Request("https://prizgram.test/api/jobs/job-1/score", {
           method: "POST",
+          headers: { origin: "https://prizgram.test" },
         }),
         { params: Promise.resolve({ id: "job-1" }) },
       ),
