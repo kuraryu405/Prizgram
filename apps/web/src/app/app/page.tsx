@@ -98,7 +98,7 @@ export default async function AppHome() {
   ).length;
 
   return (
-    <div className="page">
+    <div className="page page-dashboard">
       <h1>ようこそ、{user.loginId} さん</h1>
       <p className="page-lead">
         現在の就活状況と、次に取るべきアクションをここで確認できます。
