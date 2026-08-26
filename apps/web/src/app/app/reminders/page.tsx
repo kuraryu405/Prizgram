@@ -8,12 +8,24 @@ import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
 
-function formatInZone(view: { scheduledFor: string }): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Tokyo",
-  }).format(new Date(view.scheduledFor));
+function formatInZone(view: {
+  scheduledFor: string;
+  deadlineTimezone?: string;
+}): string {
+  const zone = view.deadlineTimezone ?? "Asia/Tokyo";
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: zone,
+    }).format(new Date(view.scheduledFor));
+  } catch {
+    return new Intl.DateTimeFormat("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Tokyo",
+    }).format(new Date(view.scheduledFor));
+  }
 }
 
 export default async function RemindersPage() {

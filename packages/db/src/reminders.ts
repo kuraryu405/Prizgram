@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 
 import { applicationDeadlines, applications, reminders } from "./schema";
 import type { DatabaseConnection } from "./client";
@@ -44,24 +44,45 @@ const kindLabels: Readonly<Record<string, string>> = {
 
 type BucketName = "overdue" | "24h" | "3d" | "7d";
 
-function bucketsFor(
+function desiredBucketFor(
   remainingMs: number,
-): Array<{ name: BucketName; priority: ReminderPriority }> {
-  const buckets: Array<{ name: BucketName; priority: ReminderPriority }> = [];
+): { name: BucketName; priority: ReminderPriority } | null {
   if (remainingMs < 0) {
-    buckets.push({ name: "overdue", priority: "urgent" });
-    return buckets;
+    return { name: "overdue", priority: "urgent" };
   }
   if (remainingMs <= DAY_MS) {
-    buckets.push({ name: "24h", priority: "urgent" });
+    return { name: "24h", priority: "urgent" };
   }
   if (remainingMs <= 3 * DAY_MS) {
-    buckets.push({ name: "3d", priority: "high" });
+    return { name: "3d", priority: "high" };
   }
   if (remainingMs <= 7 * DAY_MS) {
-    buckets.push({ name: "7d", priority: "medium" });
+    return { name: "7d", priority: "medium" };
   }
-  return buckets;
+  return null;
+}
+
+// Kept for backwards compatibility; now delegates to desiredBucketFor.
+export function bucketsFor(
+  remainingMs: number,
+): Array<{ name: BucketName; priority: ReminderPriority }> {
+  const desired = desiredBucketFor(remainingMs);
+  return desired === null ? [] : [desired];
+}
+
+function titleHashFor(title: string): string {
+  return createHash("sha256").update(title).digest("hex").slice(0, 12);
+}
+
+function dedupeKeyFor(params: {
+  kind: string;
+  deadlineId: string;
+  bucket: BucketName;
+  dueAt: Date;
+  timezone: string;
+  title: string;
+}): string {
+  return `${params.kind}:${params.deadlineId}:${params.bucket}:${params.dueAt.getTime()}:${params.timezone}:${titleHashFor(params.title)}`;
 }
 
 function messageFor(
@@ -69,13 +90,23 @@ function messageFor(
   kind: string,
   title: string,
   dueAt: Date,
+  timezone: string,
 ): string {
   const label = kindLabels[kind] ?? "締切";
-  const dueText = new Intl.DateTimeFormat("ja-JP", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Tokyo",
-  }).format(dueAt);
+  let dueText: string;
+  try {
+    dueText = new Intl.DateTimeFormat("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: timezone,
+    }).format(dueAt);
+  } catch {
+    dueText = new Intl.DateTimeFormat("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(dueAt);
+  }
   switch (bucket) {
     case "overdue":
       return `${label}「${title}」が期限超過しています（期限: ${dueText}）`;
@@ -110,6 +141,10 @@ export interface ReminderRow {
   dedupeKey: string;
   scheduledFor: string;
   createdAt: string;
+  /** Deadline wall-clock zone used for message due text; exposed so UI can format consistently. */
+  deadlineTimezone?: string;
+  /** ISO instant of the associated deadline's dueAt. */
+  deadlineDueAt?: string;
 }
 
 export class ReminderService {
@@ -120,9 +155,16 @@ export class ReminderService {
   }
 
   /**
-   * Scans open deadlines and inserts one reminder per newly-entered bucket.
-   * Returns the number of scanned deadlines and created reminders. Safe to
-   * run concurrently: duplicates are absorbed by the unique dedupe index.
+   * Scans open deadlines and inserts one reminder per deadline for its most
+   * urgent applicable bucket. Returns the number of scanned deadlines and
+   * created reminders. Safe to run concurrently: duplicates are absorbed by
+   * the unique dedupe index which now includes dueAt/timezone/title so
+   * rescheduled or renamed deadlines produce distinct keys while manual
+   * dismissals of an unchanged bucket remain blocked.
+   *
+   * Active reminders whose bucket is no longer desired (superseded, overdue
+   * transition, or rescheduled) are dismissed before insertion so at most one
+   * active reminder remains per deadline.
    */
   generateDueReminders(options: GenerateOptions): GenerateSummary {
     const now = options.now.getTime();
@@ -134,13 +176,24 @@ export class ReminderService {
         kind: applicationDeadlines.kind,
         title: applicationDeadlines.title,
         dueAt: applicationDeadlines.dueAt,
+        timezone: applicationDeadlines.timezone,
+        appStatus: applications.status,
       })
       .from(applicationDeadlines)
       .innerJoin(
         applications,
         eq(applications.id, applicationDeadlines.applicationId),
       )
-      .where(and(isNull(applicationDeadlines.completedAt)))
+      .where(
+        and(
+          isNull(applicationDeadlines.completedAt),
+          notInArray(applications.status, [
+            "accepted",
+            "rejected",
+            "withdrawn",
+          ]),
+        ),
+      )
       .all() as Array<{
       id: string;
       userId: string;
@@ -148,7 +201,37 @@ export class ReminderService {
       kind: string;
       title: string;
       dueAt: Date;
+      timezone: string;
+      appStatus: string;
     }>;
+
+    // Preload existing active reminders for all scanned deadlines in one query
+    // to avoid per-deadline N+1.
+    const deadlineIds = rows.map((row) => row.id);
+    const activeByDeadline = new Map<
+      string,
+      Array<typeof reminders.$inferSelect>
+    >();
+    if (deadlineIds.length > 0) {
+      const actives = this.db
+        .select()
+        .from(reminders)
+        .where(
+          and(
+            inArray(reminders.deadlineId, deadlineIds),
+            inArray(reminders.status, ["pending", "sent"]),
+          ),
+        )
+        .all();
+      for (const reminder of actives) {
+        const bucket = activeByDeadline.get(reminder.deadlineId);
+        if (bucket === undefined) {
+          activeByDeadline.set(reminder.deadlineId, [reminder]);
+        } else {
+          bucket.push(reminder);
+        }
+      }
+    }
 
     let scanned = 0;
     let created = 0;
@@ -157,38 +240,70 @@ export class ReminderService {
       if (options.limit !== undefined && scanned >= options.limit) break;
       scanned += 1;
 
-      // Terminal applications never generate reminders.
-      const application = this.db
-        .select({ status: applications.status })
-        .from(applications)
-        .where(eq(applications.id, row.applicationId))
-        .get();
-      if (
-        application === undefined ||
-        TERMINAL_APPLICATION_STATUSES.has(application.status)
-      ) {
+      const remaining = row.dueAt.getTime() - now;
+      const desired = desiredBucketFor(remaining);
+      const existing = activeByDeadline.get(row.id) ?? [];
+
+      if (desired === null) {
+        // Too far away: dismiss any active reminders that would otherwise
+        // linger from a previous closer window.
+        if (existing.length > 0) {
+          this.dismissMany(
+            row.userId,
+            existing.map((r) => r.id),
+          );
+          // Keep map in sync for later listActive calls in same tick.
+          activeByDeadline.delete(row.id);
+        }
         continue;
       }
 
-      const remaining = row.dueAt.getTime() - now;
-      for (const bucket of bucketsFor(remaining)) {
-        const dedupeKey = `${row.kind}:${row.id}:${bucket.name}`;
-        const inserted = this.db
-          .insert(reminders)
-          .values({
-            id: randomUUID(),
-            userId: row.userId,
-            deadlineId: row.id,
-            scheduledFor: new Date(now),
-            priority: bucket.priority,
-            status: "pending",
-            message: messageFor(bucket.name, row.kind, row.title, row.dueAt),
-            dedupeKey,
-          })
-          .onConflictDoNothing()
-          .run();
-        created += inserted.changes;
+      const expectedKey = dedupeKeyFor({
+        kind: row.kind,
+        deadlineId: row.id,
+        bucket: desired.name,
+        dueAt: row.dueAt,
+        timezone: row.timezone,
+        title: row.title,
+      });
+
+      // Dismiss any active reminder whose dedupe does not match the current
+      // desired state: that includes superseded buckets (e.g. 7d while 3d is
+      // now desired), overdue transitions, and stale dueAt/timezone/title.
+      const staleIds = existing
+        .filter((r) => r.dedupeKey !== expectedKey)
+        .map((r) => r.id);
+      if (staleIds.length > 0) {
+        this.dismissMany(row.userId, staleIds);
       }
+
+      const hasExpected = existing.some((r) => r.dedupeKey === expectedKey);
+      if (hasExpected) continue;
+
+      // Do not resurrect a previously dismissed identical reminder (user
+      // manually dismissed this bucket for this content) – the unique dedupe
+      // index will block it via onConflictDoNothing.
+      const inserted = this.db
+        .insert(reminders)
+        .values({
+          id: randomUUID(),
+          userId: row.userId,
+          deadlineId: row.id,
+          scheduledFor: new Date(now),
+          priority: desired.priority,
+          status: "pending",
+          message: messageFor(
+            desired.name,
+            row.kind,
+            row.title,
+            row.dueAt,
+            row.timezone,
+          ),
+          dedupeKey: expectedKey,
+        })
+        .onConflictDoNothing()
+        .run();
+      created += inserted.changes;
     }
 
     return { scanned, created };
@@ -198,12 +313,14 @@ export class ReminderService {
    * Lists active (pending + sent) reminders ordered by urgency. Pending rows
    * returned here are flipped to `sent`: listing IS the in-app delivery.
    *
-   * Reminders whose deadline has since been completed, or whose application
-   * reached a terminal status, are transitioned to `dismissed` and excluded:
-   * nothing else ever moves a reminder out of the active set, so without
-   * this sweep they would accumulate forever.
+   * Reminders whose deadline has since been completed, moved to a terminal
+   * application status, been deleted, rescheduled/renamed, changed timezone,
+   * or whose bucket is no longer the single most-urgent applicable bucket
+   * are transitioned to `dismissed` and excluded: nothing else ever moves a
+   * reminder out of the active set, so without this sweep they would
+   * accumulate forever or display stale times/titles.
    */
-  listActive(userId: string): ReminderRow[] {
+  listActive(userId: string, now: Date = new Date()): ReminderRow[] {
     const rows = this.db
       .select()
       .from(reminders)
@@ -215,7 +332,7 @@ export class ReminderService {
       )
       .all();
 
-    const staleIds = this.staleReminderIds(userId, rows);
+    const staleIds = this.staleReminderIds(userId, rows, now);
     if (staleIds.length > 0) {
       this.dismissMany(userId, staleIds);
     }
@@ -232,33 +349,68 @@ export class ReminderService {
         .run();
     }
 
-    return rows
-      .filter((row) => !staleIdSet.has(row.id))
+    const activeRows = rows.filter((row) => !staleIdSet.has(row.id));
+    // Enrich remaining rows with deadline timezone/dueAt for correct UI formatting.
+    const activeDeadlineIds = [...new Set(activeRows.map((r) => r.deadlineId))];
+    const deadlineMeta = new Map<string, { timezone: string; dueAt: Date }>();
+    if (activeDeadlineIds.length > 0) {
+      const metaRows = this.db
+        .select({
+          id: applicationDeadlines.id,
+          timezone: applicationDeadlines.timezone,
+          dueAt: applicationDeadlines.dueAt,
+        })
+        .from(applicationDeadlines)
+        .where(
+          and(
+            eq(applicationDeadlines.userId, userId),
+            inArray(applicationDeadlines.id, activeDeadlineIds),
+          ),
+        )
+        .all();
+      for (const m of metaRows) {
+        deadlineMeta.set(m.id, { timezone: m.timezone, dueAt: m.dueAt });
+      }
+    }
+
+    return activeRows
       .sort((a, b) => {
         const byPriority = priorityRank[a.priority] - priorityRank[b.priority];
         if (byPriority !== 0) return byPriority;
         return a.scheduledFor.getTime() - b.scheduledFor.getTime();
       })
-      .map((row) => ({
-        id: row.id,
-        userId: row.userId,
-        deadlineId: row.deadlineId,
-        priority: row.priority,
-        status: row.status,
-        message: row.message,
-        dedupeKey: row.dedupeKey,
-        scheduledFor: new Date(row.scheduledFor).toISOString(),
-        createdAt: new Date(row.createdAt).toISOString(),
-      }));
+      .map((row) => {
+        const meta = deadlineMeta.get(row.deadlineId);
+        return {
+          id: row.id,
+          userId: row.userId,
+          deadlineId: row.deadlineId,
+          priority: row.priority,
+          status: row.status,
+          message: row.message,
+          dedupeKey: row.dedupeKey,
+          scheduledFor: new Date(row.scheduledFor).toISOString(),
+          createdAt: new Date(row.createdAt).toISOString(),
+          ...(meta === undefined
+            ? {}
+            : {
+                deadlineTimezone: meta.timezone,
+                deadlineDueAt: meta.dueAt.toISOString(),
+              }),
+        };
+      });
   }
 
   /**
    * Returns the ids of active reminders whose underlying deadline is now
-   * completed or whose application reached a terminal status.
+   * completed, deleted/terminal, rescheduled/renamed/timezone-changed, or
+   * whose bucket is no longer the single most-urgent applicable one. Time
+   * sensitivity is evaluated against the provided wall clock.
    */
   private staleReminderIds(
     userId: string,
     rows: Array<typeof reminders.$inferSelect>,
+    nowDate: Date = new Date(),
   ): string[] {
     if (rows.length === 0) return [];
     const deadlineIds = [...new Set(rows.map((row) => row.deadlineId))];
@@ -267,6 +419,10 @@ export class ReminderService {
         id: applicationDeadlines.id,
         completedAt: applicationDeadlines.completedAt,
         status: applications.status,
+        kind: applicationDeadlines.kind,
+        title: applicationDeadlines.title,
+        dueAt: applicationDeadlines.dueAt,
+        timezone: applicationDeadlines.timezone,
       })
       .from(applicationDeadlines)
       .innerJoin(
@@ -284,6 +440,7 @@ export class ReminderService {
     const stateByDeadline = new Map(
       applicationRows.map((row) => [row.id, row] as const),
     );
+    const now = nowDate.getTime();
     const stale: string[] = [];
     for (const row of rows) {
       const state = stateByDeadline.get(row.deadlineId);
@@ -294,6 +451,28 @@ export class ReminderService {
         state.completedAt !== null ||
         TERMINAL_APPLICATION_STATUSES.has(state.status)
       ) {
+        stale.push(row.id);
+        continue;
+      }
+
+      const desired = desiredBucketFor(state.dueAt.getTime() - now);
+      if (desired === null) {
+        // Deadline is now too far out for any bucket; any active reminder is
+        // superseded.
+        stale.push(row.id);
+        continue;
+      }
+      const expectedKey = dedupeKeyFor({
+        kind: state.kind,
+        deadlineId: state.id,
+        bucket: desired.name,
+        dueAt: state.dueAt,
+        timezone: state.timezone,
+        title: state.title,
+      });
+      if (row.dedupeKey !== expectedKey) {
+        // Different dueAt / timezone / title / bucket – the stored message
+        // and scheduled priorites are stale.
         stale.push(row.id);
       }
     }
@@ -320,8 +499,11 @@ export class ReminderService {
     return this.dismissMany(userId, [reminderId]) === 1;
   }
 
-  countActive(userId: string): { urgent: number; total: number } {
-    const rows = this.listActive(userId);
+  countActive(
+    userId: string,
+    now: Date = new Date(),
+  ): { urgent: number; total: number } {
+    const rows = this.listActive(userId, now);
     return {
       urgent: rows.filter((row) => row.priority === "urgent").length,
       total: rows.length,

@@ -75,22 +75,19 @@ afterEach(() => {
 });
 
 describe("ReminderService.generateDueReminders", () => {
-  it("creates one reminder per entered bucket with deterministic priorities", () => {
+  it("creates exactly one reminder for the most urgent applicable bucket", () => {
     seedApplication("app-a", "interview");
     const now = new Date("2026-08-26T00:00:00Z");
-    // 12h ahead -> overdue no / 24h yes / 3d yes / 7d yes
+    // 12h ahead -> only 24h bucket should be created, not 3d/7d
     seedDeadline("dl-12h", "app-a", now.getTime() + 12 * 3_600_000);
     const summary = service.generateDueReminders({ now });
     expect(summary.scanned).toBe(1);
-    expect(summary.created).toBe(3);
+    expect(summary.created).toBe(1);
 
-    const list = service.listActive(userA);
+    const list = service.listActive(userA, now);
+    expect(list).toHaveLength(1);
     expect(list[0]?.priority).toBe("urgent");
-    expect(list.map((reminder) => reminder.priority)).toEqual([
-      "urgent",
-      "high",
-      "medium",
-    ]);
+    expect(list.map((reminder) => reminder.priority)).toEqual(["urgent"]);
   });
 
   it("is idempotent across repeated and concurrent-style runs", () => {
@@ -98,13 +95,13 @@ describe("ReminderService.generateDueReminders", () => {
     const now = new Date("2026-08-26T00:00:00Z");
     seedDeadline("dl-x", "app-a", now.getTime() + 6 * 3_600_000);
 
-    expect(service.generateDueReminders({ now }).created).toBe(3);
+    expect(service.generateDueReminders({ now }).created).toBe(1);
     // Re-run at the same instant and slightly later within the same bucket.
     expect(
       service.generateDueReminders({ now: new Date(now.getTime() + 60_000) })
         .created,
     ).toBe(0);
-    expect(service.listActive(userA)).toHaveLength(3);
+    expect(service.listActive(userA, now)).toHaveLength(1);
   });
 
   it("skips completed deadlines and terminal applications", () => {
@@ -127,22 +124,23 @@ describe("ReminderService.generateDueReminders", () => {
     seedDeadline("dl-dismiss", "app-a", now.getTime() + 2 * HOUR_MS);
 
     service.generateDueReminders({ now });
-    const active = service.listActive(userA);
+    const active = service.listActive(userA, now);
     for (const reminder of active) {
       expect(service.dismiss(userA, reminder.id)).toBe(true);
     }
-    expect(service.listActive(userA)).toHaveLength(0);
+    expect(service.listActive(userA, now)).toHaveLength(0);
 
     // Later cron runs must not re-create reminders for the same buckets.
+    const later = new Date(now.getTime() + 30 * 60_000);
     expect(
       service.generateDueReminders({
-        now: new Date(now.getTime() + 30 * 60_000),
+        now: later,
       }).created,
     ).toBe(0);
-    expect(service.listActive(userA)).toHaveLength(0);
+    expect(service.listActive(userA, later)).toHaveLength(0);
   });
 
-  it("escalates a deadline into the next bucket exactly once when time passes", () => {
+  it("escalates a deadline into the next bucket exactly once when time passes and keeps only the most urgent active", () => {
     seedApplication("app-a", "interview");
     const start = new Date("2026-08-20T00:00:00Z"); // 7d+ ahead? use exact windows
     seedDeadline("dl-escalate", "app-a", start.getTime() + 8 * DAY_MS);
@@ -153,16 +151,121 @@ describe("ReminderService.generateDueReminders", () => {
 
     const inside7d = new Date(start.getTime() + DAY_MS); // remaining 7d -> 7d bucket only
     expect(service.generateDueReminders({ now: inside7d }).created).toBe(1);
+    expect(service.listActive(userA, inside7d)).toHaveLength(1);
+    expect(service.listActive(userA, inside7d)[0]?.priority).toBe("medium");
 
     const inside3d = new Date(start.getTime() + 5 * DAY_MS); // remaining 3d -> 3d bucket
     expect(service.generateDueReminders({ now: inside3d }).created).toBe(1);
+    // Superseded 7d reminder is dismissed, only 3d remains active
+    expect(service.listActive(userA, inside3d)).toHaveLength(1);
+    expect(service.listActive(userA, inside3d)[0]?.priority).toBe("high");
 
     const inside24h = new Date(start.getTime() + 7 * DAY_MS); // remaining 24h -> 24h bucket
     expect(service.generateDueReminders({ now: inside24h }).created).toBe(1);
+    expect(service.listActive(userA, inside24h)).toHaveLength(1);
+    expect(service.listActive(userA, inside24h)[0]?.priority).toBe("urgent");
 
-    // Three distinct buckets were crossed (7d, 3d, 24h); each produced
-    // exactly one reminder.
-    expect(service.listActive(userA)).toHaveLength(3);
+    // Superseded history is kept as dismissed, only latest is active.
+    const all = connection.sqlite
+      .prepare("select status from reminders")
+      .all() as Array<{ status: string }>;
+    expect(all.filter((r) => r.status === "dismissed")).toHaveLength(2);
+    expect(all.filter((r) => r.status !== "dismissed")).toHaveLength(1);
+  });
+
+  it("replaces a 24h reminder with overdue and does not keep both", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-overdue", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+    expect(service.listActive(userA, now)).toHaveLength(1);
+
+    const overdueNow = new Date(now.getTime() + 2 * DAY_MS);
+    expect(service.generateDueReminders({ now: overdueNow }).created).toBe(1);
+    const active = service.listActive(userA, overdueNow);
+    expect(active).toHaveLength(1);
+    expect(active[0]?.priority).toBe("urgent");
+    expect(active[0]?.message).toMatch(/期限超過/);
+  });
+
+  it("invalidates old reminder when deadline is rescheduled to the future", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-resched", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+    expect(service.listActive(userA, now)).toHaveLength(1);
+    const beforeIds = service.listActive(userA, now).map((r) => r.id);
+
+    // Move deadline 1 week into the future (>7d => no bucket)
+    connection.sqlite
+      .prepare(
+        "update application_deadlines set due_at = ?, updated_at = ? where id = ?",
+      )
+      .run(now.getTime() + 10 * DAY_MS, now.getTime() + 1, "dl-resched-row");
+    const afterNow = new Date(now.getTime() + 60_000);
+    // Next generation should dismiss the stale 24h reminder and create nothing (too far)
+    service.generateDueReminders({ now: afterNow });
+    // Either dismissed via generate's stale sweep or via listActive; active should be 0
+    expect(service.listActive(userA, afterNow)).toHaveLength(0);
+    const stored = connection.sqlite
+      .prepare("select dedupe_key, status from reminders")
+      .all() as Array<{ dedupe_key: string; status: string }>;
+    expect(stored.some((r) => beforeIds.includes(r.dedupe_key) === false));
+    // Create a new 24h reminder after rescheduling back into 24h window
+    const newDue = afterNow.getTime() + 6 * HOUR_MS;
+    connection.sqlite
+      .prepare("update application_deadlines set due_at = ? where id = ?")
+      .run(newDue, "dl-resched-row");
+    const nearer = new Date(afterNow.getTime() + 2 * 60_000);
+    expect(service.generateDueReminders({ now: nearer }).created).toBe(1);
+    expect(service.listActive(userA, nearer)).toHaveLength(1);
+  });
+
+  it("invalidates old reminder when deadline title changes", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-title", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+    const before = service.listActive(userA, now);
+    expect(before[0]?.message).toContain("dl-title");
+    connection.sqlite
+      .prepare("update application_deadlines set title = ? where id = ?")
+      .run("新しいタイトル", "dl-title-row");
+    const afterNow = new Date(now.getTime() + 60_000);
+    service.generateDueReminders({ now: afterNow });
+    const after = service.listActive(userA, afterNow);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.message).toContain("新しいタイトル");
+    expect(after[0]?.message).not.toContain("dl-title");
+  });
+
+  it("uses deadline timezone for message formatting", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-tz", "app-a", now.getTime() + 12 * HOUR_MS);
+    // Change timezone to America/Los_Angeles and keep same instant
+    connection.sqlite
+      .prepare("update application_deadlines set timezone = ? where id = ?")
+      .run("America/Los_Angeles", "dl-tz-row");
+    // Regenerate – should produce a reminder with due text in that zone
+    service.generateDueReminders({ now });
+    const active = service.listActive(userA, now);
+    expect(active).toHaveLength(1);
+    // Message should contain the title and not be empty
+    expect(active[0]?.message).toContain("dl-tz");
+    // The dedupe should vary by timezone: changing again should dismiss old
+    connection.sqlite
+      .prepare("update application_deadlines set timezone = ? where id = ?")
+      .run("Asia/Tokyo", "dl-tz-row");
+    const later = new Date(now.getTime() + 60_000);
+    service.generateDueReminders({ now: later });
+    const after = service.listActive(userA, later);
+    expect(after).toHaveLength(1);
+    // Dedupe changes, so old is dismissed – total rows 2 but only 1 active
+    const all = connection.sqlite
+      .prepare("select count(*) as c from reminders")
+      .get() as { c: number };
+    expect(all.c).toBe(2);
   });
 });
 
@@ -190,10 +293,10 @@ describe("ReminderService.listActive stale sweep", () => {
     const now = new Date("2026-08-26T00:00:00Z");
     seedDeadline("dl-open", "app-a", now.getTime() + 12 * HOUR_MS);
     service.generateDueReminders({ now });
-    expect(service.listActive(userA)).toHaveLength(3);
+    expect(service.listActive(userA, now)).toHaveLength(1);
 
     markDeadlineCompleted("dl-open-row");
-    expect(service.listActive(userA)).toHaveLength(0);
+    expect(service.listActive(userA, now)).toHaveLength(0);
     for (const row of storedReminderStatuses()) {
       expect(row.status).toBe("dismissed");
     }
@@ -204,10 +307,10 @@ describe("ReminderService.listActive stale sweep", () => {
     const now = new Date("2026-08-26T00:00:00Z");
     seedDeadline("dl-term", "app-a", now.getTime() + 12 * HOUR_MS);
     service.generateDueReminders({ now });
-    expect(service.listActive(userA)).toHaveLength(3);
+    expect(service.listActive(userA, now)).toHaveLength(1);
 
     markApplicationStatus("app-a", "withdrawn");
-    expect(service.listActive(userA)).toHaveLength(0);
+    expect(service.listActive(userA, now)).toHaveLength(0);
     for (const row of storedReminderStatuses()) {
       expect(row.status).toBe("dismissed");
     }
@@ -219,8 +322,8 @@ describe("ReminderService.listActive stale sweep", () => {
     seedDeadline("dl-live", "app-a", now.getTime() + 12 * HOUR_MS);
     service.generateDueReminders({ now });
 
-    const active = service.listActive(userA);
-    expect(active).toHaveLength(3);
+    const active = service.listActive(userA, now);
+    expect(active).toHaveLength(1);
     for (const row of storedReminderStatuses()) {
       expect(["sent", "pending"]).toContain(row.status);
     }
