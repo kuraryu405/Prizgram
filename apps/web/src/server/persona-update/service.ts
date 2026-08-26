@@ -180,10 +180,19 @@ export class PersonaUpdateService {
    */
   validateEvidence(
     userId: string,
-    baseEvidenceIds: ReadonlySet<string>,
+    baseEvidence: PersonaSnapshot["evidence"],
     eventSources: readonly EventEvidenceSource[],
     snapshot: PersonaSnapshot,
   ): PersonaSnapshot {
+    const baseEvidenceIds = new Set(baseEvidence.map((e) => e.id));
+    // Intake-generated personas carry answer-row ids as user_input
+    // sourceIds, so carrying an existing entry forward must keep citing it.
+    const baseUserInputSourceIds = new Set(
+      baseEvidence
+        .filter((e) => e.sourceType === "user_input")
+        .map((e) => e.sourceId)
+        .filter((sourceId): sourceId is string => sourceId !== undefined),
+    );
     const eventIds = new Set(eventSources.map((e) => e.eventId));
     for (const evidence of snapshot.evidence) {
       switch (evidence.sourceType) {
@@ -204,6 +213,7 @@ export class PersonaUpdateService {
           if (
             evidence.sourceId !== undefined &&
             !baseEvidenceIds.has(evidence.sourceId) &&
+            !baseUserInputSourceIds.has(evidence.sourceId) &&
             !evidence.sourceId.startsWith(REFLECTION_PREFIX) &&
             !eventIds.has(evidence.sourceId)
           ) {
@@ -247,7 +257,7 @@ export class PersonaUpdateService {
     const replayed = this.findVersionByRequestId(user.id, input.requestId);
     if (replayed !== undefined) return replayed;
 
-    const baseEvidence = new Set(base.snapshot.evidence.map((e) => e.id));
+    const baseEvidence = base.snapshot.evidence;
     const eventSources =
       input.applicationId === undefined
         ? []
@@ -372,7 +382,6 @@ export class PersonaUpdateService {
 
     const base = this.baseVersion(user, input.personaVersionId);
     const baseSnapshot = base.snapshot;
-    const baseEvidence = new Set(baseSnapshot.evidence.map((e) => e.id));
     const eventSources =
       input.applicationId === undefined
         ? []
@@ -418,7 +427,7 @@ export class PersonaUpdateService {
     const eventIds = new Set(eventSources.map((e) => e.eventId));
     const validated = this.validateEvidence(
       user.id,
-      baseEvidence,
+      baseSnapshot.evidence,
       eventSources,
       raw,
     );
