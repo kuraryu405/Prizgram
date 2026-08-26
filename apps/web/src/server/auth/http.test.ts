@@ -182,25 +182,10 @@ describe("auth HTTP boundary", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("rejects cross-origin mutations before consuming rate limit budget", () => {
+  it("enforces the authentication rate limit after the API origin guard", () => {
     const limiter = createAuthRateLimiter({ maxRequests: 1, windowMs: 60_000 });
     const checkSpy = vi.spyOn(limiter, "check");
 
-    expect(() =>
-      authenticateMutationRequest(
-        new Request("https://prizgram.test/api/auth/login", {
-          method: "POST",
-          headers: {
-            host: "prizgram.test",
-            origin: "https://evil.test",
-          },
-        }),
-        { rateLimiter: limiter },
-      ),
-    ).toThrow(/origin/i);
-    expect(checkSpy).not.toHaveBeenCalled();
-
-    // A same-origin request goes through the limiter and consumes budget.
     expect(() =>
       authenticateMutationRequest(
         new Request("https://prizgram.test/api/auth/login", {

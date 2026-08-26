@@ -36,6 +36,61 @@ describe("withApiHandler", () => {
     });
   });
 
+  it.each(["POST", "PUT", "PATCH", "DELETE"])(
+    "rejects cross-origin %s before running the handler",
+    async (method) => {
+      const handler = vi.fn(() => ({ changed: true }));
+      const response = await withApiHandler(handler)(
+        new Request("https://example.test/api/things", {
+          method,
+          headers: { origin: "https://evil.test" },
+        }),
+      );
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "INVALID_ORIGIN" },
+      });
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a mutation without an Origin header", async () => {
+    const handler = vi.fn(() => ({ changed: true }));
+    const response = await withApiHandler(handler)(
+      new Request("https://example.test/api/things", { method: "POST" }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("allows a same-origin mutation", async () => {
+    const handler = vi.fn(() => ({ changed: true }));
+    const response = await withApiHandler(handler)(
+      new Request("https://example.test/api/things", {
+        method: "POST",
+        headers: { origin: "https://example.test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it.each(["GET", "HEAD", "OPTIONS"])(
+    "does not require an Origin header for %s",
+    async (method) => {
+      const handler = vi.fn(() => ({ safe: true }));
+      const response = await withApiHandler(handler)(
+        new Request("https://example.test/api/things", { method }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(handler).toHaveBeenCalledOnce();
+    },
+  );
+
   it("preserves success status and headers", async () => {
     const response = await withApiHandler(() =>
       apiResult(
@@ -151,6 +206,7 @@ describe("withApiHandler", () => {
         headers: {
           authorization: "Bearer super-secret-token",
           cookie: "prizgram_session=super-secret-session",
+          origin: "https://example.test",
         },
         body: JSON.stringify({ password: "super-secret-password" }),
       },

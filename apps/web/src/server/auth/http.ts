@@ -12,19 +12,16 @@ export function sessionCookieName(): string {
     : "prizgram_session";
 }
 
-/**
- * Shared guard for authentication mutations. The stateless same-origin
- * check runs first: invalid-origin requests are rejected without touching
- * the source's rate-limit budget, so a third party cannot drain a victim's
- * authentication budget by making their browser send cross-origin requests.
- */
+/** Applies the authentication-specific rate limit after the API origin guard. */
 export function authenticateMutationRequest(
   request: Request,
   options?: { rateLimiter?: FixedWindowRateLimiter },
 ): void {
-  assertSameOrigin(request);
   enforceAuthRateLimit(request, options?.rateLimiter);
 }
+
+// Compatibility export; origin validation is implemented by the API boundary.
+export { assertSameOrigin } from "../api";
 
 export function withNoStore(
   handler: (request: Request) => Response | Promise<Response>,
@@ -34,50 +31,6 @@ export function withNoStore(
     response.headers.set("cache-control", "no-store");
     return response;
   };
-}
-
-export function assertSameOrigin(request: Request): void {
-  if (
-    process.env.NODE_ENV === "production" &&
-    process.env.APP_ORIGIN === undefined
-  ) {
-    throw new AppError(
-      "SERVER_MISCONFIGURED",
-      "Authentication origin is not configured",
-      500,
-    );
-  }
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
-  let expectedOrigin: string | undefined;
-  const configuredOrigin = process.env.APP_ORIGIN;
-  if (configuredOrigin !== undefined) {
-    try {
-      expectedOrigin = new URL(configuredOrigin).origin;
-    } catch {
-      throw new AppError(
-        "SERVER_MISCONFIGURED",
-        "APP_ORIGIN must be a valid absolute origin",
-        500,
-      );
-    }
-  } else {
-    try {
-      expectedOrigin =
-        host === null
-          ? new URL(request.url).origin
-          : new URL(`${new URL(request.url).protocol}//${host}`).origin;
-    } catch {
-      throw new AppError(
-        "SERVER_MISCONFIGURED",
-        "Authentication origin could not be determined from the request",
-        500,
-      );
-    }
-  }
-  if (origin === null || origin !== expectedOrigin) {
-    throw new AppError("INVALID_ORIGIN", "Request origin is not allowed", 403);
-  }
 }
 
 async function readBoundedBody(

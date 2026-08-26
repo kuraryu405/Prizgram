@@ -42,6 +42,59 @@ export function parseRequest<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
+const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Requires browser mutations to originate from the configured application. */
+export function assertSameOrigin(request: Request): void {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.APP_ORIGIN === undefined
+  ) {
+    throw new AppError(
+      "SERVER_MISCONFIGURED",
+      "Application origin is not configured",
+      500,
+    );
+  }
+
+  const configuredOrigin = process.env.APP_ORIGIN;
+  let expectedOrigin: string;
+  if (configuredOrigin !== undefined) {
+    try {
+      expectedOrigin = new URL(configuredOrigin).origin;
+    } catch {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "APP_ORIGIN must be a valid absolute origin",
+        500,
+      );
+    }
+  } else {
+    const host = request.headers.get("host");
+    try {
+      const requestUrl = new URL(request.url);
+      expectedOrigin =
+        host === null
+          ? requestUrl.origin
+          : new URL(`${requestUrl.protocol}//${host}`).origin;
+    } catch {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "Application origin could not be determined from the request",
+        500,
+      );
+    }
+  }
+
+  if (request.headers.get("origin") !== expectedOrigin) {
+    throw new AppError("INVALID_ORIGIN", "Request origin is not allowed", 403);
+  }
+}
+
+function assertMutationSameOrigin(request: Request): void {
+  if (!safeMethods.has(request.method.toUpperCase())) assertSameOrigin(request);
+}
+
 function errorResponse(
   error: unknown,
   requestId: string,
@@ -166,6 +219,7 @@ export function withApiHandler<T>(handler: ApiHandler<T>) {
       ? suppliedRequestId
       : crypto.randomUUID();
     try {
+      assertMutationSameOrigin(request);
       const result = await handler(request);
       if (result instanceof ApiNoContent) {
         const headers = new Headers(result.headers);
