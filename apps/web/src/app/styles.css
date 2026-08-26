@@ -658,6 +658,45 @@ a {
   font-weight: 600;
 }
 
+/* Dashboard onboarding steps */
+
+.onboarding-steps {
+  display: grid;
+  gap: 0.875rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.onboarding-steps li {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.onboarding-step-head {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.onboarding-step-number {
+  align-items: center;
+  background: #edf2ee;
+  border-radius: 999px;
+  color: #066244;
+  display: inline-flex;
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  height: 1.5rem;
+  justify-content: center;
+  width: 1.5rem;
+}
+
+.onboarding-step-title {
+  font-weight: 600;
+}
+
 /* Dashboard next actions */
 
 .action-list {
