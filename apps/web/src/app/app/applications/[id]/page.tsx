@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ApplicationUpdateForm } from "@/components/applications/application-update-form";
 import { applicationStatusLabels as statusLabels } from "@/lib/labels";
+import { AppError } from "@/server/api";
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
 import { requireSessionUserPage } from "@/server/page-session";
@@ -28,8 +29,9 @@ export default async function ApplicationDetailPage({
         user.id,
         id,
       );
-    } catch {
-      notFound();
+    } catch (error) {
+      if (error instanceof AppError && error.code === "NOT_FOUND") notFound();
+      throw error;
     }
   })();
 
@@ -53,6 +55,8 @@ export default async function ApplicationDetailPage({
         allowedNextStatuses={detail.allowedNextStatuses}
         applicationId={detail.applicationId}
         currentStatus={statusLabels[detail.status] ?? detail.status}
+        initialNextAction={detail.nextAction}
+        initialNote={detail.note}
         statusLabels={statusLabels}
       />
 
