@@ -27,6 +27,13 @@ const TERMINAL_APPLICATION_STATUSES = new Set([
   "withdrawn",
 ]);
 
+const priorityRank: Record<ReminderPriority, number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
 const kindLabels: Readonly<Record<string, string>> = {
   application: "応募締切",
   document: "ES・書類",
@@ -190,6 +197,11 @@ export class ReminderService {
   /**
    * Lists active (pending + sent) reminders ordered by urgency. Pending rows
    * returned here are flipped to `sent`: listing IS the in-app delivery.
+   *
+   * Reminders whose deadline has since been completed, or whose application
+   * reached a terminal status, are transitioned to `dismissed` and excluded:
+   * nothing else ever moves a reminder out of the active set, so without
+   * this sweep they would accumulate forever.
    */
   listActive(userId: string): ReminderRow[] {
     const rows = this.db
@@ -203,20 +215,14 @@ export class ReminderService {
       )
       .all();
 
-    const priorityRank: Record<ReminderPriority, number> = {
-      urgent: 0,
-      high: 1,
-      medium: 2,
-      low: 3,
-    };
-    rows.sort((a, b) => {
-      const byPriority = priorityRank[a.priority] - priorityRank[b.priority];
-      if (byPriority !== 0) return byPriority;
-      return a.scheduledFor.getTime() - b.scheduledFor.getTime();
-    });
+    const staleIds = this.staleReminderIds(userId, rows);
+    if (staleIds.length > 0) {
+      this.dismissMany(userId, staleIds);
+    }
 
+    const staleIdSet = new Set(staleIds);
     const pendingIds = rows
-      .filter((row) => row.status === "pending")
+      .filter((row) => row.status === "pending" && !staleIdSet.has(row.id))
       .map((row) => row.id);
     if (pendingIds.length > 0) {
       this.db
@@ -226,20 +232,76 @@ export class ReminderService {
         .run();
     }
 
-    return rows.map((row) => ({
-      id: row.id,
-      userId: row.userId,
-      deadlineId: row.deadlineId,
-      priority: row.priority,
-      status: row.status,
-      message: row.message,
-      dedupeKey: row.dedupeKey,
-      scheduledFor: new Date(row.scheduledFor).toISOString(),
-      createdAt: new Date(row.createdAt).toISOString(),
-    }));
+    return rows
+      .filter((row) => !staleIdSet.has(row.id))
+      .sort((a, b) => {
+        const byPriority = priorityRank[a.priority] - priorityRank[b.priority];
+        if (byPriority !== 0) return byPriority;
+        return a.scheduledFor.getTime() - b.scheduledFor.getTime();
+      })
+      .map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        deadlineId: row.deadlineId,
+        priority: row.priority,
+        status: row.status,
+        message: row.message,
+        dedupeKey: row.dedupeKey,
+        scheduledFor: new Date(row.scheduledFor).toISOString(),
+        createdAt: new Date(row.createdAt).toISOString(),
+      }));
   }
 
-  dismiss(userId: string, reminderId: string): boolean {
+  /**
+   * Returns the ids of active reminders whose underlying deadline is now
+   * completed or whose application reached a terminal status.
+   */
+  private staleReminderIds(
+    userId: string,
+    rows: Array<typeof reminders.$inferSelect>,
+  ): string[] {
+    if (rows.length === 0) return [];
+    const deadlineIds = [...new Set(rows.map((row) => row.deadlineId))];
+    const applicationRows = this.db
+      .select({
+        id: applicationDeadlines.id,
+        completedAt: applicationDeadlines.completedAt,
+        status: applications.status,
+      })
+      .from(applicationDeadlines)
+      .innerJoin(
+        applications,
+        eq(applications.id, applicationDeadlines.applicationId),
+      )
+      .where(
+        and(
+          eq(applicationDeadlines.userId, userId),
+          inArray(applicationDeadlines.id, deadlineIds),
+        ),
+      )
+      .all();
+
+    const stateByDeadline = new Map(
+      applicationRows.map((row) => [row.id, row] as const),
+    );
+    const stale: string[] = [];
+    for (const row of rows) {
+      const state = stateByDeadline.get(row.deadlineId);
+      // A reminder whose deadline row vanished has nothing left to remind
+      // about; treat it as stale as well.
+      if (
+        state === undefined ||
+        state.completedAt !== null ||
+        TERMINAL_APPLICATION_STATUSES.has(state.status)
+      ) {
+        stale.push(row.id);
+      }
+    }
+    return stale;
+  }
+
+  /** Dismisses the given reminders owned by the user; returns rows changed. */
+  private dismissMany(userId: string, reminderIds: string[]): number {
     const result = this.db
       .update(reminders)
       .set({
@@ -247,9 +309,15 @@ export class ReminderService {
         dismissedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(and(eq(reminders.id, reminderId), eq(reminders.userId, userId)))
+      .where(
+        and(eq(reminders.userId, userId), inArray(reminders.id, reminderIds)),
+      )
       .run();
-    return result.changes === 1;
+    return result.changes;
+  }
+
+  dismiss(userId: string, reminderId: string): boolean {
+    return this.dismissMany(userId, [reminderId]) === 1;
   }
 
   countActive(userId: string): { urgent: number; total: number } {

@@ -165,3 +165,64 @@ describe("ReminderService.generateDueReminders", () => {
     expect(service.listActive(userA)).toHaveLength(3);
   });
 });
+
+describe("ReminderService.listActive stale sweep", () => {
+  function markDeadlineCompleted(deadlineId: string): void {
+    connection.sqlite
+      .prepare("update application_deadlines set completed_at = ? where id = ?")
+      .run(Date.now(), deadlineId);
+  }
+
+  function markApplicationStatus(applicationId: string, status: string): void {
+    connection.sqlite
+      .prepare("update applications set status = ? where id = ?")
+      .run(status, applicationId);
+  }
+
+  function storedReminderStatuses(): Array<{ id: string; status: string }> {
+    return connection.sqlite
+      .prepare("select id, status from reminders order by id")
+      .all() as Array<{ id: string; status: string }>;
+  }
+
+  it("dismisses and hides reminders once their deadline is completed", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-open", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+    expect(service.listActive(userA)).toHaveLength(3);
+
+    markDeadlineCompleted("dl-open-row");
+    expect(service.listActive(userA)).toHaveLength(0);
+    for (const row of storedReminderStatuses()) {
+      expect(row.status).toBe("dismissed");
+    }
+  });
+
+  it("dismisses and hides reminders once their application terminates", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-term", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+    expect(service.listActive(userA)).toHaveLength(3);
+
+    markApplicationStatus("app-a", "withdrawn");
+    expect(service.listActive(userA)).toHaveLength(0);
+    for (const row of storedReminderStatuses()) {
+      expect(row.status).toBe("dismissed");
+    }
+  });
+
+  it("keeps active reminders for open deadlines untouched as sent", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-live", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+
+    const active = service.listActive(userA);
+    expect(active).toHaveLength(3);
+    for (const row of storedReminderStatuses()) {
+      expect(["sent", "pending"]).toContain(row.status);
+    }
+  });
+});

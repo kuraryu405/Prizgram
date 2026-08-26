@@ -14,33 +14,42 @@ export type DeadlineToggleProps = Readonly<{
 export function DeadlineToggle({ deadlineId, completed }: DeadlineToggleProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const toggle = async () => {
     if (pending) return;
     setPending(true);
+    setError(null);
     try {
       await apiFetch<unknown>(
         `/api/deadlines/${encodeURIComponent(deadlineId)}`,
         jsonRequestInit("PATCH", { completed: !completed }),
       );
       router.refresh();
-    } catch {
-      // Errors surface on reload; keep the control enabled.
-    } finally {
+    } catch (caught) {
+      // Surface the failure next to the control; the list refreshes on success.
+      setError(describeApiError(caught));
       setPending(false);
     }
   };
 
   return (
-    <button
-      aria-busy={pending}
-      className="button button-secondary"
-      disabled={pending}
-      onClick={() => void toggle()}
-      type="button"
-    >
-      {completed ? "未完了に戻す" : "完了にする"}
-    </button>
+    <span>
+      <button
+        aria-busy={pending}
+        className="button button-secondary"
+        disabled={pending}
+        onClick={() => void toggle()}
+        type="button"
+      >
+        {completed ? "未完了に戻す" : "完了にする"}
+      </button>
+      {error !== null && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </span>
   );
 }
 
