@@ -1,0 +1,2 @@
+# 空の Issue は禁止し、必ずテンプレートから起票してもらう
+blank_issues_enabled: false

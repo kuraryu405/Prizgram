@@ -1,0 +1,5 @@
+# 既定のオーナー。全変更に対してレビューを必須化する。
+# パスごとのオーナーを追加する例:
+#   /apps/web/ @kuraryu405 @nemocchan
+#   /packages/db/ @kuraryu405
+* @kuraryu405

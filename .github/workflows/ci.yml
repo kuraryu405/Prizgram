@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,61 +43,33 @@ jobs:
             fi
           done
 
-      - name: Detect Node.js workspace
-        id: workspace
-        shell: bash
-        run: |
-          if [[ -f package.json ]]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "Application workspace has not been initialized yet; skipping Node.js validation."
-          fi
-
       - name: Setup pnpm
-        if: steps.workspace.outputs.enabled == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10.15.1
 
       - name: Setup Node.js
-        if: steps.workspace.outputs.enabled == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
 
-      - name: Verify lockfile
-        if: steps.workspace.outputs.enabled == 'true'
-        shell: bash
-        run: |
-          test -f pnpm-lock.yaml || {
-            echo "package.json exists but pnpm-lock.yaml is missing." >&2
-            exit 1
-          }
-
       - name: Install dependencies
-        if: steps.workspace.outputs.enabled == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Lint
-        if: steps.workspace.outputs.enabled == 'true'
         run: pnpm lint
 
       - name: Check formatting
-        if: steps.workspace.outputs.enabled == 'true'
         run: pnpm format:check
 
       - name: Typecheck
-        if: steps.workspace.outputs.enabled == 'true'
         run: pnpm typecheck
 
       - name: Test
-        if: steps.workspace.outputs.enabled == 'true'
         run: pnpm test
 
       - name: Verify migrations
-        if: steps.workspace.outputs.enabled == 'true'
         env:
           DATABASE_URL: file:/tmp/prizgram-ci.sqlite
         run: |
@@ -107,7 +79,6 @@ jobs:
           pnpm db:migrate
 
       - name: Build
-        if: steps.workspace.outputs.enabled == 'true'
         run: pnpm build
 
   e2e:

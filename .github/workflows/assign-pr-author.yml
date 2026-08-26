@@ -1,0 +1,39 @@
+name: Auto assign
+
+# PR 作成者を自動で assignee に設定する。
+# pull_request_target を使うがコードは一切 checkout しないため、
+# fork 由来の PR でも安全に動作する。
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: auto-assign-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  assign-author:
+    name: Assign PR author
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Assign author to pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [[ "$AUTHOR" == *"[bot]" ]]; then
+            echo "Skip: $AUTHOR is a bot."
+            exit 0
+          fi
+
+          gh pr edit "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --add-assignee "$AUTHOR"

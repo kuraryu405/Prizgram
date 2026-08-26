@@ -1,0 +1,39 @@
+# PR 変更パス → ラベルのマッピング。
+# 対応するラベルがリポジトリに存在しないと失敗するため、
+# ラベル追加時は `gh label create <name>` も併せて実行すること。
+
+app:
+  - changed-files:
+      - any-glob-to-any-file:
+          - apps/**
+
+db:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/db/**
+
+shared:
+  - changed-files:
+      - any-glob-to-any-file:
+          - packages/shared/**
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "**/*.md"
+
+ci-cd:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+
+scripts:
+  - changed-files:
+      - any-glob-to-any-file:
+          - scripts/**
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - test/**

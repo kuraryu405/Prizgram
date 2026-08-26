@@ -1,0 +1,25 @@
+version: 2
+
+updates:
+  # GitHub Actions の更新はすべて 1 PR にまとめる
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # pnpm ワークスペース (ルート package.json + packages/*)
+  # major は個別 PR、minor / patch は 1 PR にまとめる
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      dependencies-minor-patch:
+        update-types:
+          - minor
+          - patch
