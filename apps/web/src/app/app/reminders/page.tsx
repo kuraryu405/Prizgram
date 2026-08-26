@@ -1,18 +1,12 @@
 import Link from "next/link";
 
 import { ReminderDismissButton } from "@/components/reminders/reminder-dismiss-button";
+import { reminderPriorityLabels } from "@/lib/labels";
 import { ReminderService } from "@prizgram/db";
 import { getDatabase } from "@/server/database";
 import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
-
-const priorityLabels: Readonly<Record<string, string>> = {
-  urgent: "緊急",
-  high: "高",
-  medium: "中",
-  low: "低",
-};
 
 function formatInZone(view: { scheduledFor: string }): string {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -44,7 +38,8 @@ export default async function RemindersPage() {
                   className={`priority-badge priority-${reminder.priority}`}
                 >
                   優先度:{" "}
-                  {priorityLabels[reminder.priority] ?? reminder.priority}
+                  {reminderPriorityLabels[reminder.priority] ??
+                    reminder.priority}
                 </span>
               </p>
               <p>{reminder.message}</p>
