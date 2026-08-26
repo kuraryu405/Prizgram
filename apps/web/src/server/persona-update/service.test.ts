@@ -14,6 +14,7 @@ import {
 import { personaSnapshotSchema, type PersonaSnapshot } from "@prizgram/shared";
 
 import { AppError } from "../api";
+import { LlmClientError } from "@/server/llm";
 import { PersonaUpdateService } from "./service";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -175,5 +176,46 @@ describe("PersonaUpdateService", () => {
         snapshot: proposedSnapshot(),
       }),
     ).toThrow(AppError);
+  });
+});
+
+describe("PersonaUpdateService.propose error contract", () => {
+  it("maps retryable LLM failures to UPSTREAM_UNAVAILABLE without writing", async () => {
+    const ids = seedBaseAndApplication();
+    const failingClient = {
+      generateStructured: () =>
+        Promise.reject(new LlmClientError("TIMEOUT", "timed out", true)),
+    };
+    await expect(
+      service.propose(
+        userA,
+        {
+          personaVersionId: ids.personaVersionId,
+          reflection: "面接でデータ基盤への興味を評価された。",
+        },
+        { client: failingClient },
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_UNAVAILABLE", status: 502 });
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
+
+  it("maps non-retryable LLM failures to UPSTREAM_INVALID_RESPONSE", async () => {
+    const ids = seedBaseAndApplication();
+    const failingClient = {
+      generateStructured: () =>
+        Promise.reject(
+          new LlmClientError("SCHEMA_VALIDATION_FAILED", "bad shape", false),
+        ),
+    };
+    await expect(
+      service.propose(
+        userA,
+        {
+          personaVersionId: ids.personaVersionId,
+          reflection: "面接でデータ基盤への興味を評価された。",
+        },
+        { client: failingClient },
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
   });
 });

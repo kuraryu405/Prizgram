@@ -14,7 +14,12 @@ import { applicationStageEvents, personaVersions, jobs } from "@prizgram/db";
 
 import type { DatabaseConnection } from "@prizgram/db";
 import { AppError } from "../api";
-import type { StructuredLlmClient } from "@/server/llm";
+import {
+  createLlmClientFromEnvironment,
+  LlmClientError,
+  personaStructuredOutput,
+  type StructuredLlmClient,
+} from "@/server/llm";
 
 export const proposeRequestSchema = z
   .object({
@@ -47,6 +52,40 @@ export interface EventEvidenceSource {
   sequence: number;
   toStatus: string;
   occurredAt: string;
+}
+
+let environmentClient: StructuredLlmClient | undefined;
+
+function defaultClient(): StructuredLlmClient {
+  environmentClient ??= (() => {
+    try {
+      return createLlmClientFromEnvironment();
+    } catch (error) {
+      throw new AppError(
+        "SERVER_MISCONFIGURED",
+        "The language model client is not configured",
+        500,
+        undefined,
+        undefined,
+        { cause: error },
+      );
+    }
+  })();
+  return environmentClient;
+}
+
+function upstreamError(error: unknown): AppError {
+  if (error instanceof LlmClientError) {
+    return new AppError(
+      error.retryable ? "UPSTREAM_UNAVAILABLE" : "UPSTREAM_INVALID_RESPONSE",
+      "The persona update could not be proposed right now",
+      502,
+      undefined,
+      undefined,
+      { cause: error },
+    );
+  }
+  throw error;
 }
 
 export class PersonaUpdateService {
@@ -241,15 +280,7 @@ export class PersonaUpdateService {
     proposed: PersonaSnapshot;
     eventSources: EventEvidenceSource[];
   }> {
-    const { OpenAiCompatibleClient } = await import("@/server/llm");
-    const client =
-      options.client ??
-      new OpenAiCompatibleClient({
-        baseUrl: process.env.OPENAI_BASE_URL ?? "",
-        apiKey: process.env.OPENAI_API_KEY ?? "",
-        model: process.env.OPENAI_MODEL ?? "",
-        timeoutMs: Number(process.env.OPENAI_TIMEOUT_MS ?? "30000"),
-      });
+    const client = options.client ?? defaultClient();
 
     const base = this.baseVersion(user, input.personaVersionId);
     const baseSnapshot = base.snapshot;
@@ -285,12 +316,18 @@ export class PersonaUpdateService {
 
     // The provider schema above is the persona one; reuse its normalization
     // by parsing through the structured contract for parity.
-    const contract = (await import("@prizgram/shared")).personaStructuredOutput;
-    const raw = await client.generateStructured({
-      messages,
-      output: contract,
-      schemaName: "persona_update_proposal",
-    });
+    let raw: PersonaSnapshot;
+    try {
+      raw = await client.generateStructured({
+        messages,
+        output: personaStructuredOutput,
+        schemaName: "persona_update_proposal",
+      });
+    } catch (error) {
+      // LLM failures surface as the same 502 contract as the other
+      // LLM-backed services instead of an opaque 500.
+      throw upstreamError(error);
+    }
 
     const eventIds = new Set(eventSources.map((e) => e.eventId));
     const validated = this.validateEvidence(
