@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AppError } from "../api";
+import { AppError, assertSameOrigin } from "../api";
 import {
-  assertSameOrigin,
   authenticateMutationRequest,
   clearSessionCookie,
   readCredentials,
