@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppError } from "../api";
 import {
   createAuthRateLimiter,
+  createLlmRateLimiter,
   enforceAuthRateLimit,
+  enforceLlmRateLimit,
   FixedWindowRateLimiter,
   requestSourceKey,
 } from "./rate-limit";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function fakeClock(start = 0): {
   now: () => number;
@@ -224,5 +230,60 @@ describe("enforceAuthRateLimit", () => {
     expect(() =>
       enforceAuthRateLimit(request("198.51.100.10"), limiter),
     ).not.toThrow();
+  });
+});
+
+describe("LLM rate limiting", () => {
+  it("shares one budget per user and recovers after the window", () => {
+    const clock = fakeClock();
+    const limiter = createLlmRateLimiter({
+      maxRequests: 2,
+      maxTrackedSources: 100,
+      now: clock.now,
+      windowMs: 60_000,
+    });
+
+    expect(() => enforceLlmRateLimit("user-a", limiter)).not.toThrow();
+    expect(() => enforceLlmRateLimit("user-a", limiter)).not.toThrow();
+    expect(() => enforceLlmRateLimit("user-b", limiter)).not.toThrow();
+
+    let caught: unknown;
+    try {
+      enforceLlmRateLimit("user-a", limiter);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(AppError);
+    expect(caught).toMatchObject({
+      code: "RATE_LIMITED",
+      headers: { "retry-after": "60" },
+      status: 429,
+    });
+
+    clock.advance(60_000);
+    expect(() => enforceLlmRateLimit("user-a", limiter)).not.toThrow();
+  });
+
+  it("fails closed when the tracked-user bound is full", () => {
+    const limiter = createLlmRateLimiter({
+      maxRequests: 10,
+      maxTrackedSources: 1,
+      now: () => 0,
+      windowMs: 60_000,
+    });
+
+    enforceLlmRateLimit("user-a", limiter);
+    expect(() => enforceLlmRateLimit("user-b", limiter)).toThrowError(AppError);
+    expect(limiter.trackedSourceCount).toBe(1);
+  });
+
+  it("reads the documented limits from the environment", () => {
+    vi.stubEnv("LLM_RATE_LIMIT_MAX_REQUESTS", "1");
+    vi.stubEnv("LLM_RATE_LIMIT_MAX_TRACKED_USERS", "2");
+    vi.stubEnv("LLM_RATE_LIMIT_WINDOW_MS", "30000");
+    const limiter = createLlmRateLimiter({ now: () => 0 });
+
+    enforceLlmRateLimit("user-a", limiter);
+    expect(() => enforceLlmRateLimit("user-a", limiter)).toThrowError(AppError);
   });
 });

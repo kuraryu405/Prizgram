@@ -1,5 +1,9 @@
 import { apiResult, readJsonBody, withApiHandler } from "@/server/api";
-import { requireSessionUser, withNoStore } from "@/server/auth";
+import {
+  enforceLlmRateLimit,
+  requireSessionUser,
+  withNoStore,
+} from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
 import {
@@ -14,6 +18,7 @@ export const POST = withNoStore(
   withApiHandler(async (request) => {
     const user = requireSessionUser(request);
     const input = await readJsonBody(request, proposeRequestSchema);
+    enforceLlmRateLimit(user.id);
     return apiResult(
       await new PersonaUpdateService(getDatabase()).propose(user, input),
     );

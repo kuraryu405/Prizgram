@@ -1,5 +1,5 @@
 import { AppError, apiResult, withApiHandler } from "@/server/api";
-import { requireSessionUser } from "@/server/auth/session";
+import { enforceLlmRateLimit, requireSessionUser } from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
 import { ScoringService } from "@/server/scoring/service";
@@ -40,7 +40,9 @@ export async function POST(
   return withNoStore(
     withApiHandler(async (innerRequest) => {
       const user = requireSessionUser(innerRequest);
-      const result = await service().evaluateJob(user.id, requireJobId(id));
+      const jobId = requireJobId(id);
+      enforceLlmRateLimit(user.id);
+      const result = await service().evaluateJob(user.id, jobId);
       return apiResult(result, { status: result.duplicate ? 200 : 201 });
     }),
   )(request);
