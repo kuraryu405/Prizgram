@@ -108,6 +108,10 @@ OpenAI 互換 client は provider に JSON Schema response format を渡しま�
 
 求人本文や求人 API 由来のテキストは命令ではなく untrusted external data として prompt 内で区切ります。求人中に prompt injection 風の文字列が含まれていても instruction として扱いません。具体的な prompt は各 feature PR で追加し、prompt version と model を永続化します。
 
+LLM を実行し得る Route Handler は、認証済み user ID をキーとする共通の fixed-window rate limit を適用します。求人取り込み、求人探索、スコアリング、persona 生成・更新候補生成・一括再評価は同じ予算を消費し、超過時は `RATE_LIMITED` と `Retry-After` を返して LLM 呼び出し前に停止します。既定値は 60 秒あたり 10 要求、追跡ユーザー数 10,000 で、`LLM_RATE_LIMIT_*` 環境変数から変更できます。一括再評価は内部の求人件数にかかわらず HTTP 要求 1 回として数えます。
+
+この制限は単一 application process 内のインメモリ防御です。将来アプリケーションを複数 instance に分割する場合は、共有ストアを使う分散 rate limiter へ置き換えます。
+
 求人 provider 側でも timeout、非2xx、invalid payload、過大 response を型付き error に変換し、partial write を行いません。provider API key は server-only 環境変数として管理します。
 
 ## SQLite 運用

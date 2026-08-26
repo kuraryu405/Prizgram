@@ -130,6 +130,22 @@ export function createAuthRateLimiter(
 
 const authRateLimiter = createAuthRateLimiter();
 
+export function createLlmRateLimiter(
+  overrides?: Partial<FixedWindowRateLimitOptions>,
+): FixedWindowRateLimiter {
+  return new FixedWindowRateLimiter({
+    maxRequests: positiveIntFromEnvironment("LLM_RATE_LIMIT_MAX_REQUESTS", 10),
+    maxTrackedSources: positiveIntFromEnvironment(
+      "LLM_RATE_LIMIT_MAX_TRACKED_USERS",
+      10_000,
+    ),
+    windowMs: positiveIntFromEnvironment("LLM_RATE_LIMIT_WINDOW_MS", 60_000),
+    ...overrides,
+  });
+}
+
+const llmRateLimiter = createLlmRateLimiter();
+
 /**
  * Applies the shared per-source budget for authentication mutations.
  * Throws a 429 AppError with a Retry-After header once a source exceeds it.
@@ -143,6 +159,27 @@ export function enforceAuthRateLimit(
     throw new AppError(
       "RATE_LIMITED",
       "Too many authentication attempts. Please retry later",
+      429,
+      undefined,
+      { "retry-after": String(decision.retryAfterSeconds) },
+    );
+  }
+}
+
+/**
+ * Applies one shared per-user budget to authenticated operations that can
+ * invoke the language model. The in-memory budget is shared by every LLM
+ * route in this application process.
+ */
+export function enforceLlmRateLimit(
+  userId: string,
+  limiter: FixedWindowRateLimiter = llmRateLimiter,
+): void {
+  const decision = limiter.check(userId);
+  if (!decision.allowed) {
+    throw new AppError(
+      "RATE_LIMITED",
+      "Too many language model requests. Please retry later",
       429,
       undefined,
       { "retry-after": String(decision.retryAfterSeconds) },

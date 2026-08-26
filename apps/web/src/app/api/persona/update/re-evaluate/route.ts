@@ -4,7 +4,11 @@ import {
   readJsonBody,
   withApiHandler,
 } from "@/server/api";
-import { requireSessionUser, withNoStore } from "@/server/auth";
+import {
+  enforceLlmRateLimit,
+  requireSessionUser,
+  withNoStore,
+} from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
 import { PersonaUpdateService } from "@/server/persona-update/service";
@@ -25,6 +29,7 @@ export const POST = withNoStore(
     if (!/^[A-Za-z0-9._:-]{1,128}$/.test(input.personaVersionId)) {
       throw new AppError("NOT_FOUND", "Persona not found", 404);
     }
+    enforceLlmRateLimit(user.id);
     const result = await new PersonaUpdateService(getDatabase()).reEvaluateAll(
       user,
       input.personaVersionId,

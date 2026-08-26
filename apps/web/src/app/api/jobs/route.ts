@@ -1,5 +1,5 @@
 import { apiResult, readJsonBody, withApiHandler } from "@/server/api";
-import { requireSessionUser } from "@/server/auth/session";
+import { enforceLlmRateLimit, requireSessionUser } from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
 import { JobService, jobImportRequestSchema } from "@/server/jobs/service";
@@ -14,6 +14,7 @@ export const POST = withNoStore(
   withApiHandler(async (request) => {
     const user = requireSessionUser(request);
     const input = await readJsonBody(request, jobImportRequestSchema, 32_768);
+    enforceLlmRateLimit(user.id);
     const result = await service().importJob(user, input);
     return apiResult(result, { status: result.duplicate ? 200 : 201 });
   }),

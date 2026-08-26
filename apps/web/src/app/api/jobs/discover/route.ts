@@ -1,5 +1,9 @@
 import { apiResult, readJsonBody, withApiHandler } from "@/server/api";
-import { requireSessionUser, withNoStore } from "@/server/auth";
+import {
+  enforceLlmRateLimit,
+  requireSessionUser,
+  withNoStore,
+} from "@/server/auth";
 import { requestSourceKey } from "@/server/auth/rate-limit";
 import { getDatabase } from "@/server/database";
 
@@ -15,6 +19,7 @@ export const POST = withNoStore(
   withApiHandler(async (request) => {
     const user = requireSessionUser(request);
     const input = await readJsonBody(request, jobDiscoveryRequestSchema);
+    enforceLlmRateLimit(user.id);
     const result = await new DiscoveryService(getDatabase()).discover(
       user,
       input,
