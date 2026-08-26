@@ -73,6 +73,40 @@ test.describe("Prizgram MVP core loop", () => {
       page.getByRole("link", { name: /求人票を取り込む/ }),
     ).toBeVisible();
 
+    // --- Persona-driven discovery through the licensed provider mock.
+    await page.goto("/app/jobs");
+    await page.getByRole("button", { name: "求人を探す" }).click();
+    const firstCandidate = page.getByRole("article").first();
+    await expect(firstCandidate).toContainText("フロントエンドエンジニア", {
+      timeout: 20_000,
+    });
+    await expect(firstCandidate).toContainText("株式会社キャリアジェット");
+    await firstCandidate
+      .getByRole("button", { name: /この候補を取り込む/ })
+      .click();
+    await expect(page.getByText(/構造化して保存しました/).first()).toBeVisible({
+      timeout: 20_000,
+    });
+    // The discovered posting lands in the common imported-jobs pipeline.
+    await expect(
+      page.getByRole("link", {
+        name: /株式会社キャリアジェット \/ フロントエンドエンジニア/,
+      }),
+    ).toBeVisible({ timeout: 20_000 });
+    // Re-importing the same external candidate short-circuits as duplicate.
+    await page.goto("/app/jobs");
+    await page.getByRole("button", { name: "求人を探す" }).click();
+    const importedCandidate = page.getByRole("article").first();
+    await expect(importedCandidate).toContainText("株式会社キャリアジェット", {
+      timeout: 20_000,
+    });
+    await importedCandidate
+      .getByRole("button", { name: /この候補を取り込む/ })
+      .click();
+    await expect(page.getByText(/既に取り込み済みです/).first()).toBeVisible({
+      timeout: 20_000,
+    });
+
     // --- Job import through the manual posting form.
     await page.goto("/app/jobs");
     const posting = [
@@ -81,7 +115,7 @@ test.describe("Prizgram MVP core loop", () => {
       "週3日以上勤務できる方を歓迎します。メンターが付き、コードレビューを受けながら成長できます。",
     ].join("\n");
     await page.getByLabel("求人票本文").fill(posting);
-    await page.getByRole("button", { name: /取り込む|送信|構造化/ }).click();
+    await page.getByRole("button", { name: /求人票を取り込む/ }).click();
     await expect(page.getByText(/株式会社サンプル/).first()).toBeVisible({
       timeout: 20_000,
     });
