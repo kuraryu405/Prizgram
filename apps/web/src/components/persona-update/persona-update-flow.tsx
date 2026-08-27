@@ -149,7 +149,7 @@ export function PersonaUpdateFlow({
           {pending === "propose" ? "生成中…" : "更新案を作成"}
         </button>
         <p className="hint-text">
-          提案は自動確定されません。内容を確認して承認した場合のみ新しいバージョンが作成されます。
+          提案は自動確定されません。内容を確認して承認した場合のみ更新が反映されます。
         </p>
       </form>
 
@@ -169,7 +169,7 @@ export function PersonaUpdateFlow({
             onClick={() => void approve()}
             type="button"
           >
-            {pending === "approve" ? "承認中…" : "承認して新バージョンを作成"}
+            {pending === "approve" ? "承認中…" : "承認して更新を反映"}
           </button>
         </section>
       )}

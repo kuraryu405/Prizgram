@@ -31,9 +31,6 @@ export default async function PersonaPage() {
     return (
       <div className="page">
         <h1>ペルソナ</h1>
-        <p className="page-lead">
-          まだペルソナがありません。6問のヒアリングから生成できます。
-        </p>
         <Link className="button button-primary" href="/app/persona/intake">
           ヒアリングをはじめる
         </Link>
@@ -57,11 +54,8 @@ export default async function PersonaPage() {
         <Link href="/app">ホームへ戻る</Link>
       </p>
       <h1>ペルソナ</h1>
-      <p className="page-lead">
-        バージョン{latest.version}（{formatDateTime(latest.createdAt)}生成）
-        {latest.model !== undefined && ` / model: ${latest.model}`}
-        {latest.promptVersion !== undefined &&
-          ` / prompt: ${latest.promptVersion}`}
+      <p className="summary-line">
+        最終更新: {formatDateTime(latest.createdAt)}
       </p>
       <p className="hint-text">
         すべての項目はヒアリングの回答のみを根拠にしています。推測は含まれません。
@@ -168,11 +162,11 @@ export default async function PersonaPage() {
       </section>
 
       <section aria-labelledby="persona-versions" className="card">
-        <h2 id="persona-versions">バージョン履歴</h2>
+        <h2 id="persona-versions">更新履歴</h2>
         <ul>
           {versions.map((version) => (
             <li key={version.personaVersionId}>
-              v{version.version}（{formatDateTime(version.createdAt)}）
+              更新 {formatDateTime(version.createdAt)}
             </li>
           ))}
         </ul>

@@ -38,8 +38,9 @@ export default async function DeadlinesPage() {
   return (
     <div className="page">
       <h1>締切</h1>
-      <p className="page-lead">
-        ES・面接・内定承諾などの期限をタイムゾーン込みで管理します。完了済みの締切はリマインダー対象外になります。
+      <p className="summary-line">
+        未完了 {attention.length + upcoming.length}件 / 期限超過{" "}
+        {attention.length}件
       </p>
 
       <DeadlineCreateForm

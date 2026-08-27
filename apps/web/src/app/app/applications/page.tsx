@@ -34,9 +34,6 @@ export default async function ApplicationsPage({
   return (
     <div className="page">
       <h1>応募管理</h1>
-      <p className="page-lead">
-        応募ごとの選考ステータスと履歴を管理します。応募の自動送信は行いません。
-      </p>
 
       <ApplicationAddForm
         jobs={jobs.map((job) => ({

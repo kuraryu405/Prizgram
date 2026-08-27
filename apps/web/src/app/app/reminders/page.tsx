@@ -35,9 +35,16 @@ export default async function RemindersPage() {
   return (
     <div className="page">
       <h1>リマインダー</h1>
-      <p className="page-lead">
-        締切接近を優先度付きで通知します。生成はcronによる定期実行と、このページの閲覧時に行われます（重複しません）。
-      </p>
+      {reminders.length > 0 && (
+        <p className="summary-line">
+          未対応 {reminders.length}件 / 緊急{" "}
+          {
+            reminders.filter((reminder) => reminder.priority === "urgent")
+              .length
+          }
+          件
+        </p>
+      )}
 
       {reminders.length === 0 ? (
         <p className="hint-text">現在表示できるリマインダーはありません。</p>
@@ -55,7 +62,7 @@ export default async function RemindersPage() {
                 </span>
               </p>
               <p>{reminder.message}</p>
-              <p className="hint-text">検知時刻: {formatInZone(reminder)}</p>
+              <p className="hint-text">通知予定: {formatInZone(reminder)}</p>
               <ReminderDismissButton reminderId={reminder.id} />
             </li>
           ))}

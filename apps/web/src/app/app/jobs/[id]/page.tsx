@@ -243,8 +243,7 @@ export default async function JobDetailPage({
               })}
             </ul>
             <p className="hint-text">
-              v{detail.latest.version} / persona{" "}
-              {currentScore.personaVersionId.slice(0, 8)} / {currentScore.model}
+              現在のペルソナと求人内容で評価しています。
             </p>
           </div>
         ) : freshness.status === "stale" && freshness.detail !== undefined ? (
@@ -281,11 +280,9 @@ export default async function JobDetailPage({
                   — skill {entry.axes.skillFit.score} / culture{" "}
                   {entry.axes.cultureValueFit.score} / gap{" "}
                   {entry.axes.difficultyGap.score}（p
-                  {entry.personaVersionId.slice(0, 6)} / j
-                  {entry.jobVersionId.slice(0, 6)}）
                   {freshness.status === "stale" &&
                     entry.scoreId === freshness.detail?.scoreId &&
-                    " — 古いバージョン"}
+                    " — 前回の評価"}
                 </li>
               ))}
             </ul>
@@ -298,14 +295,11 @@ export default async function JobDetailPage({
       </section>
 
       <section aria-labelledby="job-versions" className="card">
-        <h2 id="job-versions">バージョン履歴</h2>
+        <h2 id="job-versions">更新履歴</h2>
         <ul>
           {detail.versions.map((version) => (
             <li key={version.jobVersionId}>
-              v{version.version}（{formatDateTime(version.createdAt)}）
-              {version.model !== undefined && ` / model: ${version.model}`}
-              {version.promptVersion !== undefined &&
-                ` / prompt: ${version.promptVersion}`}
+              更新 {formatDateTime(version.createdAt)}
             </li>
           ))}
         </ul>

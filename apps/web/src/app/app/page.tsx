@@ -124,9 +124,6 @@ export default async function AppHome() {
   return (
     <div className="page page-dashboard">
       <h1>ようこそ、{user.loginId} さん</h1>
-      <p className="page-lead">
-        現在の就活状況と、次に取るべきアクションをここで確認できます。
-      </p>
 
       <div className="dashboard-grid">
         <div className="dashboard-area dashboard-area--focus">
@@ -405,7 +402,6 @@ export default async function AppHome() {
                   <time dateTime={persona.createdAt}>
                     {formatDateTime(persona.createdAt)}
                   </time>
-                  <span className="hint-text">（v{persona.version}）</span>
                 </p>
                 <p className="hint-text">
                   スキル {persona.snapshot.skills.length}

@@ -58,11 +58,7 @@ export function ScoreEvaluateButton({
   const [error, setError] = useState<string | null>(null);
   const [axes, setAxes] = useState<AxesPayload | null>(null);
   const [meta, setMeta] = useState<{
-    model: string;
-    promptVersion: string;
     duplicate: boolean;
-    personaVersionId: string;
-    jobVersionId: string;
   } | null>(null);
 
   const onEvaluate = async () => {
@@ -76,11 +72,7 @@ export function ScoreEvaluateButton({
       );
       setAxes(result.detail.axes);
       setMeta({
-        model: result.detail.model,
-        promptVersion: result.detail.promptVersion,
         duplicate: result.duplicate,
-        personaVersionId: result.detail.personaVersionId,
-        jobVersionId: result.detail.jobVersionId,
       });
       router.refresh();
     } catch (caught) {
@@ -146,10 +138,9 @@ export function ScoreEvaluateButton({
           </ul>
           {meta !== null && (
             <p className="hint-text">
-              評価に使用: persona {meta.personaVersionId.slice(0, 8)} / job
-              version {meta.jobVersionId.slice(0, 8)} / model: {meta.model} /
-              prompt: {meta.promptVersion}
-              {meta.duplicate && "（既存の評価を再利用）"}
+              {meta.duplicate
+                ? "保存済みの評価を表示しています。"
+                : "評価を保存しました。"}
             </p>
           )}
         </>

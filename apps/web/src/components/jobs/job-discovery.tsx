@@ -156,7 +156,7 @@ export function JobDiscovery() {
       setImportMessage(
         imported.duplicate
           ? `${candidate.title} は既に取り込み済みです。`
-          : `${candidate.title} を構造化して保存しました（バージョン${imported.version}）。`,
+          : `${candidate.title} を保存しました。`,
       );
       router.refresh();
     } catch (error) {

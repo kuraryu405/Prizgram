@@ -80,8 +80,8 @@ export function JobImportForm() {
       setSourceUrl("");
       setSuccessMessage(
         result.duplicate
-          ? "同一内容の求人は既に登録済みのため、既存のバージョンを表示します。"
-          : `求人を構造化して保存しました（バージョン${result.version}）。`,
+          ? "同じ内容の求人は既に登録されています。"
+          : "求人を保存しました。",
       );
       router.refresh();
     } catch (error) {
