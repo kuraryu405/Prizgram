@@ -239,6 +239,44 @@ describe("ReminderService.generateDueReminders", () => {
     expect(after[0]?.message).not.toContain("dl-title");
   });
 
+  it("invalidates old reminder when deadline kind changes", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-kind", "app-a", now.getTime() + 12 * HOUR_MS, {
+      kind: "document",
+    });
+    service.generateDueReminders({ now });
+    expect(service.listActive(userA, now)[0]?.message).toContain("ES・書類");
+
+    connection.sqlite
+      .prepare("update application_deadlines set kind = ? where id = ?")
+      .run("interview", "dl-kind-row");
+    const afterNow = new Date(now.getTime() + 60_000);
+    service.generateDueReminders({ now: afterNow });
+    const after = service.listActive(userA, afterNow);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.message).toContain("面接");
+    expect(after[0]?.message).not.toContain("ES・書類");
+  });
+
+  it("cascades reminders when their deadline is deleted", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-delete", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+    expect(service.listActive(userA, now)).toHaveLength(1);
+
+    connection.sqlite
+      .prepare("delete from application_deadlines where id = ?")
+      .run("dl-delete-row");
+
+    expect(service.listActive(userA, now)).toHaveLength(0);
+    const stored = connection.sqlite
+      .prepare("select count(*) as count from reminders where deadline_id = ?")
+      .get("dl-delete-row") as { count: number };
+    expect(stored.count).toBe(0);
+  });
+
   it("uses deadline timezone for message formatting", () => {
     seedApplication("app-a", "interview");
     const now = new Date("2026-08-26T00:00:00Z");
