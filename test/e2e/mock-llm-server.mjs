@@ -110,7 +110,7 @@ const jobSearchQuery = {
  * so its evidence is echoed verbatim — mirroring what the real model is
  * instructed to do.
  */
-function personaUpdateProposalFor(userContent) {
+function personaUpdateProposalFor(userContent, rawBody) {
   // `userContent` is the prompt's user message: the JSON digest built by
   // PersonaUpdateService.propose.
   let current = null;
@@ -129,6 +129,17 @@ function personaUpdateProposalFor(userContent) {
         ...experience,
       }))
     : [];
+  // Extract the allowed reflection sourceId pinned to the proposal requestId (#166).
+  // The system prompt contains `sourceId を "reflection:<requestId>" に固定`.
+  // Fall back to the legacy hard-coded id for older clients.
+  let reflectionSourceId = "reflection:e2e-update";
+  try {
+    const raw = String(rawBody ?? "");
+    const match = raw.match(/reflection:[a-zA-Z0-9._-]{8,128}/);
+    if (match) reflectionSourceId = match[0];
+  } catch {
+    // keep fallback
+  }
   return {
     ...(current ?? personaSnapshot),
     experiences: baseExperiences,
@@ -141,7 +152,7 @@ function personaUpdateProposalFor(userContent) {
       {
         id: "ev:reflection",
         sourceType: "user_input",
-        sourceId: "reflection:e2e-update",
+        sourceId: reflectionSourceId,
         summary: "面接ではデータ整備の話が深まりました。",
       },
     ],
@@ -149,12 +160,12 @@ function personaUpdateProposalFor(userContent) {
   };
 }
 
-function payloadFor(schemaName, body) {
+function payloadFor(schemaName, body, rawBody) {
   switch (schemaName) {
     case "persona_snapshot":
       return personaSnapshot;
     case "persona_update_proposal":
-      return personaUpdateProposalFor(body);
+      return personaUpdateProposalFor(body, rawBody);
     case "job_snapshot":
       return jobPayloadFor(body);
     case "job_scoring":
@@ -192,7 +203,7 @@ const server = createServer((request, response) => {
       response.writeHead(400).end();
       return;
     }
-    const payload = payloadFor(schemaName, userContent);
+    const payload = payloadFor(schemaName, userContent, body);
     if (payload === null) {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
