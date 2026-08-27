@@ -4,7 +4,8 @@ const ORIGIN = `http://localhost:${process.env.PORT ?? 3100}`;
 const password = "correct horse battery staple";
 
 async function registerAndLogin(page: Page) {
-  const loginId = `e2e.note.${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const suffix = Math.random().toString(36).slice(2, 8);
+  const loginId = `e2e.note.${Date.now()}-${suffix}`;
   await page.goto("/register");
   await page.getByLabel("ログインID").fill(loginId);
   await page.getByLabel("パスワード", { exact: true }).fill(password);
