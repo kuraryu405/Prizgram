@@ -80,29 +80,46 @@ describe("normalizeCareerjetJob", () => {
   });
 
   it.each([
-    [
-      "エンジニアのキャリアを<b>デザイン</b>する",
-      "エンジニアのキャリアをデザインする",
-    ],
-    ["<B>強調</B>", "強調"],
+    ["エンジニアを<b>募集</b>しています", "エンジニアを募集しています"],
+    ["<strong>必須</strong>: TypeScript", "必須: TypeScript"],
+    ["<em>歓迎</em>", "歓迎"],
     ["<b>一</b><b>二</b>", "一二"],
-    ["前  <b>強調</b>  後", "前 強調 後"],
-  ])("removes bold tags from descriptions", (description, expected) => {
-    expect(
-      normalizeCareerjetJob({ ...sampleJob, description })?.description,
-    ).toBe(expected);
-  });
-
-  it.each(["タグのない説明文", "  前後の空白のみ除去  "])(
-    "preserves the existing plain-text normalization",
-    (description) => {
+    ["開発<br>運用<br/>保守", "開発 運用 保守"],
+    ["<div>開発</div><div>運用</div><div>保守</div>", "開発 運用 保守"],
+    ["<strong>React <em>経験者</em></strong>歓迎", "React 経験者歓迎"],
+    ["React&nbsp;/&nbsp;TypeScript", "React / TypeScript"],
+    ["A &amp; B &#x2F; C", "A & B / C"],
+    ["\r\n React\t  &nbsp; TypeScript \n ", "React TypeScript"],
+    ["<p>broken <strong>markup", "broken markup"],
+  ])(
+    "normalizes provider descriptions to plain text",
+    (description, expected) => {
       expect(
         normalizeCareerjetJob({ ...sampleJob, description })?.description,
-      ).toBe(description.trim());
+      ).toBe(expected);
     },
   );
 
-  it.each([null, "", "   "])(
+  it("keeps plain-text wording while normalizing whitespace", () => {
+    expect(
+      normalizeCareerjetJob({
+        ...sampleJob,
+        description: "  React と TypeScript で開発します。  ",
+      })?.description,
+    ).toBe("React と TypeScript で開発します。");
+  });
+
+  it("does not include non-presentation content or HTML attributes", () => {
+    expect(
+      normalizeCareerjetJob({
+        ...sampleJob,
+        description:
+          '<script>alert("x")</script><style>.x { color: red; }</style><a href="https://evil.example" title="bad">安全なリンク</a><img src="x" alt="画像">',
+      })?.description,
+    ).toBe("安全なリンク");
+  });
+
+  it.each([null, "", "   ", "<br><br>"])(
     "keeps blank descriptions absent",
     (description) => {
       expect(

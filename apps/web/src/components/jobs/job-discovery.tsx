@@ -297,7 +297,9 @@ export function JobDiscovery() {
                         </a>
                       </p>
                       {candidate.description !== undefined && (
-                        <p>{candidate.description}</p>
+                        <p className="job-candidate-description">
+                          {candidate.description}
+                        </p>
                       )}
                       <button
                         aria-busy={importingId === candidate.externalId}
