@@ -28,7 +28,9 @@ let connection: DatabaseConnection;
 let service: MinimalApplicationService;
 
 beforeEach(() => {
-  temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "prizgram-minimal-"));
+  temporaryDirectory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "prizgram-minimal-"),
+  );
   connection = createDatabase(path.join(temporaryDirectory, "app.sqlite"));
   migrateDatabase(connection, migrationsFolder);
   connection.sqlite.prepare("insert into users (id) values (?)").run(user.id);
@@ -56,56 +58,59 @@ describe("minimalApplicationCreateSchema", () => {
 });
 
 describe("MinimalApplicationService", () => {
-  it("creates a pinned application from company and current stage without persona", () => {
-    const created = service.create(user, {
-      company: "手動株式会社",
-      status: "interview",
-      stageLabel: "2次面接",
-      nextAction: "面接日程を調整",
-      note: "紹介経由",
-    });
+  it(
+    "creates a pinned application from company and current stage without persona",
+    () => {
+      const created = service.create(user, {
+        company: "手動株式会社",
+        status: "interview",
+        stageLabel: "2次面接",
+        nextAction: "面接日程を調整",
+        note: "紹介経由",
+      });
 
-    expect(created.company).toBe("手動株式会社");
-    expect(created.role).toBe("職種未設定");
-    expect(created.status).toBe("interview");
-    expect(created.stageLabel).toBe("2次面接");
-    expect(created.nextAction).toBe("面接日程を調整");
-    expect(created.note).toBe("紹介経由");
-    expect(created.jobVersionId).toBeDefined();
-    expect(created.events).toHaveLength(1);
-    expect(created.events[0]).toMatchObject({
-      sequence: 1,
-      toStatus: "interview",
-      stageLabel: "2次面接",
-      note: "紹介経由",
-    });
+      expect(created.company).toBe("手動株式会社");
+      expect(created.role).toBe("職種未設定");
+      expect(created.status).toBe("interview");
+      expect(created.stageLabel).toBe("2次面接");
+      expect(created.nextAction).toBe("面接日程を調整");
+      expect(created.note).toBe("紹介経由");
+      expect(created.jobVersionId).toBeDefined();
+      expect(created.events).toHaveLength(1);
+      expect(created.events[0]).toMatchObject({
+        sequence: 1,
+        toStatus: "interview",
+        stageLabel: "2次面接",
+        note: "紹介経由",
+      });
 
-    const stored = connection.sqlite
-      .prepare(
-        "select user_id, job_id, job_version_id, note from applications where id = ?",
-      )
-      .get(created.applicationId) as {
-      user_id: string;
-      job_id: string;
-      job_version_id: string;
-      note: string;
-    };
-    expect(stored.user_id).toBe(user.id);
-    expect(stored.note).toBe("紹介経由");
-    expect(stored.job_version_id).toBe(created.jobVersionId);
+      const stored = connection.sqlite
+        .prepare(
+          "select user_id, job_id, job_version_id, note from applications where id = ?",
+        )
+        .get(created.applicationId) as {
+        user_id: string;
+        job_id: string;
+        job_version_id: string;
+        note: string;
+      };
+      expect(stored.user_id).toBe(user.id);
+      expect(stored.note).toBe("紹介経由");
+      expect(stored.job_version_id).toBe(created.jobVersionId);
 
-    const pinnedVersion = connection.sqlite
-      .prepare(
-        "select user_id, job_id from job_versions where id = ?",
-      )
-      .get(stored.job_version_id) as { user_id: string; job_id: string };
-    expect(pinnedVersion).toEqual({ user_id: user.id, job_id: stored.job_id });
+      const pinnedVersion = connection.sqlite
+        .prepare("select user_id, job_id from job_versions where id = ?")
+        .get(stored.job_version_id) as { user_id: string; job_id: string };
+      expect(pinnedVersion).toEqual({ user_id: user.id, job_id: stored.job_id });
 
-    const personaCount = connection.sqlite
-      .prepare("select count(*) as count from persona_versions where user_id = ?")
-      .get(user.id) as { count: number };
-    expect(personaCount.count).toBe(0);
-  });
+      const personaCount = connection.sqlite
+        .prepare(
+          "select count(*) as count from persona_versions where user_id = ?",
+        )
+        .get(user.id) as { count: number };
+      expect(personaCount.count).toBe(0);
+    },
+  );
 
   it("keeps an explicitly supplied role in the pinned snapshot", () => {
     const created = service.create(user, {
