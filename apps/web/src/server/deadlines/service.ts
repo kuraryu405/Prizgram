@@ -90,6 +90,7 @@ export type DeadlineView = Readonly<{
   completed: boolean;
   overdue: boolean;
   within24Hours: boolean;
+  within7Days: boolean;
   note?: string;
 }>;
 
@@ -379,6 +380,8 @@ export class DeadlineService {
       overdue: !completed && dueMs < nowEpoch,
       within24Hours:
         !completed && dueMs >= nowEpoch && dueMs - nowEpoch <= 86_400_000,
+      within7Days:
+        !completed && dueMs >= nowEpoch && dueMs - nowEpoch <= 604_800_000,
       ...(row.note === undefined || row.note === null
         ? {}
         : { note: row.note }),

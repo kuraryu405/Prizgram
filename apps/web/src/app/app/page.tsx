@@ -91,7 +91,7 @@ export default async function AppHome() {
   const activeApplicationCount = applications.filter(
     (application) => !closedApplicationStatuses.has(application.status),
   ).length;
-  const upcomingWithin7Days = upcoming.length;
+  const upcomingWithin7Days = upcoming.filter((d) => d.within7Days).length;
 
   // Brand-new users get a single CTA, not a wall of empty cards.
   const onboardingNeeded =
