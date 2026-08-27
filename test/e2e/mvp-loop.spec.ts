@@ -26,11 +26,9 @@ test.describe("Prizgram MVP core loop", () => {
   test("signup → persona → job import → scoring → application → deadline → reminder", async ({
     page,
   }) => {
-    // --- Signup lands in the app shell; a new user is told to create a persona.
+    // --- Signup lands in the app shell; onboarding exposes one clear CTA.
     await registerAndLogin(page);
-    await expect(
-      page.getByRole("link", { name: /ペルソナ・ヒアリングを始める/ }),
-    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "求人を探す" })).toBeVisible();
 
     // --- Persona intake wizard: answer every question, then generate.
     await page.goto("/app/persona/intake");
@@ -252,7 +250,7 @@ test.describe("Prizgram MVP core loop", () => {
     await expect(page.getByText(/ES提出（E2E）/).first()).toBeVisible();
     await page.goto("/app");
     await expect(
-      page.getByRole("heading", { name: "次のアクション" }),
+      page.getByRole("heading", { name: "今日やること" }),
     ).toBeVisible();
   });
 
