@@ -5,10 +5,10 @@ import { useEffect } from "react";
 
 export interface RouteErrorProps {
   error: Error & { digest?: string };
-  retry: () => void;
+  reset: () => void;
 }
 
-export function ErrorRecovery({ error, retry }: RouteErrorProps) {
+export function ErrorRecovery({ error, reset }: RouteErrorProps) {
   useEffect(() => {
     console.error("Unexpected route error", error);
   }, [error]);
@@ -24,7 +24,7 @@ export function ErrorRecovery({ error, retry }: RouteErrorProps) {
         一時的な問題が発生した可能性があります。しばらく待ってから再試行してください。
       </p>
       <div className="button-row">
-        <button className="button button-primary" onClick={retry} type="button">
+        <button className="button button-primary" onClick={reset} type="button">
           再試行
         </button>
         <Link className="button button-secondary" href="/app">
