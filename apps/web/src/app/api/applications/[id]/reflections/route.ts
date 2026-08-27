@@ -21,7 +21,9 @@ export async function GET(
       if (!idPattern.test(id)) {
         throw new AppError("NOT_FOUND", "Application not found", 404);
       }
-      return apiResult(new InterviewReflectionService(getDatabase()).list(user.id, id));
+      return apiResult(
+        new InterviewReflectionService(getDatabase()).list(user.id, id),
+      );
     }),
   )(request);
 }
