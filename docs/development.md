@@ -131,7 +131,7 @@ Smoke test / health check
 
 CI が失敗したコミットをデプロイしないことを最重要条件とします。
 
-EC2向けの運用手順（deploy・backup・migration・cron・restore drill・TLS checklist）は [`docs/deployment.md`](deployment.md) に集約します。Production 用 secret は GitHub Environment または server-local `.env`（root:600）に置き、workflow ファイルへ直接埋め込みません。
+LXC向けのcanonical運用手順（standalone deploy・backup・migration・cron・rollback・health check）は [`docs/deployment.md`](deployment.md) に集約します。Production用secretはGitHub Environmentまたはserver-localの`shared/.env`（0600）に置き、workflowファイルへ直接埋め込みません。
 
 ## GitHub Actions の権限
 

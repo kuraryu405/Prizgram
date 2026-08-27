@@ -1,147 +1,188 @@
-# Prizgram 運用 Runbook（EC2 / SQLite）
+# Prizgram Production Deployment Runbook（LXC / SQLite）
 
-MVPをEC2相当の単一ホストで安全に運用するための手順です。対象: Node 22、pnpm 10、SQLite(WAL)。
+Production の canonical deployment は、Tailscale 経由で LXC へ release を配置し、Next.js standalone server をユーザー systemd で起動する方式です。
 
-## 1. プロビジョニング
+- CD workflow: `.github/workflows/deploy-lxc.yml`
+- release処理: `scripts/deploy/remote-release.sh`
+- systemd unit: `deploy/prizgram-web.service`
+- service名: `prizgram-web.service`
 
-- Amazon Linux 2023 / Ubuntu 22.04 以上のEC2インスタンス
-- ボリュームはアプリとDBで同一EBS（スナップショット対象を1つに集約）
-- セキュリティグループ: 80/443 のみ公開。SSHはSSM Session Manager経由
+`pnpm --filter @prizgram/web start` や `/opt/prizgram` を前提とする構成は使用しません。
 
-```bash
-# Node 22 (nvm例)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-nvm install 22 && nvm alias default 22
-corepack enable pnpm   # package.jsonのpackageManagerに追従
-```
+## 1. Canonical directory model
 
-## 2. デプロイ構成
+デプロイユーザーは `prizgram-deploy`、`DEPLOY_ROOT` は `/home/prizgram-deploy/prizgram` です。
 
 ```text
-/opt/prizgram/            # アプリ一式 (git clone or rsync)
-  ├─ .env                 # server-only secrets (root:600)
-  ├─ data/prizgram.sqlite # SQLite本体 (WAL有効)
-/var/backups/prizgram/    # sqlite3 .backup 出力先
-/etc/systemd/system/prizgram.service
+/home/prizgram-deploy/prizgram/
+  ├─ releases/<commit-sha>/       # commitごとのsourceとbuild artifact
+  ├─ current -> releases/<sha>/   # 稼働releaseへのsymlink
+  └─ shared/
+      ├─ .env                     # server-only secrets (0600)
+      ├─ data/prizgram.sqlite     # SQLite本体とWAL sidecar
+      ├─ backups/                 # deploy前backupと定期backup
+      └─ cloudflared.token        # tunnelを使う場合のみ
+
+/home/prizgram-deploy/.config/systemd/user/
+  ├─ prizgram-web.service
+  └─ cloudflared-prizgram.service # 任意
 ```
 
-`.env`（root所有・600パーミッション）。秘密はrepoに置かない:
+application serviceの各値は `deploy/prizgram-web.service` と一致させます。
+
+| 項目             | canonical value                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| WorkingDirectory | `%h/prizgram/current/apps/web/.next/standalone/apps/web`                                   |
+| ExecStart        | `%h/.local/node/bin/node %h/prizgram/current/apps/web/.next/standalone/apps/web/server.js` |
+| EnvironmentFile  | `%h/prizgram/shared/.env`                                                                  |
+| migrations       | `%h/prizgram/current/apps/web/.next/standalone/apps/web/.next/drizzle`                     |
+| service          | user unit `prizgram-web.service`                                                           |
+
+## 2. Initial provisioning
+
+デプロイユーザーでNode.js 22とpnpm 10を配置します。root systemd unitやglobal pnpmは使用しません。
+
+管理端末からbootstrap scriptを転送します。
+
+```bash
+scp scripts/deploy/bootstrap-user.sh prizgram-deploy@<tailscale-host>:/tmp/prizgram-bootstrap-user.sh
+```
+
+LXC上で実行します。
+
+```bash
+bash /tmp/prizgram-bootstrap-user.sh
+sudo loginctl enable-linger prizgram-deploy
+mkdir -p "$HOME/prizgram/shared/data" "$HOME/prizgram/shared/backups"
+install -m 0600 /dev/null "$HOME/prizgram/shared/.env"
+```
+
+`bootstrap-user.sh` は次へ固定バージョンを配置します。
+
+```text
+~/.local/node/bin/node
+~/.local/bin/pnpm
+```
+
+GitHub Environment `lxc-production` に以下を設定します。
+
+- `TAILSCALE_AUTHKEY`
+- `PRIZGRAM_DEPLOY_SSH_KEY`
+- `PRIZGRAM_DEPLOY_KNOWN_HOSTS`
+
+## 3. Production environment
+
+`$HOME/prizgram/shared/.env` はデプロイ先だけに置き、repositoryへ追加しません。
 
 ```ini
-DATABASE_URL=file:/opt/prizgram/data/prizgram.sqlite
-APP_ORIGIN=https://<your-domain>
+DATABASE_URL=file:/home/prizgram-deploy/prizgram/shared/data/prizgram.sqlite
+APP_ORIGIN=https://prizgram.kuraryu.jp
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=...        # server-only
+OPENAI_API_KEY=...
 OPENAI_MODEL=...
-CAREERJET_API_KEY=...     # server-only / 求人探索（https://www.careerjet.com/partners/api）
-# CAREERJET_LOCALE_CODE=ja_JP
-# rate limit既定値は .env.example 参照
+OPENAI_TIMEOUT_MS=30000
+CAREERJET_API_KEY=...
 ```
-
-## 3. systemd
-
-```ini
-# /etc/systemd/system/prizgram.service
-[Unit]
-Description=Prizgram web
-After=network-online.target
-
-[Service]
-User=prizgram
-WorkingDirectory=/opt/prizgram/apps/web
-EnvironmentFile=/opt/prizgram/.env
-ExecStart=/usr/bin/env pnpm --filter @prizgram/web start
-Restart=on-failure
-RestartSec=3
-# SQLiteは単一writer前提。複数インスタンスにしないこと
-NoNewPrivileges=true
-ProtectSystem=full
-ReadWritePaths=/opt/prizgram/data
-
-[Install]
-WantedBy=multi-user.target
-```
-
-ビルドと起動:
 
 ```bash
-cd /opt/prizgram
-pnpm install --frozen-lockfile
-pnpm build
-sudo systemctl daemon-reload && sudo systemctl enable --now prizgram
-curl -fsS http://127.0.0.1:3000/api/health   # 200 ok を確認
+chmod 600 "$HOME/prizgram/shared/.env"
 ```
 
-## 4. migration手順（バックアップ → migrate → health）
+## 4. Release and activation flow
+
+`main` のCI成功後、`.github/workflows/deploy-lxc.yml` が次を実行します。
+
+1. TailscaleでLXCへ接続する。
+2. sourceを `$DEPLOY_ROOT/releases/$DEPLOY_SHA` へ展開する。
+3. 既存DBとWAL sidecarを `$DEPLOY_ROOT/shared/backups` へ退避する。
+4. release内で依存関係をinstallし、migrationとbuildを実行する。
+5. standalone配下へmigration、static、public assetsを配置する。
+6. `deploy/prizgram-web.service` を user unit directoryへinstallする。
+7. `current` symlinkを新releaseへ切り替える。
+8. `systemctl --user restart prizgram-web.service` を実行する。
+9. `http://127.0.0.1:3000/api/health` が成功するまで確認する。
+
+standalone serviceはNode.jsで `server.js` を直接起動します。稼働時にpnpm CLIやworkspace sourceを参照しません。
+
+手動で同じrelease処理を再実行する場合:
 
 ```bash
-set -euo pipefail
-sudo -u prizgram bash -c 'cd /opt/prizgram && git pull --ff-only'
-/opt/prizgram/scripts/backup-db.sh                     # 1) 必ず先行backup
-pnpm db:migrate                                        # 2) 単一プロセスで適用
-systemctl restart prizgram                             # 3) 新codeへ切替
-sleep 2
-curl -fsS http://127.0.0.1:3000/api/health             # 4) 非200なら即rollback
+export DEPLOY_ROOT="$HOME/prizgram"
+export DEPLOY_SHA=<40-character-commit-sha>
+bash "$DEPLOY_ROOT/releases/$DEPLOY_SHA/scripts/deploy/remote-release.sh"
 ```
 
-`/api/health` はmigration journal一致とFK整合を見る。非200時は**旧artifactへ戻す**（DBはbackup復元ではなく原則そのまま。drizzle互換の前方のみmigrationのため）。
-
-## 5. バックアップ / リストア drill
+## 5. Health and service inspection
 
 ```bash
-# 毎日 03:20JST に論理backup（cron）
-20 3 * * * /opt/prizgram/scripts/backup-db.sh
+systemctl --user status prizgram-web.service
+journalctl --user-unit prizgram-web.service --since "30 minutes ago"
+curl --fail --silent --show-error http://127.0.0.1:3000/api/health
 ```
 
-- `scripts/backup-db.sh`: `sqlite3 .backup` + gzip + 14世代保持
-- `scripts/restore-drill.sh`: 最新backupを一時DBへ展開し `integrity_check` とテーブル件数を出力。**月1回は必ず実行して復元可能性を検証**
+`/api/health` はmigration journal一致とforeign key整合を確認します。
 
-## 6. リマインダー cron
+## 6. Migration and backup
+
+Migrationは `remote-release.sh` が新releaseのactivation前に単一プロセスで実行します。既存migrationを編集せず、前方互換なmigrationを追加してください。
+
+定期backupはshared DBとshared backup directoryを明示します。
 
 ```bash
-# 15分おき（排他はflock、ログはjournald）
-*/15 * * * * prizgram flock -n /tmp/prizgram-reminders.lock \
-  pnpm --filter @prizgram/web reminders:cron >>/var/log/prizgram/reminders.log 2>&1
+"$HOME/prizgram/current/scripts/backup-db.sh" \
+  "$HOME/prizgram/shared/data/prizgram.sqlite" \
+  "$HOME/prizgram/shared/backups" \
+  14
 ```
 
-失敗時は非0終了するため、`flock` + ログ監視（CloudWatch Agent等）で通知を設定。
+cron例（毎日03:20）:
 
-## 7. reverse proxy / TLS 最小checklist (nginx例)
-
-```nginx
-server {
-  listen 443 ssl http2;
-  server_name <your-domain>;
-  ssl_certificate     /etc/letsencrypt/live/<domain>/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/<domain>/privkey.pem;
-
-  # security headers
-  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-  add_header X-Frame-Options DENY always;
-  add_header X-Content-Type-Options nosniff always;
-  add_header Referrer-Policy strict-origin-when-cross-origin always;
-
-  location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # 上書き前提(信頼proxy運用)
-    proxy_set_header X-Forwarded-Proto https;
-  }
-}
-server { listen 80; return 301 https://$host$request_uri; }
+```cron
+20 3 * * * /home/prizgram-deploy/prizgram/current/scripts/backup-db.sh /home/prizgram-deploy/prizgram/shared/data/prizgram.sqlite /home/prizgram-deploy/prizgram/shared/backups 14
 ```
 
-- **X-Forwarded-Forはこのproxyが必ず上書き**すること（auth rate limitのsource keyが信頼できること）
-- 証明書更新: certbot timer有効化
+月1回のrestore drill:
 
-## 8. PII最小化方針
+```bash
+"$HOME/prizgram/current/scripts/restore-drill.sh" \
+  "$HOME/prizgram/shared/backups"
+```
 
-- ログにpassword/session token/Authorization/request bodyを出さない（API層で実装済み）
-- DBには求人・応募・回答など業務データのみ。不要になったユーザーデータは `users` 行削除でカスケード消去
-- backupファイルは `/var/backups/prizgram` 配下 root:600
+## 7. Rollback
 
-## 9. 障害時フロー
+Health checkが失敗した場合は、DBをすぐに復元せず、まず直前のreleaseへ戻します。
 
-1. `systemctl status prizgram` / journald確認
-2. `/api/health` 非200 → 直近deploy差分をrollback、DBは触らない
-3. DB破損疑い → 書込停止 → `restore-drill.sh` で最新backup検証 → 入れ替え
+```bash
+ls -1dt "$HOME/prizgram/releases/"*
+ln -sfn "$HOME/prizgram/releases/<previous-sha>" "$HOME/prizgram/current"
+systemctl --user restart prizgram-web.service
+curl --fail --silent --show-error http://127.0.0.1:3000/api/health
+```
+
+Migrationは前方互換を前提とします。DB破損が疑われる場合だけserviceを停止し、restore drillでbackupを検証してから復元判断を行います。
+
+## 8. Reminder batch
+
+Reminder batchはrelease sourceとpnpmを必要とするため、standalone web serviceとは別プロセスとして実行します。
+
+```cron
+*/15 * * * * flock -n /tmp/prizgram-reminders.lock /home/prizgram-deploy/.local/bin/pnpm --dir /home/prizgram-deploy/prizgram/current --filter @prizgram/web reminders:cron
+```
+
+失敗時は非0終了をjournaldまたは監視基盤で検知します。
+
+## 9. Reverse proxy requirements
+
+外部公開proxyは `127.0.0.1:3000` へ転送し、次を満たす必要があります。
+
+- TLSを終端する。
+- `Host` と `X-Forwarded-Proto` を設定する。
+- client supplied値を信頼せず、`X-Forwarded-For` をproxy側で上書きする。
+- LXCのport 3000をinternetへ直接公開しない。
+
+## 10. Incident checklist
+
+1. `systemctl --user status prizgram-web.service` を確認する。
+2. `journalctl --user-unit prizgram-web.service` でrequest bodyやsecretを出さずに原因を確認する。
+3. health check失敗なら直前releaseへrollbackする。
+4. DB破損疑いなら書き込みを止め、shared backupのrestore drillを実行する。
