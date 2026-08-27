@@ -45,11 +45,12 @@ export default async function PersonaPage() {
   const evidenceById = new Map(
     snapshot.evidence.map((evidence) => [evidence.id, evidence] as const),
   );
-  const answerIdToSummary = new Map(
-    snapshot.evidence.map(
-      (evidence) => [evidence.sourceId ?? "", evidence.summary] as const,
-    ),
-  );
+  const sourceTypeLabel: Record<string, string> = {
+    user_input: "ヒアリング/振り返り",
+    application_event: "選考イベント",
+    llm_inference: "推論",
+    system: "システム",
+  };
 
   return (
     <div className="page">
@@ -64,7 +65,7 @@ export default async function PersonaPage() {
           ` / prompt: ${latest.promptVersion}`}
       </p>
       <p className="hint-text">
-        すべての項目はヒアリングの回答のみを根拠にしています。推測は含まれません。
+        各項目はヒアリング回答・選考イベント・振り返りメモを根拠に構成されています。
       </p>
       <p>
         <Link className="button button-secondary" href="/app/persona/update">
@@ -87,11 +88,18 @@ export default async function PersonaPage() {
               <li key={skill.name}>
                 {skill.name}（{skillLevelLabels[skill.level] ?? skill.level}）
                 <ul className="hint-text">
-                  {skill.evidenceRefs.map((reference) => (
-                    <li key={reference}>
-                      根拠: {evidenceById.get(reference)?.summary ?? reference}
-                    </li>
-                  ))}
+                  {skill.evidenceRefs.map((reference) => {
+                    const ev = evidenceById.get(reference);
+                    const label = ev
+                      ? (sourceTypeLabel[ev.sourceType] ?? ev.sourceType)
+                      : "";
+                    return (
+                      <li key={reference}>
+                        根拠{label ? `(${label})` : ""}:{" "}
+                        {ev?.summary ?? reference}
+                      </li>
+                    );
+                  })}
                 </ul>
               </li>
             ))}
@@ -109,11 +117,18 @@ export default async function PersonaPage() {
               <li key={experience.title}>
                 <strong>{experience.title}</strong> — {experience.description}
                 <ul className="hint-text">
-                  {experience.evidenceRefs.map((reference) => (
-                    <li key={reference}>
-                      根拠: {evidenceById.get(reference)?.summary ?? reference}
-                    </li>
-                  ))}
+                  {experience.evidenceRefs.map((reference) => {
+                    const ev = evidenceById.get(reference);
+                    const label = ev
+                      ? (sourceTypeLabel[ev.sourceType] ?? ev.sourceType)
+                      : "";
+                    return (
+                      <li key={reference}>
+                        根拠{label ? `(${label})` : ""}:{" "}
+                        {ev?.summary ?? reference}
+                      </li>
+                    );
+                  })}
                 </ul>
               </li>
             ))}
@@ -159,10 +174,14 @@ export default async function PersonaPage() {
       </section>
 
       <section aria-labelledby="persona-evidence" className="card">
-        <h2 id="persona-evidence">根拠となった回答（抜粋）</h2>
+        <h2 id="persona-evidence">根拠（抜粋）</h2>
         <ul className="hint-text">
-          {[...answerIdToSummary.entries()].map(([answerId, summary]) => (
-            <li key={answerId}>{summary}</li>
+          {snapshot.evidence.map((evidence) => (
+            <li key={evidence.id}>
+              [{sourceTypeLabel[evidence.sourceType] ?? evidence.sourceType}]{" "}
+              {evidence.summary}
+              {evidence.sourceId !== undefined ? ` (${evidence.sourceId})` : ""}
+            </li>
           ))}
         </ul>
       </section>

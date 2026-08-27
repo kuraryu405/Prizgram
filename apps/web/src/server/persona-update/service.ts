@@ -36,6 +36,8 @@ export const proposeRequestSchema = z
     applicationId: z.string().trim().min(1).max(128).optional(),
     /** Free-form reflection written by the user. */
     reflection: z.string().trim().min(1).max(4_000),
+    /** Client-generated id that becomes the sole allowed reflection sourceId (#166, #198) */
+    requestId: z.string().trim().min(8).max(128),
   })
   .strict();
 
@@ -188,13 +190,15 @@ export class PersonaUpdateService {
   /**
    * Context-dependent validation shared by propose (server-generated) and
    * approve (client-echoed): every evidence entry must cite an allowed
-   * source — base evidence ids, real stage-event ids, or a reflection.
+   * source — base evidence ids, real stage-event ids, or the single
+   * fixed reflection source `reflection:<requestId>` (#166).
    */
   validateEvidence(
     userId: string,
     baseEvidence: PersonaSnapshot["evidence"],
     eventSources: readonly EventEvidenceSource[],
     snapshot: PersonaSnapshot,
+    allowedReflectionSourceId: string,
   ): PersonaSnapshot {
     const baseEvidenceIds = new Set(baseEvidence.map((e) => e.id));
     // Intake-generated personas carry answer-row ids as user_input
@@ -222,17 +226,29 @@ export class PersonaUpdateService {
           break;
         }
         case "user_input": {
-          if (
-            evidence.sourceId !== undefined &&
-            !baseEvidenceIds.has(evidence.sourceId) &&
-            !baseUserInputSourceIds.has(evidence.sourceId) &&
-            !evidence.sourceId.startsWith(REFLECTION_PREFIX)
-          ) {
-            throw new AppError(
-              "UPSTREAM_INVALID_RESPONSE",
-              `Unknown evidence source: ${evidence.sourceId}`,
-              502,
+          if (evidence.sourceId !== undefined) {
+            const isBase = baseEvidenceIds.has(evidence.sourceId);
+            const isCarriedInput = baseUserInputSourceIds.has(
+              evidence.sourceId,
             );
+            const isAllowedReflection =
+              evidence.sourceId === allowedReflectionSourceId;
+            const isAnyReflection =
+              evidence.sourceId.startsWith(REFLECTION_PREFIX);
+            if (isAnyReflection && !isAllowedReflection) {
+              throw new AppError(
+                "UPSTREAM_INVALID_RESPONSE",
+                `Unknown evidence source: ${evidence.sourceId}`,
+                502,
+              );
+            }
+            if (!isBase && !isCarriedInput && !isAllowedReflection) {
+              throw new AppError(
+                "UPSTREAM_INVALID_RESPONSE",
+                `Unknown evidence source: ${evidence.sourceId}`,
+                502,
+              );
+            }
           }
           break;
         }
@@ -316,11 +332,14 @@ export class PersonaUpdateService {
         : this.loadEventSources(user.id, input.applicationId);
 
     // Re-validate the client-echoed snapshot at approval time.
+    // #166: only reflection:<requestId> is allowed as a new user_input source.
+    const allowedReflectionSourceId = `${REFLECTION_PREFIX}${input.requestId}`;
     const validated = this.validateEvidence(
       user.id,
       baseEvidence,
       eventSources,
       input.snapshot,
+      allowedReflectionSourceId,
     );
     this.assertCarryForward(base.snapshot, validated);
 
@@ -466,6 +485,7 @@ export class PersonaUpdateService {
         ? []
         : this.loadEventSources(user.id, input.applicationId);
 
+    const allowedReflectionSourceId = `${REFLECTION_PREFIX}${input.requestId}`;
     const messages = [
       {
         role: "system" as const,
@@ -476,7 +496,7 @@ export class PersonaUpdateService {
           "出力は現在と同じスキーマの完全なペルソナJSONです。",
           "新しく追加するevidenceは:",
           ` - 選考イベント由来なら sourceType "application_event" で、提示された event id を sourceId に`,
-          ` - 振り返り由来なら sourceType "user_input" で sourceId を "${REFLECTION_PREFIX}..." 形式に`,
+          ` - 振り返り由来なら sourceType "user_input" で sourceId を "${allowedReflectionSourceId}" に固定してください。別の reflection:* は使用しないでください。`,
           "既存の事実を消さないでください。confidenceも見直してください。",
         ].join("\n"),
       },
@@ -509,6 +529,7 @@ export class PersonaUpdateService {
       baseSnapshot.evidence,
       eventSources,
       raw,
+      allowedReflectionSourceId,
     );
     this.assertCarryForward(baseSnapshot, validated);
     // Ensure llm_inference-free proposals keep only allowed sources.

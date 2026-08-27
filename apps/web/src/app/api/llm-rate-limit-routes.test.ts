@@ -116,6 +116,7 @@ const operations = [
       proposePost(
         jsonRequest("/api/persona/update/propose", {
           reflection: "面接結果を踏まえた十分な振り返りです。",
+          requestId: "req-test-123456",
         }),
       ),
     name: "persona update proposal",
