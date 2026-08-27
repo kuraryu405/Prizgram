@@ -252,7 +252,9 @@ export default async function AppHome() {
                           <time dateTime={deadline.dueAt}>
                             {formatDeadline(deadline)}
                           </time>{" "}
-                          <span className="hint-text">({deadline.timeZone})</span>
+                          <span className="hint-text">
+                            ({deadline.timeZone})
+                          </span>
                         </li>
                       ))}
                     </ul>
