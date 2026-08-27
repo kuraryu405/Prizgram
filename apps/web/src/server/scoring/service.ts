@@ -14,6 +14,12 @@ import {
   type PersonaSnapshot,
   type ScoringOutput,
 } from "@prizgram/shared";
+
+import {
+  buildEvidenceMap,
+  resolveEvidenceText,
+  UNKNOWN_EVIDENCE_FALLBACK,
+} from "./evidence";
 import { jobVersions, jobs, matchScores, personaVersions } from "@prizgram/db";
 import type { DatabaseConnection } from "@prizgram/db";
 
@@ -718,4 +724,64 @@ export class ScoringService {
       latestJobVersionId: latestJob,
     };
   }
+
+  loadPersonaSnapshot(
+    personaVersionId: string,
+    userId: string,
+  ): PersonaSnapshot | undefined {
+    const raw = this.connection.sqlite
+      .prepare(
+        "select snapshot from persona_versions where id = ? and user_id = ?",
+      )
+      .get(personaVersionId, userId) as { snapshot: string } | undefined;
+    if (raw === undefined) return undefined;
+    try {
+      return decodeJsonColumn(
+        "persona_versions.snapshot",
+        personaSnapshotSchema,
+        raw.snapshot,
+      );
+    } catch {
+      return undefined;
+    }
+  }
+
+  loadJobSnapshot(
+    jobVersionId: string,
+    userId: string,
+  ): JobSnapshot | undefined {
+    const raw = this.connection.sqlite
+      .prepare("select snapshot from job_versions where id = ? and user_id = ?")
+      .get(jobVersionId, userId) as { snapshot: string } | undefined;
+    if (raw === undefined) return undefined;
+    try {
+      return decodeJsonColumn(
+        "job_versions.snapshot",
+        jobSnapshotSchema,
+        raw.snapshot,
+      );
+    } catch {
+      return undefined;
+    }
+  }
+
+  evidenceMapForScore(
+    score: Readonly<ScoreDetail>,
+    userId: string,
+  ): ReadonlyMap<string, string> {
+    const persona = this.loadPersonaSnapshot(score.personaVersionId, userId);
+    const job = this.loadJobSnapshot(score.jobVersionId, userId);
+    if (persona === undefined || job === undefined) return new Map();
+    return buildEvidenceMap(persona, job);
+  }
+
+  resolveEvidenceTextForScore(
+    ref: string,
+    score: Readonly<ScoreDetail>,
+    userId: string,
+  ): string {
+    return resolveEvidenceText(ref, this.evidenceMapForScore(score, userId));
+  }
 }
+
+export { UNKNOWN_EVIDENCE_FALLBACK, buildEvidenceMap, resolveEvidenceText };

@@ -612,3 +612,131 @@ describe("scoring helpers", () => {
     expect(messages[0]?.role).toBe("system");
   });
 });
+
+describe("ScoringService evidence resolution (#155)", () => {
+  it("resolves historical score from its pinned snapshots, not latest", async () => {
+    const service = new ScoringService(connection);
+    const personaV1: PersonaSnapshot = {
+      ...personaSnapshot,
+      evidence: [
+        {
+          id: "ev:ts",
+          sourceType: "user_input",
+          sourceId: "ev:web",
+          summary: "TS v1 evidence",
+        },
+        { id: "ev:web", sourceType: "user_input", summary: "Web v1" },
+      ],
+    };
+    const jobV1: JobSnapshot = {
+      ...jobSnapshot,
+      requirements: [{ id: "job:req:1", text: "Req v1 text" }],
+      desiredSkills: [],
+      cultureValues: [{ id: "job:culture:1", text: "Culture v1" }],
+    };
+    const personaV2: PersonaSnapshot = {
+      ...personaSnapshot,
+      evidence: [
+        {
+          id: "ev:ts",
+          sourceType: "user_input",
+          sourceId: "ev:web",
+          summary: "TS v2 changed",
+        },
+        { id: "ev:web", sourceType: "user_input", summary: "Web v1" },
+        { id: "ev:new", sourceType: "user_input", summary: "New v2 evidence" },
+      ],
+    };
+    const jobV2: JobSnapshot = {
+      ...jobSnapshot,
+      requirements: [{ id: "job:req:1", text: "Req v2 updated" }],
+      desiredSkills: [{ id: "job:desired:1", text: "Desired v2" }],
+      cultureValues: [{ id: "job:culture:1", text: "Culture v2 updated" }],
+    };
+
+    insertPersonaVersion(userA.id, 1, personaV1);
+    insertJobVersion(userA.id, "job-1", 1, jobV1);
+
+    const scored = await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    const pinnedId = scored.detail.personaVersionId;
+    const pinnedJobId = scored.detail.jobVersionId;
+
+    // Add v2 versions
+    insertPersonaVersion(userA.id, 2, personaV2);
+    insertJobVersion(userA.id, "job-1", 2, jobV2);
+
+    // Historical score should still resolve to v1 texts
+    const history = service.listScores(userA.id, "job-1");
+    expect(history).toHaveLength(1);
+    const past = history[0]!;
+    expect(past.personaVersionId).toBe(pinnedId);
+    expect(past.jobVersionId).toBe(pinnedJobId);
+
+    const map = service.evidenceMapForScore(past, userA.id);
+    expect(map.get("persona:ev:ts")).toBe("TS v1 evidence");
+    expect(map.get("job:job:req:1")).toBe("Req v1 text");
+    // v2-only evidence must not appear in v1 map
+    expect(map.get("persona:ev:new")).toBeUndefined();
+    expect(map.get("job:job:desired:1")).toBeUndefined();
+    // v2-updated text must not leak
+    expect(map.get("job:job:req:1")).not.toBe("Req v2 updated");
+
+    // Current score should now be stale (requires re-evaluate with v2)
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeUndefined();
+
+    // Fresh evaluation with v2
+    const second = await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    expect(second.detail.personaVersionId).not.toBe(pinnedId);
+    const freshMap = service.evidenceMapForScore(second.detail, userA.id);
+    expect(freshMap.get("persona:ev:ts")).toBe("TS v2 changed");
+    expect(freshMap.get("persona:ev:new")).toBe("New v2 evidence");
+    expect(freshMap.get("job:job:req:1")).toBe("Req v2 updated");
+  });
+
+  it("returns fallback for unknown refs and respects user scope", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    const scored = await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    expect(
+      service.resolveEvidenceTextForScore(
+        "persona:unknown-id",
+        scored.detail,
+        userA.id,
+      ),
+    ).toBe("（参照元不明）");
+    expect(
+      service.resolveEvidenceTextForScore(
+        "job:unknown-id",
+        scored.detail,
+        userA.id,
+      ),
+    ).toBe("（参照元不明）");
+    // Qualified fallback still works for known refs
+    expect(
+      service.resolveEvidenceTextForScore(
+        "persona:ev:ts",
+        scored.detail,
+        userA.id,
+      ),
+    ).toBe("TypeScriptでの実装経験");
+    // Cross-user map is empty
+    expect(service.evidenceMapForScore(scored.detail, userB.id).size).toBe(0);
+    expect(
+      service.resolveEvidenceTextForScore(
+        "persona:ev:ts",
+        scored.detail,
+        userB.id,
+      ),
+    ).toBe("（参照元不明）");
+  });
+});

@@ -134,15 +134,15 @@ export function ScoreEvaluateButton({
                   <p className="hint-text">根拠:</p>
                   <ul>
                     {dimension.evidenceRefs.map((reference) => {
-                      const text =
+                      const direct =
                         evidenceTextById[reference] ??
                         (reference.includes(":")
                           ? evidenceTextById[
                               reference.split(":").slice(1).join(":")
                             ]
                           : (evidenceTextById[`persona:${reference}`] ??
-                            evidenceTextById[`job:${reference}`])) ??
-                        "";
+                            evidenceTextById[`job:${reference}`]));
+                      const text = direct ?? "（参照元不明）";
                       return (
                         <li key={reference}>
                           <span className="signal-id">{reference}</span> {text}
