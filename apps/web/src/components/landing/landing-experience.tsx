@@ -1,8 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const LOGO_VIEWBOX_SIZE = 120;
+const LOGO_VIEWBOX_SIZE = 1254;
 const INTRO_DURATION_MS = 2_400;
 
 type Particle = {
@@ -14,15 +15,49 @@ type Particle = {
   size: number;
   hue: number;
 };
-
-const logoPaths = [
-  "M28 92V28h31c19 0 31 10 31 25S78 78 59 78H45",
-  "M73 92c16-4 28-14 34-28",
-  "M89 22v12M83 28h12",
-];
+type Point = { x: number; y: number };
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function translateFromTransform(transform: string | null): Point {
+  const match = transform?.match(
+    /translate\(\s*([-+]?\d*\.?\d+)(?:[\s,]+([-+]?\d*\.?\d+))?\s*\)/,
+  );
+  return {
+    x: Number(match?.[1] ?? 0),
+    y: Number(match?.[2] ?? 0),
+  };
+}
+
+async function loadLogoTarget(
+  logo: SVGSVGElement,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const response = await fetch("/prizgram-icon-refined.svg", { signal });
+  if (!response.ok) return false;
+
+  const source = new DOMParser().parseFromString(
+    await response.text(),
+    "image/svg+xml",
+  );
+  const sourceSvg = source.documentElement;
+  const viewBox = sourceSvg.getAttribute("viewBox");
+  if (viewBox) logo.setAttribute("viewBox", viewBox);
+
+  const paths = Array.from(sourceSvg.querySelectorAll("path"));
+  const namespace = "http://www.w3.org/2000/svg";
+  logo.replaceChildren(
+    ...paths.map((path) => {
+      const clone = document.createElementNS(namespace, "path");
+      clone.setAttribute("d", path.getAttribute("d") ?? "");
+      const transform = path.getAttribute("transform");
+      if (transform) clone.setAttribute("transform", transform);
+      return clone;
+    }),
+  );
+  return paths.length > 0;
 }
 
 function createParticles(
@@ -35,10 +70,14 @@ function createParticles(
   logo.querySelectorAll("path").forEach((path) => {
     if (typeof path.getTotalLength !== "function") return;
     const length = path.getTotalLength();
+    const translation = translateFromTransform(path.getAttribute("transform"));
     const samples = Math.max(16, Math.ceil(length / 1.25));
     for (let index = 0; index < samples; index += 1) {
       const point = path.getPointAtLength((length * index) / samples);
-      targetPoints.push({ x: point.x, y: point.y });
+      targetPoints.push({
+        x: point.x + translation.x,
+        y: point.y + translation.y,
+      });
     }
   });
 
@@ -68,12 +107,14 @@ function createParticles(
 function StaticLogo() {
   return (
     <div aria-hidden="true" className="landing-logo-lockup">
-      <svg className="landing-logo-static" viewBox="0 0 120 120">
-        {logoPaths.map((path) => (
-          <path d={path} key={path} />
-        ))}
-      </svg>
-      <span>PRIZGRAM</span>
+      <Image
+        alt=""
+        className="landing-logo-static"
+        height={LOGO_VIEWBOX_SIZE}
+        src="/prizgram-icon-refined.svg"
+        unoptimized
+        width={LOGO_VIEWBOX_SIZE}
+      />
     </div>
   );
 }
@@ -85,6 +126,7 @@ export function LandingExperience() {
   const animationFrameRef = useRef<number | null>(null);
   const doneRef = useRef(false);
   const [introDone, setIntroDone] = useState(false);
+  const [replayKey, setReplayKey] = useState(0);
 
   const finishIntro = useCallback(() => {
     doneRef.current = true;
@@ -93,11 +135,17 @@ export function LandingExperience() {
       animationFrameRef.current = null;
     }
     setIntroDone(true);
-    try {
-      window.sessionStorage.setItem("prizgram-landing-intro-seen", "1");
-    } catch {
-      // Storage can be unavailable in privacy-focused browser contexts.
-    }
+  }, []);
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      doneRef.current = false;
+      setIntroDone(false);
+      setReplayKey((key) => key + 1);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
 
   useEffect(() => {
@@ -106,22 +154,17 @@ export function LandingExperience() {
     const logo = targetLogoRef.current;
     if (!stage || !canvas || !logo) return;
     doneRef.current = false;
+    const controller = new AbortController();
 
     let resizeObserver: ResizeObserver | null = null;
     let particles: Particle[] = [];
     let context: CanvasRenderingContext2D | null = null;
     let startedAt = 0;
+    let cancelled = false;
 
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    let alreadySeen = false;
-    try {
-      alreadySeen =
-        window.sessionStorage.getItem("prizgram-landing-intro-seen") === "1";
-    } catch {
-      alreadySeen = false;
-    }
 
     const resize = () => {
       const rect = stage.getBoundingClientRect();
@@ -141,69 +184,95 @@ export function LandingExperience() {
       particles = createParticles(width, height, logo);
     };
 
-    resize();
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(resize);
-      resizeObserver.observe(stage);
-    }
-
-    if (!context || reducedMotion || alreadySeen || particles.length === 0) {
-      finishIntro();
-      return () => resizeObserver?.disconnect();
-    }
-
-    const draw = (timestamp: number) => {
-      if (doneRef.current || !context) return;
-      if (startedAt === 0) startedAt = timestamp;
-      const progress = clamp((timestamp - startedAt) / INTRO_DURATION_MS, 0, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const turbulence = (1 - progress) * (1 - progress) * 18;
-      const rect = stage.getBoundingClientRect();
-      context.clearRect(0, 0, rect.width, rect.height);
-
-      for (const particle of particles) {
-        const angle = particle.phase + progress * Math.PI * 3.2;
-        const swirlX = Math.cos(angle) * turbulence;
-        const swirlY = Math.sin(angle) * turbulence;
-        const x =
-          particle.startX +
-          (particle.targetX - particle.startX) * eased +
-          swirlX;
-        const y =
-          particle.startY +
-          (particle.targetY - particle.startY) * eased +
-          swirlY;
-        const alpha = 0.28 + eased * 0.72;
-        context.beginPath();
-        context.arc(
-          x,
-          y,
-          particle.size * (0.75 + eased * 0.25),
-          0,
-          Math.PI * 2,
-        );
-        context.fillStyle = `hsla(${particle.hue}, 72%, 66%, ${alpha})`;
-        context.fill();
-      }
-
-      if (progress >= 1) {
+    const initialize = async () => {
+      if (reducedMotion) {
         finishIntro();
-        resizeObserver?.disconnect();
-        context.clearRect(0, 0, rect.width, rect.height);
         return;
       }
+      try {
+        const loaded = await loadLogoTarget(logo, controller.signal);
+        if (!loaded || cancelled) {
+          if (!cancelled) finishIntro();
+          return;
+        }
+      } catch {
+        if (!cancelled) finishIntro();
+        return;
+      }
+      if (cancelled) return;
+
+      resize();
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(resize);
+        resizeObserver.observe(stage);
+      }
+
+      if (!context || particles.length === 0) {
+        finishIntro();
+        return;
+      }
+
+      const draw = (timestamp: number) => {
+        if (cancelled || doneRef.current || !context) return;
+        if (startedAt === 0) startedAt = timestamp;
+        const progress = clamp(
+          (timestamp - startedAt) / INTRO_DURATION_MS,
+          0,
+          1,
+        );
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const turbulence = (1 - progress) * (1 - progress) * 18;
+        const rect = stage.getBoundingClientRect();
+        context.clearRect(0, 0, rect.width, rect.height);
+
+        for (const particle of particles) {
+          const angle = particle.phase + progress * Math.PI * 3.2;
+          const swirlX = Math.cos(angle) * turbulence;
+          const swirlY = Math.sin(angle) * turbulence;
+          const x =
+            particle.startX +
+            (particle.targetX - particle.startX) * eased +
+            swirlX;
+          const y =
+            particle.startY +
+            (particle.targetY - particle.startY) * eased +
+            swirlY;
+          const alpha = 0.28 + eased * 0.72;
+          context.beginPath();
+          context.arc(
+            x,
+            y,
+            particle.size * (0.75 + eased * 0.25),
+            0,
+            Math.PI * 2,
+          );
+          context.fillStyle = `hsla(${particle.hue}, 72%, 66%, ${alpha})`;
+          context.fill();
+        }
+
+        if (progress >= 1) {
+          finishIntro();
+          resizeObserver?.disconnect();
+          context.clearRect(0, 0, rect.width, rect.height);
+          return;
+        }
+        animationFrameRef.current = window.requestAnimationFrame(draw);
+      };
+
       animationFrameRef.current = window.requestAnimationFrame(draw);
     };
+    void initialize();
 
-    animationFrameRef.current = window.requestAnimationFrame(draw);
     return () => {
+      cancelled = true;
+      controller.abort();
       doneRef.current = true;
       if (animationFrameRef.current !== null) {
         window.cancelAnimationFrame(animationFrameRef.current);
       }
       resizeObserver?.disconnect();
     };
-  }, [finishIntro]);
+  }, [finishIntro, replayKey]);
 
   return (
     <section
@@ -225,12 +294,8 @@ export function LandingExperience() {
           aria-hidden="true"
           className="landing-logo-target"
           ref={targetLogoRef}
-          viewBox="0 0 120 120"
-        >
-          {logoPaths.map((path) => (
-            <path d={path} key={path} />
-          ))}
-        </svg>
+          viewBox={`0 0 ${LOGO_VIEWBOX_SIZE} ${LOGO_VIEWBOX_SIZE}`}
+        />
         <StaticLogo />
         <span aria-hidden="true" className="landing-stage-caption">
           YOUR NEXT MOVE, WITH EVIDENCE.
