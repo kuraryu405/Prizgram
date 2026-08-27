@@ -90,11 +90,21 @@ export default async function JobDetailPage({
   const personaLatest = new PersonaService(db).latestPersona(user.id);
   // Build evidence map that includes both job signals and persona evidence
   // so cultureValueFit's persona-side refs resolve instead of empty.
-  const evidenceTextById = new Map(signalTextById);
-  if (personaLatest !== undefined) {
-    for (const ev of personaLatest.snapshot.evidence) {
+  // For #190 qualified refs: store both qualified (persona:xxx / job:xxx) and raw for legacy fallback.
+  const evidenceTextById = new Map<string, string>();
+  // Populate job signals with both forms
+  for (const [id, text] of signalTextById) {
+    evidenceTextById.set(id, text);
+    evidenceTextById.set(`job:${id}`, text);
+  }
+  const addPersonaEvidence = (evidence: ReadonlyArray<{ id: string; summary: string }>) => {
+    for (const ev of evidence) {
       evidenceTextById.set(ev.id, ev.summary);
+      evidenceTextById.set(`persona:${ev.id}`, ev.summary);
     }
+  };
+  if (personaLatest !== undefined) {
+    addPersonaEvidence(personaLatest.snapshot.evidence);
   }
   // If the current score pins an older persona version, also include its evidence
   if (
@@ -112,8 +122,10 @@ export default async function JobDetailPage({
           raw.snapshot,
         );
         for (const ev of pinned.evidence) {
-          if (!evidenceTextById.has(ev.id))
+          if (!evidenceTextById.has(ev.id)) {
             evidenceTextById.set(ev.id, ev.summary);
+            evidenceTextById.set(`persona:${ev.id}`, ev.summary);
+          }
         }
       }
     } catch {
@@ -236,12 +248,21 @@ export default async function JobDetailPage({
                     </ul>
                     <p className="hint-text">根拠:</p>
                     <ul>
-                      {dim.evidenceRefs.map((ref) => (
-                        <li key={ref}>
-                          <span className="signal-id">{ref}</span>{" "}
-                          {evidenceTextById.get(ref) ?? ""}
-                        </li>
-                      ))}
+                      {dim.evidenceRefs.map((ref) => {
+                        const text =
+                          evidenceTextById.get(ref) ??
+                          (ref.includes(":")
+                            ? evidenceTextById.get(ref.split(":").slice(1).join(":")) ?? ""
+                            : evidenceTextById.get(`persona:${ref}`) ??
+                              evidenceTextById.get(`job:${ref}`) ??
+                              "");
+                        return (
+                          <li key={ref}>
+                            <span className="signal-id">{ref}</span>{" "}
+                            {text}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </li>
                 );

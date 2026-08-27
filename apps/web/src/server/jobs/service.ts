@@ -134,9 +134,20 @@ export function buildJobImportMessages(
  * Provenance (source kind/name/url and especially the import timestamp) is
  * excluded so that re-importing the same posting maps onto the existing
  * version instead of minting a near-identical one.
+ * #196: description is excluded from the hash so LLM paraphrase of the
+ * same posting does not create spurious versions; core identity is
+ * company/role/employmentType + signal ids/texts + difficulty level.
  */
 export function jobContentHash(snapshot: JobSnapshot): string {
-  const content = { ...snapshot, source: undefined };
+  const content = {
+    company: snapshot.company,
+    role: snapshot.role,
+    employmentType: snapshot.employmentType,
+    requirements: snapshot.requirements,
+    desiredSkills: snapshot.desiredSkills,
+    cultureValues: snapshot.cultureValues,
+    difficulty: snapshot.difficulty,
+  };
   const canonical = JSON.stringify(content, (_key, value: unknown) =>
     value !== null && typeof value === "object" && !Array.isArray(value)
       ? Object.fromEntries(
