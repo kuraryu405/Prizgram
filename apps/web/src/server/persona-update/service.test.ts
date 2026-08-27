@@ -254,6 +254,77 @@ describe("PersonaUpdateService", () => {
     ).toThrow(AppError);
     expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
   });
+
+  it("rejects user_input evidence that misclassifies an application event id", () => {
+    // #201: event id must be cited as application_event, not user_input
+    const ids = seedBaseAndApplication();
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: ids.personaVersionId,
+        applicationId: ids.applicationId,
+        requestId: "req-misclassify-event",
+        snapshot: personaSnapshotSchema.parse({
+          ...baseSnapshot(),
+          evidence: [
+            ...baseSnapshot().evidence,
+            {
+              id: "ev-misclass",
+              sourceType: "user_input" as const,
+              sourceId: "evt-1",
+              summary: "イベントIDを誤ってuser_inputで引用",
+            },
+          ],
+        }),
+      }),
+    ).toThrow(AppError);
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
+
+  it("loads event sources with note and fromStatus and builds digest with them", () => {
+    const ids = seedBaseAndApplication();
+    const sources = service.loadEventSources(userA.id, ids.applicationId);
+    expect(sources).toHaveLength(2);
+    // evt-1 has fromStatus saved, null note
+    expect(sources[0]).toMatchObject({
+      eventId: "evt-1",
+      fromStatus: "saved",
+      toStatus: "applying",
+      note: null,
+    });
+    // evt-2 has note
+    expect(sources[1]).toMatchObject({
+      eventId: "evt-2",
+      fromStatus: "applying",
+      toStatus: "submitted",
+      note: "面接でデータ基盤に興味を示された",
+    });
+    const digest = PersonaUpdateService.buildEventDigest(sources);
+    // Should contain from -> to and note JSON
+    expect(digest).toContain("saved -> applying");
+    expect(digest).toContain("applying -> submitted");
+    expect(digest).toContain(
+      JSON.stringify("面接でデータ基盤に興味を示された"),
+    );
+    // No note for evt-1 should not contain note:
+    const lines = digest.split("\n");
+    expect(lines[0]).not.toContain("note:");
+    expect(lines[1]).toContain("note:");
+  });
+
+  it("builds digest without note when note is empty or whitespace", () => {
+    const digest = PersonaUpdateService.buildEventDigest([
+      {
+        eventId: "evt-x",
+        sequence: 1,
+        fromStatus: null,
+        toStatus: "interview",
+        note: "   ",
+        occurredAt: new Date().toISOString(),
+      },
+    ]);
+    expect(digest).not.toContain("note:");
+    expect(digest).toContain("interview");
+  });
 });
 
 describe("PersonaUpdateService.propose error contract", () => {

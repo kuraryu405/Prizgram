@@ -71,7 +71,9 @@ export function isPersonaVersionUniqueViolation(error: unknown): boolean {
 export interface EventEvidenceSource {
   eventId: string;
   sequence: number;
+  fromStatus: string | null;
   toStatus: string;
+  note: string | null;
   occurredAt: string;
 }
 
@@ -168,7 +170,9 @@ export class PersonaUpdateService {
     return rows.map((row) => ({
       eventId: row.id,
       sequence: row.sequence,
+      fromStatus: row.fromStatus ?? null,
       toStatus: row.toStatus,
+      note: row.note ?? null,
       occurredAt: row.occurredAt.toISOString(),
     }));
   }
@@ -210,12 +214,15 @@ export class PersonaUpdateService {
           break;
         }
         case "user_input": {
+          // New user_input must be a reflection (reflection:...) or a
+          // carry-forward of the original intake answer id. Event ids must
+          // be cited as application_event, not as user_input (#201).
+          // Do not check baseEvidenceIds (evidence.id namespace) here to
+          // avoid colliding with eventId UUIDs.
           if (
             evidence.sourceId !== undefined &&
-            !baseEvidenceIds.has(evidence.sourceId) &&
             !baseUserInputSourceIds.has(evidence.sourceId) &&
-            !evidence.sourceId.startsWith(REFLECTION_PREFIX) &&
-            !eventIds.has(evidence.sourceId)
+            !evidence.sourceId.startsWith(REFLECTION_PREFIX)
           ) {
             throw new AppError(
               "UPSTREAM_INVALID_RESPONSE",
@@ -357,10 +364,15 @@ export class PersonaUpdateService {
   static buildEventDigest(events: readonly EventEvidenceSource[]): string {
     if (events.length === 0) return "（選考イベントはありません）";
     return events
-      .map(
-        (event) =>
-          `- [id=${event.eventId}] ${event.toStatus} (${event.occurredAt})`,
-      )
+      .map((event) => {
+        const notePart =
+          event.note !== null && event.note.trim().length > 0
+            ? ` note: ${JSON.stringify(event.note)}`
+            : "";
+        const fromPart =
+          event.fromStatus !== null ? `${event.fromStatus} -> ` : "";
+        return `- [id=${event.eventId}] ${fromPart}${event.toStatus} (${event.occurredAt})${notePart}`;
+      })
       .join("\n");
   }
 
