@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { AuthService, sessionCookieName } from "@/server/auth";
 import { getDatabase } from "@/server/database";
+import { LandingExperience } from "@/components/landing/landing-experience";
 
 const features = [
   {
@@ -27,27 +28,56 @@ export default async function Home() {
 
   return (
     <main className="landing">
-      <p className="eyebrow">PRIZGRAM</p>
-      <h1>就活の判断を、根拠と履歴から。</h1>
-      <p className="landing-lead">
-        対話、求人評価、選考管理をひとつの継続的なペルソナへつなげる就活パーソナルエージェントです。
-      </p>
-      <div className="landing-actions">
-        <Link className="button button-primary" href="/register">
-          新規登録
-        </Link>
-        <Link className="button button-secondary" href="/login">
-          ログイン
-        </Link>
+      <div className="landing-grid">
+        <section aria-labelledby="landing-title" className="landing-copy">
+          <div className="landing-wordmark">
+            <span aria-hidden="true" className="landing-wordmark-mark">
+              P
+            </span>
+            <span>PRIZGRAM</span>
+          </div>
+          <p className="eyebrow">就活パーソナルエージェント</p>
+          <h1 id="landing-title">
+            就活の判断を、
+            <span>根拠と履歴から。</span>
+          </h1>
+          <p className="landing-lead">
+            対話、求人評価、選考管理をひとつの継続的なペルソナへつなげる、あなたのための就活パートナーです。
+          </p>
+          <div className="landing-actions">
+            <Link className="button button-primary" href="/register">
+              新規登録
+            </Link>
+            <Link className="button button-secondary" href="/login">
+              ログイン
+            </Link>
+          </div>
+          <p className="landing-note">
+            あなたの経験を整理し、次の一歩を迷わず選べるように。
+          </p>
+        </section>
+        <LandingExperience />
       </div>
-      <ul className="landing-features">
-        {features.map((feature) => (
-          <li key={feature.title}>
-            <h2>{feature.title}</h2>
-            <p>{feature.body}</p>
-          </li>
-        ))}
-      </ul>
+      <section
+        aria-labelledby="landing-features-title"
+        className="landing-features-section"
+      >
+        <div className="landing-features-heading">
+          <p className="eyebrow">HOW IT WORKS</p>
+          <h2 id="landing-features-title">選考のすべてを、ひと続きに。</h2>
+        </div>
+        <ul className="landing-features">
+          {features.map((feature, index) => (
+            <li key={feature.title}>
+              <span aria-hidden="true" className="landing-feature-index">
+                0{index + 1}
+              </span>
+              <h3>{feature.title}</h3>
+              <p>{feature.body}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
     </main>
   );
 }
