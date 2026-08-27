@@ -4,6 +4,34 @@
   }
 
   .app-account-trigger {
+    min-height: 2.5rem;
     padding-inline: 0.25rem;
+  }
+
+  .app-header {
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.375rem 0.75rem;
+    padding-top: calc(0.375rem + env(safe-area-inset-top));
+  }
+
+  .app-brand {
+    font-size: 0.9375rem;
+    letter-spacing: 0.08em;
+  }
+
+  .app-header-bell {
+    height: 2.25rem;
+    width: 2.25rem;
+  }
+
+  .app-header-bell svg {
+    height: 1.25rem;
+    width: 1.25rem;
+  }
+
+  .app-account-avatar {
+    height: 1.875rem;
+    width: 1.875rem;
   }
 }

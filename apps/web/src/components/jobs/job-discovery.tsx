@@ -222,10 +222,15 @@ export function JobDiscovery() {
       <div className="discovery-header">
         <h2 id="job-discovery">求人を探す</h2>
         <p className="hint-text">
-          承認済みペルソナから検索条件を生成し、外部求人検索API（
-          {result?.jobs[0]?.sourceName ?? "Careerjet"}）から候補を取得します。
-          条件を空のまま実行すると、ペルソナのみから条件が組み立てられます。
+          承認済みペルソナから条件を生成し、
+          {result?.jobs[0]?.sourceName ?? "Careerjet"}から候補を取得します。
         </p>
+        <details className="discovery-help">
+          <summary>検索の仕組み</summary>
+          <p className="discovery-help-body">
+            条件を空のまま実行すると、ペルソナのみから条件が組み立てられます。外部求人検索API経由で候補を取得し、気になる求人はそのまま取り込めます。
+          </p>
+        </details>
       </div>
       {formError !== null && (
         <p className="form-alert" role="alert">

@@ -34,7 +34,7 @@ export default async function JobsPage() {
     <div className="page page-jobs">
       <h1>求人</h1>
       <p className="page-lead">
-        ペルソナから求人候補を探索するか、求人票を貼り付けて取り込めます。取り込んだ求人は要件・難易度・文化が構造化されて保存され、3軸評価の対象になります。
+        ペルソナから候補を探索、または求人票を貼り付けて保存。保存後はスキル・文化・難易度の3軸で評価できます。
       </p>
 
       <JobDiscovery />
