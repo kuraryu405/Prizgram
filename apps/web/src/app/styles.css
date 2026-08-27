@@ -2061,6 +2061,72 @@ a {
   gap: 0.5rem;
 }
 
+.bulk-action-bar {
+  background: var(--color-surface-tint);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+}
+
+.bulk-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.bulk-count {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.job-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+.job-select-label {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .bulk-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .bulk-actions {
+    margin-left: 0;
+  }
+  .bulk-actions .button {
+    flex: 1;
+  }
+  .job-candidate-footer {
+    gap: 0.5rem;
+  }
+  .job-candidate-footer .button {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
 @media (min-width: 700px) {
   .discovery-card {
     gap: 1.5rem;

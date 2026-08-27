@@ -281,3 +281,182 @@ describe("JobDiscovery one-click scoring (#115)", () => {
     );
   });
 });
+
+describe("JobDiscovery bulk import (#116)", () => {
+  test("selects multiple and bulk imports with success", async () => {
+    const user = userEvent.setup();
+    const jobs = [
+      candidate({ externalId: "bulk-1", title: "A" }),
+      candidate({ externalId: "bulk-2", title: "B" }),
+    ];
+    stubFetch((url, init) => {
+      if (url === "/api/jobs/discover" && init?.method === "POST")
+        return okEnvelope(discoverPayload(jobs));
+      if (url === "/api/jobs" && init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as Record<string, string>;
+        return okEnvelope({
+          jobId: `job-${body.sourceExternalId}`,
+          jobVersionId: `ver-${body.sourceExternalId}`,
+          version: 1,
+          duplicate: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    render(
+      <ToastProvider>
+        <JobDiscovery />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "求人を探す" }));
+    await waitFor(() => expect(screen.getByText("A")).toBeTruthy());
+
+    // select both
+    await user.click(screen.getByLabelText("A を選択"));
+    await user.click(screen.getByLabelText("B を選択"));
+    expect(screen.getByText("2件選択中")).toBeTruthy();
+
+    await user.click(
+      screen.getByRole("button", { name: "選択した2件を取り込む" }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByText("取り込み済み").length).toBeGreaterThanOrEqual(
+        2,
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "選択した0件を取り込む" }),
+      ).toBeTruthy(),
+    );
+  });
+
+  test("partial success keeps failed selected for retry", async () => {
+    const user = userEvent.setup();
+    const jobs = [
+      candidate({ externalId: "bulk-3", title: "C" }),
+      candidate({ externalId: "bulk-4", title: "D" }),
+      candidate({ externalId: "bulk-5", title: "E" }),
+    ];
+    stubFetch((url, init) => {
+      if (url === "/api/jobs/discover" && init?.method === "POST")
+        return okEnvelope(discoverPayload(jobs));
+      if (url === "/api/jobs" && init?.method === "POST") {
+        const body = JSON.parse(init.body as string) as Record<string, string>;
+        if (body.sourceExternalId === "bulk-4") {
+          return errorEnvelope(502, "UPSTREAM_UNAVAILABLE", "fail");
+        }
+        return okEnvelope({
+          jobId: `job-${body.sourceExternalId}`,
+          jobVersionId: `ver-${body.sourceExternalId}`,
+          version: 1,
+          duplicate: false,
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    render(
+      <ToastProvider>
+        <JobDiscovery />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "求人を探す" }));
+    await waitFor(() => expect(screen.getByText("C")).toBeTruthy());
+
+    await user.click(screen.getByLabelText("C を選択"));
+    await user.click(screen.getByLabelText("D を選択"));
+    await user.click(screen.getByLabelText("E を選択"));
+    await user.click(
+      screen.getByRole("button", { name: "選択した3件を取り込む" }),
+    );
+    await waitFor(() =>
+      expect(screen.getAllByText("取り込み済み").length).toBeGreaterThanOrEqual(
+        2,
+      ),
+    );
+    // 1 failed remains selected
+    await waitFor(() => expect(screen.getByText("1件選択中")).toBeTruthy());
+  });
+
+  test("already imported jobs are not selectable", async () => {
+    const user = userEvent.setup();
+    const jobs = [candidate({ externalId: "bulk-6", title: "F" })];
+    stubFetch((url, init) => {
+      if (url === "/api/jobs/discover" && init?.method === "POST")
+        return okEnvelope(discoverPayload(jobs));
+      if (url === "/api/jobs" && init?.method === "POST")
+        return okEnvelope({
+          jobId: "job-1",
+          jobVersionId: "ver-1",
+          version: 1,
+          duplicate: false,
+        });
+      throw new Error(`unexpected ${url}`);
+    });
+
+    render(
+      <ToastProvider>
+        <JobDiscovery />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "求人を探す" }));
+    await waitFor(() => expect(screen.getByText("F")).toBeTruthy());
+    await user.click(screen.getByRole("button", { name: "取り込む" }));
+    await waitFor(() =>
+      expect(screen.getAllByText("取り込み済み").length).toBeGreaterThan(0),
+    );
+    const checkbox = screen.getByLabelText("F を選択");
+    expect(checkbox.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("prevents double submit during bulk importing", async () => {
+    const user = userEvent.setup();
+    const jobs = [candidate({ externalId: "bulk-7", title: "G" })];
+    let callCount = 0;
+    stubFetch((url, init) => {
+      if (url === "/api/jobs/discover" && init?.method === "POST")
+        return okEnvelope(discoverPayload(jobs));
+      if (url === "/api/jobs" && init?.method === "POST") {
+        callCount++;
+        return new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve(
+                okEnvelope({
+                  jobId: "job-1",
+                  jobVersionId: "ver-1",
+                  version: 1,
+                  duplicate: false,
+                }),
+              ),
+            300,
+          ),
+        );
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    render(
+      <ToastProvider>
+        <JobDiscovery />
+      </ToastProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "求人を探す" }));
+    await waitFor(() => expect(screen.getByText("G")).toBeTruthy());
+    await user.click(screen.getByLabelText("G を選択"));
+    const bulkButton = screen.getByRole("button", {
+      name: "選択した1件を取り込む",
+    });
+    await user.click(bulkButton);
+    // second click while importing should be ignored
+    await user.click(bulkButton);
+    await waitFor(
+      () =>
+        expect(screen.getAllByText("取り込み済み").length).toBeGreaterThan(0),
+      { timeout: 2000 },
+    );
+    expect(callCount).toBe(1);
+  });
+});
