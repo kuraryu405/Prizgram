@@ -6,7 +6,11 @@ export interface NextActionInput {
   scoredJobIds: ReadonlySet<string>;
   applicationCount: number;
   urgentReminderCount: number;
-  overdueDeadlines: ReadonlyArray<{ title: string; dueAt: string }>;
+  overdueDeadlines: ReadonlyArray<{
+    applicationId: string;
+    title: string;
+    dueAt: string;
+  }>;
 }
 
 export type ActionItem = Readonly<{
@@ -37,7 +41,7 @@ export function buildNextActions(
   }
   for (const deadline of input.overdueDeadlines.slice(0, 2)) {
     actions.push({
-      href: "/app/deadlines",
+      href: `/app/applications/${encodeURIComponent(deadline.applicationId)}`,
       label: `期限超過: ${deadline.title}`,
       detail: "締切を過ぎています。状況を確認してください",
       tone: "urgent",
