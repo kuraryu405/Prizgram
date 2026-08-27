@@ -29,7 +29,7 @@ export const JOB_IMPORT_PROMPT_VERSION = "job-import-v1";
 export const jobImportRequestSchema = z
   .object({
     /** The raw job posting text supplied by the user. Treated as data. */
-    body: z.string().trim().min(40).max(JOB_IMPORT_MAX_BODY_CHARS),
+    body: z.string().trim().min(1).max(JOB_IMPORT_MAX_BODY_CHARS),
     /** Optional logical job to append a new immutable version to. */
     jobId: z.string().trim().min(1).max(128).optional(),
     companyName: z.string().trim().min(1).max(200).optional(),
@@ -49,7 +49,17 @@ export const jobImportRequestSchema = z
       message: "sourceKind and sourceExternalId must be provided together",
       path: ["sourceKind"],
     },
-  );
+  )
+  .superRefine((input, context) => {
+    // Manual import (no provider provenance) requires meaningful body length to avoid LLM hallucinating from tiny inputs
+    if (input.sourceKind === undefined && input.body.trim().length < 40) {
+      context.addIssue({
+        code: "custom",
+        message: "body must be at least 40 characters for manual import",
+        path: ["body"],
+      });
+    }
+  });
 
 export type JobImportInput = z.infer<typeof jobImportRequestSchema>;
 
