@@ -811,7 +811,9 @@ a {
   border-bottom: 1px solid var(--color-border);
   display: flex;
   gap: 0.75rem;
+  min-height: 3rem;
   padding: 0.5rem 0.875rem;
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
   position: sticky;
   top: 0;
   z-index: 20;
@@ -1096,9 +1098,16 @@ a {
   margin: 0 auto;
   max-width: calc(42rem + 2 * 0.875rem);
   min-width: 0;
-  padding: 1.25rem 0.875rem
-    calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom) + 1rem);
+  padding: 1rem 0.875rem
+    calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom) + 1.25rem);
   width: 100%;
+}
+
+@media (max-width: 600px) {
+  .app-main {
+    padding: 0.875rem 0.75rem
+      calc(var(--app-bottom-nav-height) + env(safe-area-inset-bottom) + 1.25rem);
+  }
 }
 
 .app-shell-status {
@@ -1439,7 +1448,24 @@ a {
 
 .page-lead {
   color: var(--color-text-soft);
-  line-height: 1.8;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+@media (max-width: 600px) {
+  .page {
+    gap: 0.875rem;
+  }
+
+  .page h1 {
+    font-size: 1.375rem;
+    line-height: 1.3;
+  }
+
+  .page-lead {
+    font-size: 0.875rem;
+    line-height: 1.65;
+  }
 }
 
 .breadcrumb {
@@ -1849,6 +1875,126 @@ a {
   min-height: 2.5rem;
   font-size: 0.875rem;
   padding: 0 0.875rem;
+}
+
+.discovery-help {
+  margin-top: 0.25rem;
+}
+
+.discovery-help summary {
+  align-items: center;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  gap: 0.25rem;
+  list-style: none;
+}
+
+.discovery-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.discovery-help summary::before {
+  border: 0.35rem solid transparent;
+  border-left-color: currentcolor;
+  content: "";
+  display: inline-block;
+  height: 0;
+  transition: transform 120ms ease;
+  width: 0;
+}
+
+.discovery-help[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.discovery-help summary:hover {
+  color: var(--color-primary);
+}
+
+.discovery-help-body {
+  color: var(--color-text-soft);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  margin-top: 0.375rem;
+}
+
+@media (max-width: 600px) {
+  .discovery-card {
+    gap: 0.875rem;
+    padding: 1rem;
+  }
+
+  .discovery-header {
+    gap: 0.375rem;
+  }
+
+  .discovery-header .hint-text {
+    font-size: 0.8125rem;
+    line-height: 1.6;
+  }
+
+  .discovery-help {
+    margin-top: 0.125rem;
+  }
+
+  .discovery-form {
+    gap: 0.875rem;
+  }
+
+  .discovery-grid {
+    gap: 0.625rem;
+  }
+
+  .discovery-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .discovery-actions .button {
+    justify-content: center;
+    min-height: 2.75rem;
+    width: 100%;
+  }
+
+  .discovery-actions .button-primary {
+    min-width: 0;
+  }
+
+  .page-jobs .field label {
+    font-size: 0.8125rem;
+  }
+
+  .page-jobs .field {
+    gap: 0.25rem;
+    margin-bottom: 0;
+  }
+
+  .page-jobs .form-stack {
+    gap: 0.875rem;
+    padding: 1rem;
+  }
+
+  .page-jobs .form-stack h2 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .page-jobs .form-stack textarea {
+    min-height: 7rem;
+  }
+
+  .page-jobs .form-stack .button-primary {
+    width: 100%;
+  }
+}
+
+@media (min-width: 601px) {
+  .page-jobs .form-stack textarea {
+    min-height: 11rem;
+  }
 }
 
 @media (min-width: 700px) {

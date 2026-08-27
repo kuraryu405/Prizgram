@@ -132,8 +132,9 @@ export function JobImportForm() {
           id="job-body"
           maxLength={MAX_BODY_LENGTH}
           onChange={(event) => setBody(event.target.value)}
+          placeholder="求人票の本文を貼り付け（40文字以上）"
           required
-          rows={10}
+          rows={6}
           value={body}
         />
         <p className="hint-text">
