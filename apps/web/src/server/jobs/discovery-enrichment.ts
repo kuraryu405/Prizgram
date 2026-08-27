@@ -181,8 +181,10 @@ function queryWithoutLocation(
 }
 
 function shouldDropInternationalLocation(location: string): boolean {
-  return isRemoteLocation(location) ||
-    (containsJapanese(location) && !isJapanLocation(location));
+  return (
+    isRemoteLocation(location) ||
+    (containsJapanese(location) && !isJapanLocation(location))
+  );
 }
 
 /** Maps the app-level query onto the semantics of each provider. */
