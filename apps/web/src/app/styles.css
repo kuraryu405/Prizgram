@@ -937,7 +937,7 @@ a {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   box-shadow: 0 8px 24px rgb(27 39 34 / 0.12);
-  display: grid;
+  display: none;
   gap: 0.375rem;
   left: auto;
   min-width: 10rem;
@@ -946,6 +946,10 @@ a {
   right: 0;
   top: calc(100% + 0.5rem);
   z-index: 35;
+}
+
+.app-account-menu[open] .app-account-popover {
+  display: grid;
 }
 
 .app-account-popover .button {
@@ -1041,13 +1045,17 @@ a {
   border-radius: var(--radius-control);
   bottom: calc(100% + 0.5rem);
   box-shadow: 0 8px 24px rgb(27 39 34 / 0.14);
-  display: grid;
+  display: none;
   gap: 0.25rem;
   min-width: 10rem;
   padding: 0.375rem;
   position: absolute;
   right: 0.5rem;
   z-index: 40;
+}
+
+.app-nav-more[open] .app-nav-more-panel {
+  display: grid;
 }
 
 .app-nav-more-link {

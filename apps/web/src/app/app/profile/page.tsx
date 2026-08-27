@@ -14,7 +14,6 @@ export default async function ProfilePage() {
         <p>
           ログインID: <strong>{user.loginId}</strong>
         </p>
-        <p className="hint-text">ログイン中のアカウント情報です。</p>
         <div className="card-footer">
           <Link className="button button-secondary" href="/app">
             ホームへ戻る

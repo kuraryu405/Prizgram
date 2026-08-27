@@ -79,13 +79,13 @@ describe("AppShell", () => {
       const link = screen.getByRole("link", { name: label });
       expect(link.getAttribute("aria-label")).toBe(label);
     }
-    expect(screen.getByRole("button", { name: "その他" })).not.toBeNull();
+    expect(screen.getByText("その他")).not.toBeNull();
     // header bell for notifications is always visible
-    const bell = screen.getByRole("link", { name: "通知" });
-    expect(bell.getAttribute("href")).toBe("/app/reminders");
-    // secondary items live inside the More disclosure
-    expect(document.querySelector('a[href="/app/deadlines"]')).not.toBeNull();
-    expect(document.querySelector('a[href="/app/reminders"]')).not.toBeNull();
+    const bell = document.querySelector(
+      ".app-header-bell[href='/app/reminders']",
+    ) as HTMLAnchorElement | null;
+    expect(bell).not.toBeNull();
+    expect(bell?.getAttribute("href")).toBe("/app/reminders");
     expect(
       screen.getByRole("link", { name: "PRIZGRAM" }).getAttribute("aria-label"),
     ).toBe("PRIZGRAM");
@@ -104,7 +104,11 @@ describe("AppShell", () => {
     renderShell();
     await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
 
-    await user.click(screen.getByRole("button", { name: "アカウント user01" }));
+    const accountTrigger = document.querySelector(
+      'summary[aria-label="アカウント user01"]',
+    ) as HTMLElement;
+    expect(accountTrigger).not.toBeNull();
+    await user.click(accountTrigger);
     await user.click(screen.getByRole("button", { name: "ログアウト" }));
     await waitFor(() =>
       expect(navigationMocks.replace).toHaveBeenCalledWith("/"),
@@ -127,7 +131,11 @@ describe("AppShell", () => {
     renderShell();
     await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
 
-    await user.click(screen.getByRole("button", { name: "アカウント user01" }));
+    const accountTrigger = document.querySelector(
+      'summary[aria-label="アカウント user01"]',
+    ) as HTMLElement;
+    expect(accountTrigger).not.toBeNull();
+    await user.click(accountTrigger);
     await user.click(screen.getByRole("button", { name: "ログアウト" }));
     await waitFor(() =>
       expect(
@@ -147,22 +155,45 @@ describe("AppShell", () => {
 
     expect(screen.getByText("US")).not.toBeNull();
     expect(screen.queryByText("⋯")).toBeNull();
-    const accountTrigger = screen.getByRole("button", {
-      name: "アカウント user01",
-    });
+    const accountTrigger = document.querySelector(
+      'summary[aria-label="アカウント user01"]',
+    ) as HTMLElement;
+    expect(accountTrigger).not.toBeNull();
     expect(accountTrigger.getAttribute("title")).toBe("アカウント user01");
     await user.click(accountTrigger);
-    expect(screen.getByRole("link", { name: "プロフィール" })).not.toBeNull();
+    // account popover becomes visible after opening
+    await waitFor(() =>
+      expect(
+        document.querySelector(".app-account-menu")?.hasAttribute("open"),
+      ).toBe(true),
+    );
+    expect(
+      screen.getAllByRole("link", { name: "プロフィール" }).length,
+    ).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("button", { name: "ログアウト" })).not.toBeNull();
   });
 
   test("shows the More menu with secondary navigation", async () => {
+    const user = userEvent.setup();
     stubAuthenticatedSession();
     renderShell();
     await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
 
-    expect(document.querySelector('a[href="/app/deadlines"]')).not.toBeNull();
-    expect(document.querySelector('a[href="/app/reminders"]')).not.toBeNull();
-    expect(document.querySelector('a[href="/app/profile"]')).not.toBeNull();
+    const details = document.querySelector(
+      ".app-nav-more",
+    ) as HTMLDetailsElement | null;
+    expect(details?.hasAttribute("open")).toBe(false);
+    const moreTrigger = screen
+      .getByText("その他")
+      .closest("summary") as HTMLElement;
+    expect(moreTrigger).not.toBeNull();
+    await user.click(moreTrigger);
+    await waitFor(() => expect(details?.hasAttribute("open")).toBe(true));
+    expect(screen.getByRole("link", { name: "締切" })).not.toBeNull();
+    expect(
+      screen.getAllByRole("link", { name: "通知" }).length,
+    ).toBeGreaterThanOrEqual(1);
+    await user.click(moreTrigger);
+    await waitFor(() => expect(details?.hasAttribute("open")).toBe(false));
   });
 });

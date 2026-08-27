@@ -7,7 +7,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { describeApiError } from "@/lib/error-messages";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { PrizgramLogo } from "@/components/brand/prizgram-logo";
 
 function HomeIcon() {
   return (
@@ -240,7 +239,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
       <div className="app-layout">
         <header className="app-header">
           <Link aria-label="PRIZGRAM" className="app-brand" href="/app">
-            <PrizgramLogo className="app-brand-logo" />
+            PRIZGRAM
           </Link>
           <nav aria-label="メインナビゲーション" className="app-nav">
             <ul>
@@ -267,16 +266,17 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                     aria-label="その他"
                     aria-current={isMoreActive ? "page" : undefined}
                     className={
-                      isMoreActive ? "app-nav-more-trigger is-active" : "app-nav-more-trigger"
+                      isMoreActive
+                        ? "app-nav-more-trigger is-active"
+                        : "app-nav-more-trigger"
                     }
                     data-tooltip="その他"
-                    role="button"
                     title="その他"
                   >
                     <MoreIcon />
                     <span className="app-nav-label">その他</span>
                   </summary>
-                  <div className="app-nav-more-panel" role="menu">
+                  <div className="app-nav-more-panel">
                     {secondaryNavigationItems.map((item) => (
                       <Link
                         key={item.href}
@@ -285,7 +285,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                         }
                         className="app-nav-more-link"
                         href={item.href}
-                        role="menuitem"
                       >
                         <item.Icon />
                         <span>{item.label}</span>
@@ -297,7 +296,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                       }
                       className="app-nav-more-link"
                       href="/app/profile"
-                      role="menuitem"
                     >
                       <PersonaIcon />
                       <span>プロフィール</span>
@@ -305,7 +303,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                   </div>
                 </details>
               </li>
-
             </ul>
           </nav>
           <div className="app-header-account">
@@ -321,7 +318,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
               <summary
                 aria-label={`アカウント ${user.loginId}`}
                 className="app-account-trigger"
-                role="button"
                 title={`アカウント ${user.loginId}`}
               >
                 <span aria-hidden="true" className="app-account-avatar">
@@ -332,10 +328,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                 </span>
               </summary>
               <div className="app-account-popover">
-                <Link
-                  className="button button-secondary"
-                  href="/app/profile"
-                >
+                <Link className="button button-secondary" href="/app/profile">
                   プロフィール
                 </Link>
                 <button
