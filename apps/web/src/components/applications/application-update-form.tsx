@@ -16,14 +16,28 @@ export type ApplicationUpdateFormProps = Readonly<{
   initialNote?: string;
 }>;
 
+type ApplicationUpdateFormStateProps = ApplicationUpdateFormProps &
+  Readonly<{
+    successMessage: string | null;
+    setSuccessMessage: (message: string | null) => void;
+  }>;
+
 export function ApplicationUpdateForm(props: ApplicationUpdateFormProps) {
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const stateKey = JSON.stringify([
     props.applicationId,
     props.initialStageLabel ?? "",
     props.initialNextAction ?? "",
     props.initialNote ?? "",
   ]);
-  return <ApplicationUpdateFormState key={stateKey} {...props} />;
+  return (
+    <ApplicationUpdateFormState
+      key={stateKey}
+      {...props}
+      successMessage={successMessage}
+      setSuccessMessage={setSuccessMessage}
+    />
+  );
 }
 
 function ApplicationUpdateFormState({
@@ -34,7 +48,9 @@ function ApplicationUpdateFormState({
   initialStageLabel,
   initialNextAction,
   initialNote,
-}: ApplicationUpdateFormProps) {
+  successMessage,
+  setSuccessMessage,
+}: ApplicationUpdateFormStateProps) {
   const router = useRouter();
   const [status, setStatus] = useState("");
   const [stageLabel, setStageLabel] = useState(initialStageLabel ?? "");
@@ -49,7 +65,6 @@ function ApplicationUpdateFormState({
   const [savedNote, setSavedNote] = useState((initialNote ?? "").trim());
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const hasStatusChange = status !== "";
   const stageLabelTrimmed = stageLabel.trim();
