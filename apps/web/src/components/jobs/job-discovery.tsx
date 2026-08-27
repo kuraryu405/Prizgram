@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -53,6 +54,22 @@ type ImportResult = {
   jobId: string;
   jobVersionId: string;
   version: number;
+  duplicate: boolean;
+};
+
+type EvaluationResponse = {
+  detail: {
+    scoreId: string;
+    personaVersionId: string;
+    jobVersionId: string;
+    model: string;
+    promptVersion: string;
+    createdAt: string;
+    axes: Record<
+      string,
+      { score: number; reasons: string[]; evidenceRefs: string[] }
+    >;
+  };
   duplicate: boolean;
 };
 
@@ -132,6 +149,17 @@ export function JobDiscovery() {
   const [importedIds, setImportedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [jobIdByExternalId, setJobIdByExternalId] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
+  const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
+  const [scoreByExternalId, setScoreByExternalId] = useState<
+    ReadonlyMap<string, EvaluationResponse["detail"]>
+  >(() => new Map());
+  const [evaluateErrorById, setEvaluateErrorById] = useState<
+    ReadonlyMap<string, string>
+  >(() => new Map());
+  const [expandedScoreId, setExpandedScoreId] = useState<string | null>(null);
 
   const hasActiveFilter =
     keywords.trim() !== "" || location.trim() !== "" || employmentType !== "";
@@ -202,6 +230,10 @@ export function JobDiscovery() {
       setImportedIds(
         (previous) => new Set([...previous, candidate.externalId]),
       );
+      setJobIdByExternalId(
+        (previous) =>
+          new Map([...previous, [candidate.externalId, imported.jobId]]),
+      );
       addToast(
         imported.duplicate
           ? `${candidate.title} は既に取り込み済みです。`
@@ -213,6 +245,64 @@ export function JobDiscovery() {
       addToast(describeApiError(error), "error");
     } finally {
       setImportingId(null);
+    }
+  };
+
+  const onEvaluate = async (job: DiscoveredJob): Promise<void> => {
+    const { candidate } = job;
+    if (evaluatingId !== null || importingId !== null) return;
+    setEvaluateErrorById((prev) => {
+      const next = new Map(prev);
+      next.delete(candidate.externalId);
+      return next;
+    });
+    setEvaluatingId(candidate.externalId);
+    try {
+      let jobId = jobIdByExternalId.get(candidate.externalId);
+      if (jobId === undefined) {
+        const imported = await apiFetch<ImportResult>("/api/jobs", {
+          ...jsonRequestInit("POST", {
+            body: candidateBody(candidate),
+            ...(candidate.company === undefined
+              ? {}
+              : { companyName: candidate.company }),
+            sourceName: job.sourceName,
+            sourceUrl: candidate.url,
+            sourceKind: job.sourceKind,
+            sourceExternalId: candidate.externalId,
+          }),
+        });
+        const newJobId = imported.jobId;
+        jobId = newJobId;
+        setImportedIds(
+          (previous) => new Set([...previous, candidate.externalId]),
+        );
+        setJobIdByExternalId(
+          (previous) =>
+            new Map([...previous, [candidate.externalId, newJobId]]),
+        );
+        if (!imported.duplicate) router.refresh();
+      }
+      const result = await apiFetch<EvaluationResponse>(
+        `/api/jobs/${encodeURIComponent(jobId)}/score`,
+        { method: "POST" },
+      );
+      setScoreByExternalId(
+        (prev) => new Map([...prev, [candidate.externalId, result.detail]]),
+      );
+      addToast(
+        result.duplicate ? "既存の評価を表示しています" : "3軸で評価しました",
+        "success",
+      );
+      router.refresh();
+    } catch (error) {
+      const message = describeApiError(error);
+      setEvaluateErrorById(
+        (prev) => new Map([...prev, [candidate.externalId, message]]),
+      );
+      addToast(message, "error");
+    } finally {
+      setEvaluatingId(null);
     }
   };
 
@@ -351,6 +441,14 @@ export function JobDiscovery() {
                 const { candidate } = job;
                 const imported = importedIds.has(candidate.externalId);
                 const isImporting = importingId === candidate.externalId;
+                const isEvaluating = evaluatingId === candidate.externalId;
+                const score = scoreByExternalId.get(candidate.externalId);
+                const evaluateError = evaluateErrorById.get(
+                  candidate.externalId,
+                );
+                const jobId = jobIdByExternalId.get(candidate.externalId);
+                const isExpanded = expandedScoreId === candidate.externalId;
+                const busy = isImporting || isEvaluating;
                 return (
                   <li key={candidate.externalId}>
                     <article className="job-candidate">
@@ -378,30 +476,19 @@ export function JobDiscovery() {
                         </p>
                       )}
                       <div className="job-candidate-footer">
-                        <a
-                          className="job-candidate-source"
-                          href={candidate.url}
-                          rel="noopener noreferrer"
-                          target="_blank"
+                        <button
+                          aria-busy={isEvaluating}
+                          className="button button-primary job-import-action"
+                          disabled={busy}
+                          onClick={() => void onEvaluate(job)}
+                          type="button"
                         >
-                          出典元で確認する
-                        </a>
-                        <span
-                          className="job-candidate-spacer"
-                          aria-hidden="true"
-                        />
-                        {imported ? (
-                          <span
-                            className="job-import-badge"
-                            aria-label="取り込み済み"
-                          >
-                            取り込み済み
-                          </span>
-                        ) : null}
+                          {isEvaluating ? "評価中…" : "3軸で評価"}
+                        </button>
                         <button
                           aria-busy={isImporting}
                           className="button button-secondary job-import-action"
-                          disabled={imported || importingId !== null}
+                          disabled={busy || imported}
                           onClick={() => void onImport(job)}
                           type="button"
                         >
@@ -409,9 +496,140 @@ export function JobDiscovery() {
                             ? "取り込み済み"
                             : isImporting
                               ? "取り込み中…"
-                              : "この候補を取り込む"}
+                              : "取り込む"}
                         </button>
+                        <a
+                          className="job-candidate-source"
+                          href={candidate.url}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                        >
+                          出典元で確認
+                        </a>
                       </div>
+                      {imported && !score ? (
+                        <p className="hint-text" role="status">
+                          取り込み済み
+                        </p>
+                      ) : null}
+                      {score ? (
+                        <div className="candidate-score">
+                          <div
+                            className="candidate-score-grid"
+                            role="group"
+                            aria-label="3軸評価結果"
+                          >
+                            <div className="candidate-score-item">
+                              <span className="candidate-score-label">
+                                スキル適合
+                              </span>
+                              <span className="candidate-score-value">
+                                {score.axes.skillFit?.score ?? "-"}
+                              </span>
+                            </div>
+                            <div className="candidate-score-item">
+                              <span className="candidate-score-label">
+                                カルチャー適合
+                              </span>
+                              <span className="candidate-score-value">
+                                {score.axes.cultureValueFit?.score ?? "-"}
+                              </span>
+                            </div>
+                            <div className="candidate-score-item">
+                              <span className="candidate-score-label">
+                                難易度ギャップ
+                              </span>
+                              <span className="candidate-score-value">
+                                {score.axes.difficultyGap?.score ?? "-"}
+                              </span>
+                              <span
+                                className="hint-text"
+                                style={{ fontSize: "0.6875rem" }}
+                              >
+                                低いほどギャップ小
+                              </span>
+                            </div>
+                          </div>
+                          <div className="candidate-score-actions">
+                            <button
+                              className="button button-secondary"
+                              type="button"
+                              onClick={() =>
+                                setExpandedScoreId(
+                                  isExpanded ? null : candidate.externalId,
+                                )
+                              }
+                            >
+                              {isExpanded ? "閉じる" : "根拠を見る"}
+                            </button>
+                            {jobId ? (
+                              <Link
+                                className="button button-secondary"
+                                href={`/app/jobs/${encodeURIComponent(jobId)}`}
+                              >
+                                詳細へ
+                              </Link>
+                            ) : null}
+                          </div>
+                          {isExpanded ? (
+                            <div className="candidate-score-details">
+                              {(
+                                [
+                                  "skillFit",
+                                  "cultureValueFit",
+                                  "difficultyGap",
+                                ] as const
+                              ).map((axis) => {
+                                const dim = score.axes[axis];
+                                if (!dim) return null;
+                                const labels: Record<string, string> = {
+                                  skillFit: "スキル適合",
+                                  cultureValueFit: "カルチャー適合",
+                                  difficultyGap: "難易度ギャップ",
+                                };
+                                return (
+                                  <div
+                                    key={axis}
+                                    className="candidate-score-axis"
+                                  >
+                                    <h4>
+                                      {labels[axis]} {dim.score}
+                                    </h4>
+                                    <ul>
+                                      {dim.reasons.map((r) => (
+                                        <li key={r}>{r}</li>
+                                      ))}
+                                    </ul>
+                                    <p className="hint-text">根拠:</p>
+                                    <ul>
+                                      {dim.evidenceRefs.map((ref) => (
+                                        <li key={ref}>
+                                          <span className="signal-id">
+                                            {ref}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {evaluateError ? (
+                        <div className="candidate-score-error" role="alert">
+                          <p className="error-text">{evaluateError}</p>
+                          <button
+                            className="button button-secondary"
+                            type="button"
+                            onClick={() => void onEvaluate(job)}
+                            disabled={busy}
+                          >
+                            再試行
+                          </button>
+                        </div>
+                      ) : null}
                     </article>
                   </li>
                 );
