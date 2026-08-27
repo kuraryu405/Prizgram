@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import {
+  DeadlineActions,
   DeadlineCreateForm,
   DeadlineToggle,
 } from "@/components/deadlines/deadline-components";
@@ -54,10 +55,16 @@ export default async function DeadlinesPage() {
           <h2 id="deadline-overdue">期限超過（未完了）</h2>
           <ul>
             {attention.map((deadline) => (
-              <li key={deadline.deadlineId}>
-                <strong>{deadline.title}</strong>（
-                {kindLabels[deadline.kind] ?? deadline.kind}） —{" "}
-                {formatInZone(deadline)} <DeadlineToggle {...deadline} />
+              <li className="deadline-item" key={deadline.deadlineId}>
+                <div className="deadline-item-content">
+                  <strong>{deadline.title}</strong>（
+                  {kindLabels[deadline.kind] ?? deadline.kind}） —{" "}
+                  {formatInZone(deadline)}
+                </div>
+                <div className="deadline-item-actions">
+                  <DeadlineToggle {...deadline} />
+                  <DeadlineActions {...deadline} />
+                </div>
               </li>
             ))}
           </ul>
@@ -71,19 +78,24 @@ export default async function DeadlinesPage() {
         ) : (
           <ul>
             {upcoming.map((deadline) => (
-              <li key={deadline.deadlineId}>
-                <strong>{deadline.title}</strong>（
-                {kindLabels[deadline.kind] ?? deadline.kind}） —{" "}
-                {formatInZone(deadline)}
-                {deadline.within24Hours && (
-                  <span className="form-alert"> 24時間以内</span>
-                )}{" "}
-                <Link
-                  href={`/app/applications/${encodeURIComponent(deadline.applicationId)}`}
-                >
-                  応募を見る
-                </Link>{" "}
-                <DeadlineToggle {...deadline} />
+              <li className="deadline-item" key={deadline.deadlineId}>
+                <div className="deadline-item-content">
+                  <strong>{deadline.title}</strong>（
+                  {kindLabels[deadline.kind] ?? deadline.kind}） —{" "}
+                  {formatInZone(deadline)}
+                  {deadline.within24Hours && (
+                    <span className="form-alert deadline-soon">24時間以内</span>
+                  )}{" "}
+                  <Link
+                    href={`/app/applications/${encodeURIComponent(deadline.applicationId)}`}
+                  >
+                    応募を見る
+                  </Link>
+                </div>
+                <div className="deadline-item-actions">
+                  <DeadlineToggle {...deadline} />
+                  <DeadlineActions {...deadline} />
+                </div>
               </li>
             ))}
           </ul>
@@ -93,11 +105,17 @@ export default async function DeadlinesPage() {
       {completed.length > 0 && (
         <section aria-labelledby="deadline-completed" className="card">
           <h2 id="deadline-completed">完了済み</h2>
-          <ul className="hint-text">
+          <ul>
             {completed.map((deadline) => (
-              <li key={deadline.deadlineId}>
-                {deadline.title} — {formatInZone(deadline)}{" "}
-                <DeadlineToggle {...deadline} />
+              <li className="deadline-item" key={deadline.deadlineId}>
+                <div className="deadline-item-content">
+                  {deadline.title}（{kindLabels[deadline.kind] ?? deadline.kind}
+                  ） — {formatInZone(deadline)}
+                </div>
+                <div className="deadline-item-actions">
+                  <DeadlineToggle {...deadline} />
+                  <DeadlineActions {...deadline} />
+                </div>
               </li>
             ))}
           </ul>
