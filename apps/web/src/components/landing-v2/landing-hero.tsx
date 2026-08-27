@@ -160,7 +160,7 @@ export function LandingHero() {
             <span>もうひとりの相棒を。</span>
           </h1>
           <p className="lp-hero-sub">
-            Prizgramは、応募・ES・面接・結果・振り返りをひとつの文脈につなぎ、選考を重ねるたびにあなたへの理解を深める就活パーソナルエージェントです。
+            Prizgramは、応募・ES・面接・結果・振り返りをひとつの文脈につなぎ、選考を重ねるたびにあなたへの理解を深めていく就活パーソナルエージェントです。
           </p>
           <div className="lp-hero-actions">
             <Link href="/register" className="lp-btn-primary">
@@ -173,7 +173,7 @@ export function LandingHero() {
           <div className="lp-hero-meta" aria-label="プロダクト特性">
             <span>継続的に学習</span>
             <span>根拠を提示</span>
-            <span>判断はあなたに</span>
+            <span>判断するのは、あなた</span>
           </div>
         </div>
 

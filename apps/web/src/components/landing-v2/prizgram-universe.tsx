@@ -182,26 +182,27 @@ export function PrizgramUniverse() {
           height={1254}
           className="lp-universe-logo"
         />
-        <span>YOUR CAREER CONTEXT</span>
       </div>
       <div className="lp-universe-orbit" aria-hidden="true">
-        {NODES.map((node, index) => (
+        {NODES.map((node) => (
           <span
-            className="lp-universe-node"
+            className="lp-universe-orbit-track"
             key={node.label}
             style={
               {
                 "--node-angle": `${node.angle}deg`,
-                "--node-distance": `${node.distance}%`,
-                "--node-delay": `${index * -0.32}s`,
+                "--node-delay": "0s",
+                "--node-duration": "28s",
+                "--node-radius": `${node.distance}%`,
               } as CSSProperties
             }
           >
-            {node.label}
+            <span className="lp-universe-node-position">
+              <span className="lp-universe-node">{node.label}</span>
+            </span>
           </span>
         ))}
       </div>
-      <p className="lp-universe-hint">MOVE TO EXPLORE · LIVE CONTEXT MAP</p>
     </div>
   );
 }

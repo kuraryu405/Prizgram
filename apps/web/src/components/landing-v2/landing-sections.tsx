@@ -59,10 +59,9 @@ export function ProblemSection() {
           className={`lp-problem-head lp-reveal${visible ? " is-visible" : ""}`}
         >
           <p className="lp-eyebrow">01 — Fragmented</p>
-          <h2 id="lp-problem-title" className="lp-h2">
-            就活の情報は、
-            <br />
-            散らばっている。
+          <h2 id="lp-problem-title" className="lp-h2 lp-problem-title">
+            <span>就活の情報は、</span>
+            <span>散らばっている。</span>
           </h2>
           <p className="lp-lead">
             求人票、企業研究、ES、面接、スケジュール、結果、メモ。普通のツールはそれぞれを別々に扱います。Prizgramは、それらをひとつの文脈へつなぎ直します。
@@ -103,37 +102,37 @@ const LOOP_STEPS = [
   {
     k: "APPLICATION",
     title: "応募",
-    desc: "気になる企業へ応募し、選考が始まる。",
+    desc: "気になる企業に応募すると、選考が始まります。",
   },
   {
     k: "ES",
     title: "ES",
-    desc: "志望動機・自己PRを、過去の文脈を踏まえて磨く。",
+    desc: "志望動機・自己PRを、これまでの記録を踏まえて磨きます。",
   },
   {
     k: "INTERVIEW",
     title: "面接",
-    desc: "想定質問と振り返りで、伝わり方を整える。",
+    desc: "想定質問と振り返りを通じて、伝わり方を整えます。",
   },
   {
     k: "EVALUATION",
     title: "評価",
-    desc: "結果とフィードバックを記録として残す。",
+    desc: "結果とフィードバックを、次に活かせる記録として残します。",
   },
   {
     k: "REFLECTION",
     title: "振り返り",
-    desc: "何が伝わり、何が不足したかを言語化する。",
+    desc: "何が伝わり、何が足りなかったのかを言語化します。",
   },
   {
     k: "PERSONA UPDATED",
     title: "Persona 更新",
-    desc: "承認された学びだけが、あなたへの理解として蓄積される。",
+    desc: "承認した学びだけが、あなたへの理解として蓄積されます。",
   },
   {
     k: "NEXT SUPPORT",
     title: "次の支援が変わる",
-    desc: "次の求人探索・推薦・提案が、よりあなたらしくなる。",
+    desc: "次の求人探し・推薦・提案が、よりあなたらしいものになります。",
   },
 ] as const;
 
@@ -165,12 +164,32 @@ export function LoopSection() {
         <div className={`lp-reveal${visible ? " is-visible" : ""}`}>
           <p className="lp-eyebrow">02 — Learning Loop</p>
           <h2 id="lp-loop-title" className="lp-h2">
-            選考するたび、
+            選考を重ねるたび、
             <br />
-            あなたを理解する。
+            あなたへの理解が深まる。
           </h2>
           <p className="lp-lead" style={{ marginTop: "0.75rem" }}>
             Prizgramの中心はフィードバックループです。結果が増えるほど、Personaは精緻になり、次の選択の根拠が強くなります。
+          </p>
+          <div className="lp-loop-cycle" aria-label="Prizgramの学習ループ">
+            <div className="lp-loop-cycle-core">
+              <strong>記録が</strong>
+              <span>次の支援へ</span>
+              <em>戻る</em>
+            </div>
+            {LOOP_STEPS.slice(0, 6).map((step, index) => (
+              <span
+                className="lp-loop-cycle-node"
+                key={step.k}
+                style={{ "--loop-node": index } as React.CSSProperties}
+              >
+                {step.title}
+              </span>
+            ))}
+            <span className="lp-loop-cycle-marker" aria-hidden="true" />
+          </div>
+          <p className="lp-loop-cycle-caption">
+            応募の結果と振り返りがPersonaを更新し、次の求人探索・ES・面接準備へ循環します。
           </p>
         </div>
 
@@ -207,37 +226,37 @@ const CAPS = [
   {
     num: "01",
     title: "自分を知る",
-    body: "対話ヒアリングからスキル・経験・価値観・強み・弱みを構造化。根拠と確信度を伴うPersonaとして保存します。",
+    body: "対話を通じて、スキル・経験・価値観・強み・弱みを整理します。根拠と確信度を伴うPersonaとして保存します。",
     preview: "persona" as const,
   },
   {
     num: "02",
     title: "企業を探す",
-    body: "最新の承認済みPersonaから検索条件を生成。外部求人APIと手動入力を同じJobSnapshotへ正規化して扱います。",
+    body: "最新の承認済みPersonaから検索条件を生成します。外部求人APIと手動入力の情報を、同じJobSnapshotに正規化して扱います。",
     preview: "discover" as const,
   },
   {
     num: "03",
     title: "応募を管理する",
-    body: "ApplicationとStage履歴、締切を一元管理。次のアクションが常に「今日やること」として可視化されます。",
+    body: "Application・Stage履歴・締切を一元管理します。次にやるべきことを、いつでも確認できます。",
     preview: "application" as const,
   },
   {
     num: "04",
     title: "ESを磨く",
-    body: "Personaと求人要件を突き合わせ、軸別の観点で改善提案。提出文は下書きと区別して保存されます。",
+    body: "Personaと求人要件を突き合わせ、軸ごとに改善案を提案します。提出文は下書きと区別して保存されます。",
     preview: "es" as const,
   },
   {
     num: "05",
     title: "面接に備える",
-    body: "模擬面接の振り返りをPersona更新へ接続。次の面接準備に、過去の学びが活きます。（MVP検証後に拡張）",
+    body: "模擬面接の振り返りをPersonaの更新につなげます。過去の学びを、次の面接準備に活かせます。（MVP検証後に拡張）",
     preview: "interview" as const,
   },
   {
     num: "06",
     title: "結果から学ぶ",
-    body: "選考結果と振り返りから更新候補を生成。承認された内容のみが次のバージョンへ反映され、保存求人が再評価されます。",
+    body: "選考結果と振り返りから、更新候補を生成します。承認した内容だけが次のバージョンに反映され、保存した求人を再評価します。",
     preview: "reflection" as const,
   },
 ] as const;
@@ -479,7 +498,7 @@ export function CapabilitiesSection() {
             できること。ひと続きに。
           </h2>
           <p className="lp-lead" style={{ marginTop: "0.65rem" }}>
-            対話で自己理解を深め、求人を探し、応募を管理し、結果から学ぶ。Prizgramはそれぞれを独立した機能ではなく、一つの連続した体験としてつなぎます。
+            対話で自己理解を深め、求人を探し、応募を管理し、結果から学ぶ。Prizgramは、これらを独立した機能としてではなく、ひと続きの体験としてつなぎます。
           </p>
         </div>
 
@@ -564,37 +583,37 @@ const TL = [
   {
     date: "DAY 01",
     title: "やりたいことがまだ曖昧",
-    desc: "ヒアリングから仮のPersona v1を生成。スキルと言語化の起点が生まれる。",
+    desc: "ヒアリングから仮のPersona v1を生成し、スキルを言葉にする出発点をつくります。",
     tag: "PERSONA v1",
   },
   {
     date: "APPLICATION 03",
     title: "Frontend / Web系への関心が濃くなる",
-    desc: "保存求人とスコアリングから、志向の輪郭がはっきりしてくる。",
+    desc: "保存した求人とスコアリングを通じて、志向の輪郭がはっきりしてきます。",
     tag: "SCORE 3-AXIS",
   },
   {
     date: "ES REVIEW",
     title: "技術経験は強い。志望動機に改善余地",
-    desc: "軸別レビューで、どこを磨くべきかが具体的に見える。",
+    desc: "軸ごとのレビューで、どこを磨くべきかが具体的に見えてきます。",
     tag: "FEEDBACK",
   },
   {
     date: "INTERVIEW 05",
     title: "技術説明は得意。企業理解の具体性に課題",
-    desc: "面接の振り返りが、次の準備へ直接つながる。",
+    desc: "面接の振り返りを、次の準備に直接つなげます。",
     tag: "REFLECTION",
   },
   {
     date: "PERSONA UPDATED",
     title: "承認された学びが、あなたへの理解になる",
-    desc: "Persona v4へ更新。保存求人が再評価され、次回探索条件も更新される。",
+    desc: "Personaをv4に更新すると、保存した求人が再評価され、次回の検索条件も更新されます。",
     tag: "v4 APPROVED",
   },
   {
     date: "NEXT APPLICATION",
     title: "より本人に合った支援へ",
-    desc: "同じ作業の繰り返しではない。蓄積が、次の選択を良くする。",
+    desc: "同じ作業の繰り返しではありません。蓄積が、次の選択をより良くします。",
     tag: "CONTEXT APPLIED",
   },
 ] as const;
@@ -662,7 +681,7 @@ const JOURNEY = [
   {
     n: "03",
     title: "応募を管理する",
-    desc: "ApplicationとStage履歴、締切を一元管理。今日やることが迷わない。",
+    desc: "Application・Stage履歴・締切を一元管理。今日やるべきことに迷いません。",
     bullets: [
       "選考ステータスの履歴を追記",
       "ES・面接・承諾期限をUTC+timezoneで管理",
@@ -819,7 +838,15 @@ export function ManifestoSection() {
             次の選択を良くするためのデータになる。
           </p>
           <p className="lp-manifesto-line lp-manifesto-conclusion">
-            Prizgramは、
+            <span className="sr-only">Prizgram</span>
+            <Image
+              src="/brand/prizgram-horizontal.svg"
+              alt="Prizgram"
+              width={2103}
+              height={748}
+              className="lp-manifesto-logo"
+            />
+            <span>は、</span>
             <br />
             <span className="accent">あなたの就活を覚えている。</span>
           </p>
@@ -855,8 +882,6 @@ const PRODUCT_SCREENS = [
 
 export function ProductPreviewSection() {
   const { ref, visible } = useReveal();
-  const [screen, setScreen] = useState(0);
-  const current = PRODUCT_SCREENS[screen]!;
 
   return (
     <section
@@ -879,55 +904,57 @@ export function ProductPreviewSection() {
         </div>
 
         <div className="lp-product-browser">
+          {PRODUCT_SCREENS.map((item, index) => (
+            <input
+              key={item.label}
+              id={`lp-product-${index}`}
+              className="lp-product-toggle"
+              type="radio"
+              name="lp-product-screen"
+              defaultChecked={index === 0}
+            />
+          ))}
           <div
             className="lp-product-tabs"
-            role="tablist"
+            role="group"
             aria-label="実装済み画面"
           >
             <span className="lp-product-live">
               <i /> LIVE MVP
             </span>
             {PRODUCT_SCREENS.map((item, index) => (
-              <button
-                key={item.label}
-                type="button"
-                role="tab"
-                aria-selected={screen === index}
-                aria-controls="lp-product-screen"
-                className={screen === index ? "is-active" : undefined}
-                onClick={() => setScreen(index)}
-              >
+              <label key={item.label} htmlFor={`lp-product-${index}`}>
                 {item.label}
-              </button>
+              </label>
             ))}
           </div>
-          <div
-            id="lp-product-screen"
-            className="lp-product-screen"
-            role="tabpanel"
-          >
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={current.src}
-                initial={{ opacity: 0, scale: 0.985, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.99, y: -8 }}
-                transition={{ duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+          <div id="lp-product-screen" className="lp-product-screen">
+            {PRODUCT_SCREENS.map((item, index) => (
+              <div
+                key={item.src}
+                className={`lp-product-slide lp-product-slide-${index}`}
               >
                 <Image
-                  src={current.src}
-                  alt={`Prizgramの${current.label}実装画面`}
+                  src={item.src}
+                  alt={`Prizgramの${item.label}実装画面`}
                   width={390}
                   height={844}
                   className="lp-product-screenshot"
                 />
-              </motion.div>
-            </AnimatePresence>
+              </div>
+            ))}
           </div>
           <div className="lp-product-caption">
-            <strong>{current.label}</strong>
-            <span>{current.description}</span>
-            <Link href="/register">自分の画面ではじめる →</Link>
+            {PRODUCT_SCREENS.map((item, index) => (
+              <div
+                key={item.label}
+                className={`lp-product-caption-state lp-product-caption-state-${index}`}
+              >
+                <strong>{item.label}</strong>
+                <span>{item.description}</span>
+              </div>
+            ))}
+            <Link href="/register">自分のPrizgramをはじめる →</Link>
           </div>
         </div>
       </div>
@@ -1298,7 +1325,7 @@ export function LandingFooter() {
             className="lp-footer-logo"
           />
           <p>
-            選考を重ねるたびに、あなたを学習する就活パーソナルエージェント。求人探索から選考管理、振り返りまでをひとつの文脈へ。
+            選考を重ねるたびに、あなたへの理解を深める就活パーソナルエージェント。求人探しから選考管理、振り返りまでをひとつの文脈へ。
           </p>
         </div>
         <div className="lp-footer-links">
