@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -20,6 +20,7 @@ import {
 
 import type { DatabaseConnection } from "@prizgram/db";
 import { AppError } from "../api";
+import { enforceLlmRateLimit } from "../auth/rate-limit";
 import {
   createLlmClientFromEnvironment,
   LlmClientError,
@@ -80,8 +81,15 @@ export interface EventEvidenceSource {
  * trigger one LLM call (a fresh persona version never reuses stored
  * scores), so the fan-out must stay bounded; callers continue by invoking
  * the endpoint again while `remainingJobs > 0`.
+ * Reduced from 20 to 5 to avoid long HTTP requests (#194).
  */
-export const MAX_REEVALUATE_JOBS = 20;
+export const MAX_REEVALUATE_JOBS = 5;
+
+const SCORING_PROMPT_VERSION = "scoring-v1";
+
+function currentScoringModel(): string {
+  return process.env.OPENAI_MODEL ?? "unknown-model";
+}
 
 let environmentClient: StructuredLlmClient | undefined;
 
@@ -275,9 +283,29 @@ export class PersonaUpdateService {
     // Version numbers are computed and inserted inside one transaction, and
     // a unique (user_id, version) violation from another writer is retried
     // once with a fresh number — mirroring generatePersona.
+    // #186: stale base check is performed inside the transaction to avoid
+    // check-then-act races; a base that is no longer latest yields 409.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         return this.connection.db.transaction((transaction) => {
+          // Stale check (#186): base must still be the latest version
+          const latest = transaction
+            .select({ id: personaVersions.id })
+            .from(personaVersions)
+            .where(eq(personaVersions.userId, user.id))
+            .orderBy(sql`${personaVersions.version} desc`)
+            .limit(1)
+            .get();
+          if (
+            latest !== undefined &&
+            latest.id !== input.basePersonaVersionId
+          ) {
+            throw new AppError(
+              "CONFLICT",
+              "ペルソナが別の操作で更新されました。最新状態から更新案を作り直してください",
+              409,
+            );
+          }
           const maxVersion = transaction
             .select({
               value: sql<number>`coalesce(max(${personaVersions.version}), 0)`,
@@ -311,7 +339,10 @@ export class PersonaUpdateService {
         });
       } catch (error) {
         lastError = error;
+        if (error instanceof AppError && error.code === "CONFLICT") throw error;
         if (!isPersonaVersionUniqueViolation(error)) throw error;
+        // On unique violation, loop again: the next attempt will re-check
+        // stale condition and either succeed with a fresh version or throw 409.
       }
     }
     throw lastError;
@@ -455,12 +486,13 @@ export class PersonaUpdateService {
 
   /**
    * Re-evaluates the user's jobs against a persona version, oldest job
-   * first, bounded by `limit` (capped at MAX_REEVALUATE_JOBS). Jobs already
-   * scored for this persona version are skipped so repeated passes make
-   * forward progress instead of re-processing the same oldest batch.
-   * Per-job failures are captured in the audit trail; one failure does not
-   * stop the rest. `remainingJobs` tells the caller how many unscored jobs
-   * were not processed in this pass.
+   * first, bounded by `limit` (capped at MAX_REEVALUATE_JOBS = 5).
+   * A job is considered done only when a **fresh** score exists for its
+   * **latest** job version with the current scoring policy (model +
+   * promptVersion) — see #160 and #152. Per-job failures (including LLM
+   * budget exhaustion #193) are captured but remain in `remainingJobs`
+   * so the caller can retry (#165). Small batches avoid long HTTP
+   * requests (#194).
    */
   async reEvaluateAll(
     user: AuthenticatedUser,
@@ -477,6 +509,8 @@ export class PersonaUpdateService {
         }>;
       };
       limit?: number;
+      /** For tests: inject no-op budget enforcement to avoid global limiter state */
+      enforceBudget?: (userId: string) => void;
     },
   ): Promise<{
     audit: Array<
@@ -497,31 +531,74 @@ export class PersonaUpdateService {
       .orderBy(asc(jobs.createdAt), asc(jobs.id))
       .all();
 
-    // A job counts as done for this pass once any score pins it to this
-    // persona version; scoring itself dedupes per (persona, job version),
-    // so re-selecting it would only stall the batch window.
-    const scoredJobIds = new Set(
-      this.connection.db
-        .select({ jobId: jobVersions.jobId })
+    // Resolve latest jobVersion per job (#160) and filter by fresh scoring
+    // policy (model + promptVersion) so stale scores do not hide pending work.
+    const versionRows = this.connection.db
+      .select({
+        jobId: jobVersions.jobId,
+        id: jobVersions.id,
+        version: jobVersions.version,
+      })
+      .from(jobVersions)
+      .where(eq(jobVersions.userId, user.id))
+      .all();
+    const latestByJob = new Map<string, { id: string; version: number }>();
+    for (const r of versionRows) {
+      const cur = latestByJob.get(r.jobId);
+      if (cur === undefined || r.version > cur.version)
+        latestByJob.set(r.jobId, { id: r.id, version: r.version });
+    }
+    // Jobs with no versions are not pending (should not happen, but be safe)
+    const latestVersionIds = [...latestByJob.values()].map((v) => v.id);
+    const freshJobIds = new Set<string>();
+    if (latestVersionIds.length > 0) {
+      const reverse = new Map<string, string>();
+      for (const [jobId, v] of latestByJob) reverse.set(v.id, jobId);
+      const freshRows = this.connection.db
+        .select({ jobVersionId: matchScores.jobVersionId })
         .from(matchScores)
-        .innerJoin(jobVersions, eq(jobVersions.id, matchScores.jobVersionId))
         .where(
           and(
             eq(matchScores.userId, user.id),
             eq(matchScores.personaVersionId, personaVersionId),
+            inArray(matchScores.jobVersionId, latestVersionIds),
+            eq(matchScores.model, currentScoringModel()),
+            eq(matchScores.promptVersion, SCORING_PROMPT_VERSION),
           ),
         )
-        .all()
-        .map((row) => row.jobId),
-    );
-    const pendingJobs = totalJobs.filter((job) => !scoredJobIds.has(job.id));
+        .all();
+      for (const r of freshRows) {
+        const jobId = reverse.get(r.jobVersionId);
+        if (jobId !== undefined) freshJobIds.add(jobId);
+      }
+    }
+    const pendingJobs = totalJobs.filter((job) => !freshJobIds.has(job.id));
 
     const targets = pendingJobs.slice(0, effectiveLimit);
     const audit: Array<
       | { jobId: string; status: "scored"; scoreId: string }
       | { jobId: string; status: "failed"; code: string }
     > = [];
+    let successCount = 0;
+    const enforceBudget = options.enforceBudget ?? enforceLlmRateLimit;
     for (const job of targets) {
+      // Enforce per-call LLM budget (#193). If exhausted, do not start this
+      // or any subsequent job; the job remains pending.
+      try {
+        enforceBudget(user.id);
+      } catch (error) {
+        audit.push({
+          jobId: job.id,
+          status: "failed",
+          code:
+            error instanceof AppError
+              ? String(error.code)
+              : error instanceof Error && "code" in error
+                ? String((error as { code: unknown }).code)
+                : "RATE_LIMITED",
+        });
+        break;
+      }
       try {
         const result = await options.scoring.evaluate(user.id, job.id, {
           personaVersionId,
@@ -531,6 +608,7 @@ export class PersonaUpdateService {
           status: "scored",
           scoreId: result.detail.scoreId,
         });
+        successCount += 1;
       } catch (error) {
         audit.push({
           jobId: job.id,
@@ -542,9 +620,10 @@ export class PersonaUpdateService {
         });
       }
     }
+    // Remaining is pending minus successes; failed and not-yet-attempted stay (#165)
     return {
       audit,
-      remainingJobs: Math.max(0, pendingJobs.length - targets.length),
+      remainingJobs: Math.max(0, pendingJobs.length - successCount),
     };
   }
 }

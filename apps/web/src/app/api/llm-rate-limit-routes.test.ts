@@ -126,17 +126,18 @@ const operations = [
     name: "job discovery",
     service: mocks.discover,
   },
-  {
-    invoke: () =>
-      reEvaluatePost(
-        jsonRequest("/api/persona/update/re-evaluate", {
-          personaVersionId: "persona-1",
-        }),
-      ),
-    name: "bulk re-evaluation",
-    service: mocks.reEvaluateAll,
-  },
 ] as const;
+
+const bulkOperation = {
+  invoke: () =>
+    reEvaluatePost(
+      jsonRequest("/api/persona/update/re-evaluate", {
+        personaVersionId: "persona-1",
+      }),
+    ),
+  name: "bulk re-evaluation",
+  service: mocks.reEvaluateAll,
+} as const;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -165,6 +166,26 @@ describe("LLM route rate limiting", () => {
       expect(service).not.toHaveBeenCalled();
     },
   );
+
+  it("delegates bulk re-evaluation budget to per-call checks inside service", async () => {
+    // #193: bulk re-evaluation no longer consumes a single budget at route entry;
+    // each scoring call inside the service consumes the budget separately.
+    mocks.enforce.mockImplementation(() => {
+      throw new AppError(
+        "RATE_LIMITED",
+        "Too many language model requests. Please retry later",
+        429,
+        undefined,
+        { "retry-after": "60" },
+      );
+    });
+    const response = await bulkOperation.invoke();
+    // Route does not block; service is called and handles per-job budget.
+    expect(response.status).toBe(200);
+    expect(mocks.reEvaluateAll).toHaveBeenCalled();
+    // Route-level enforce is not used for bulk
+    expect(mocks.enforce).not.toHaveBeenCalled();
+  });
 
   it("shares one user's budget across different LLM routes", async () => {
     const limiter = createLlmRateLimiter({

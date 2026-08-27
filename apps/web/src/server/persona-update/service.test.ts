@@ -305,7 +305,29 @@ describe("PersonaUpdateService.reEvaluateAll", () => {
       connection.sqlite
         .prepare("insert into jobs (id, user_id) values (?, ?)")
         .run(jobId, userA.id);
+      // Ensure each job has a latest version for freshness checks (#160)
+      connection.sqlite
+        .prepare(
+          "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, 1, '{}', 'hash')",
+        )
+        .run(`jv-${jobId}-v1`, userA.id, jobId);
       jobIds.push(jobId);
+    }
+    // Ensure job-a from seedBase also has a version
+    const hasJobAVersion = connection.sqlite
+      .prepare("select 1 from job_versions where id = 'jv-job-a-v1' limit 1")
+      .get();
+    if (hasJobAVersion === undefined) {
+      // job-a was created without version in seedBase; add one now if missing
+      try {
+        connection.sqlite
+          .prepare(
+            "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values ('jv-job-a-v1', ?, 'job-a', 1, '{}', 'hash')",
+          )
+          .run(userA.id);
+      } catch {
+        void 0;
+      }
     }
     return jobIds;
   }
@@ -328,33 +350,52 @@ describe("PersonaUpdateService.reEvaluateAll", () => {
 
   /** Persists what one pass produced so the next pass can observe it. */
   function markScored(personaVersionId: string, jobIds: string[]): void {
+    const currentModel = process.env.OPENAI_MODEL ?? "unknown-model";
     for (const jobId of jobIds) {
+      // Ensure latest version id exists for this job
+      let versionId = `jv-${jobId}-v1`;
+      // For job-a, the version id is jv-job-a-v1
+      if (jobId === "job-a") versionId = "jv-job-a-v1";
+      const exists = connection.sqlite
+        .prepare("select 1 from job_versions where id = ? limit 1")
+        .get(versionId);
+      if (exists === undefined) {
+        connection.sqlite
+          .prepare(
+            "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, 1, '{}', 'hash')",
+          )
+          .run(versionId, userA.id, jobId);
+      }
       connection.sqlite
         .prepare(
-          "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, 1, '{}', 'hash')",
+          "insert into match_scores (id, user_id, persona_version_id, job_version_id, skill_fit_score, skill_fit_reasons, skill_fit_evidence_refs, culture_value_fit_score, culture_value_fit_reasons, culture_value_fit_evidence_refs, difficulty_gap_score, difficulty_gap_reasons, difficulty_gap_evidence_refs, model, prompt_version) values (?, ?, ?, ?, 50, '[]', '[]', 50, '[]', '[]', 50, '[]', '[]', ?, 'scoring-v1')",
         )
-        .run(`jv-${jobId}`, userA.id, jobId);
-      connection.sqlite
-        .prepare(
-          "insert into match_scores (id, user_id, persona_version_id, job_version_id, skill_fit_score, skill_fit_reasons, skill_fit_evidence_refs, culture_value_fit_score, culture_value_fit_reasons, culture_value_fit_evidence_refs, difficulty_gap_score, difficulty_gap_reasons, difficulty_gap_evidence_refs, model, prompt_version) values (?, ?, ?, ?, 50, '[]', '[]', 50, '[]', '[]', 50, '[]', '[]', 'test-model', 'test-prompt')",
-        )
-        .run(`score-${jobId}`, userA.id, personaVersionId, `jv-${jobId}`);
+        .run(
+          `score-${jobId}`,
+          userA.id,
+          personaVersionId,
+          versionId,
+          currentModel,
+        );
     }
   }
 
   it("caps the per-request fan-out and reports the remaining jobs", async () => {
     seedBaseAndApplication();
-    seedJobs(MAX_REEVALUATE_JOBS + 7);
+    // With MAX=5, seed 7 ensures total = 1(job-a)+7=8, first batch 5 => remaining 3
+    const extra = 7;
+    seedJobs(extra);
     const { evaluated, scoring } = scoringStub();
 
     const result = await service.reEvaluateAll(userA, "persona-base", {
       scoring,
+      enforceBudget: () => {},
     });
 
-    expect(evaluated).toHaveLength(MAX_REEVALUATE_JOBS);
-    expect(result.audit).toHaveLength(MAX_REEVALUATE_JOBS);
-    // job-a from seedBaseAndApplication plus the seeded rows.
-    expect(result.remainingJobs).toBe(8);
+    expect(evaluated).toHaveLength(Math.min(MAX_REEVALUATE_JOBS, 1 + extra));
+    expect(result.audit).toHaveLength(Math.min(MAX_REEVALUATE_JOBS, 1 + extra));
+    // job-a from seedBaseAndApplication plus the seeded rows = 8, minus 5 = 3
+    expect(result.remainingJobs).toBe(3);
     // Oldest jobs first so repeated passes make deterministic progress.
     expect(result.audit[0]?.jobId).toBe("job-0");
   });
@@ -366,33 +407,208 @@ describe("PersonaUpdateService.reEvaluateAll", () => {
 
     const result = await service.reEvaluateAll(userA, "persona-base", {
       scoring,
+      enforceBudget: () => {},
       limit: 2,
     });
 
     expect(evaluated).toHaveLength(2);
+    // total 1+5=6, limit 2 => remaining 4
     expect(result.remainingJobs).toBe(4);
   });
 
   it("skips jobs already scored for the persona so repeated passes converge", async () => {
     seedBaseAndApplication();
-    seedJobs(MAX_REEVALUATE_JOBS + 7);
+    seedJobs(7); // 1(job-a) +7 =8 total
     const { evaluated, scoring } = scoringStub();
 
     const first = await service.reEvaluateAll(userA, "persona-base", {
       scoring,
+      enforceBudget: () => {},
     });
-    expect(first.remainingJobs).toBe(8);
+    // MAX=5, first batch 5, remaining 3
+    expect(first.audit).toHaveLength(5);
+    expect(first.remainingJobs).toBe(3);
     const firstBatch = new Set(evaluated);
     markScored("persona-base", [...evaluated]);
 
     const second = await service.reEvaluateAll(userA, "persona-base", {
       scoring,
+      enforceBudget: () => {},
     });
-
-    expect(second.audit).toHaveLength(first.remainingJobs);
+    expect(second.audit).toHaveLength(3);
     for (const entry of second.audit) {
       expect(firstBatch.has(entry.jobId)).toBe(false);
     }
     expect(second.remainingJobs).toBe(0);
+  });
+
+  it("treats failed jobs as remaining (#165)", async () => {
+    seedBaseAndApplication();
+    seedJobs(3); // 1+3=4 total
+    let call = 0;
+    const scoring = {
+      evaluate: () => {
+        call += 1;
+        if (call <= 2)
+          return Promise.reject(
+            Object.assign(new Error("LLM down"), {
+              code: "UPSTREAM_UNAVAILABLE",
+            }),
+          );
+        return Promise.resolve({
+          detail: { scoreId: `score-${call}` },
+          duplicate: false,
+        });
+      },
+    };
+    const result = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+      enforceBudget: () => {},
+    });
+    // MAX=5, 4 pending, 2 failed + 2 scored in first pass? Actually we have 4 jobs, all attempted in one batch (limit 5)
+    // 2 failed, 2 succeeded => remaining should be 2 (the failed)
+    expect(result.audit.filter((e) => e.status === "failed")).toHaveLength(2);
+    expect(result.audit.filter((e) => e.status === "scored")).toHaveLength(2);
+    expect(result.remainingJobs).toBe(2);
+  });
+
+  it("re-queues job when a new jobVersion appears (#160)", async () => {
+    seedBaseAndApplication();
+    // Create a single job with v1
+    connection.sqlite
+      .prepare("insert into jobs (id, user_id) values ('job-requeue', ?)")
+      .run(userA.id);
+    connection.sqlite
+      .prepare(
+        "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values ('jv-requeue-v1', ?, 'job-requeue', 1, '{}', 'hash1')",
+      )
+      .run(userA.id);
+    // Also ensure job-a has version
+    seedJobs(0); // ensures job-a version (helper)
+    const scoring = {
+      evaluate: () =>
+        Promise.resolve({
+          detail: { scoreId: "score-requeue" },
+          duplicate: false,
+        }),
+    };
+    // First pass scores v1
+    await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+      enforceBudget: () => {},
+    });
+    // Mark v1 as scored
+    connection.sqlite
+      .prepare(
+        "insert into match_scores (id, user_id, persona_version_id, job_version_id, skill_fit_score, skill_fit_reasons, skill_fit_evidence_refs, culture_value_fit_score, culture_value_fit_reasons, culture_value_fit_evidence_refs, difficulty_gap_score, difficulty_gap_reasons, difficulty_gap_evidence_refs, model, prompt_version) values ('score-requeue-v1', ?, 'persona-base', 'jv-requeue-v1', 50, '[]', '[]', 50, '[]', '[]', 50, '[]', '[]', ?, 'scoring-v1')",
+      )
+      .run(userA.id, process.env.OPENAI_MODEL ?? "unknown-model");
+    // Now add v2 for same job
+    connection.sqlite
+      .prepare(
+        "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values ('jv-requeue-v2', ?, 'job-requeue', 2, '{}', 'hash2')",
+      )
+      .run(userA.id);
+    const second = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+      enforceBudget: () => {},
+    });
+    // Should be pending again because latest is v2 without fresh score
+    expect(second.audit.some((e) => e.jobId === "job-requeue")).toBe(true);
+    expect(second.remainingJobs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("enforces per-call LLM budget (#193)", async () => {
+    seedBaseAndApplication();
+    seedJobs(3); // 1+3=4
+    const scoring = {
+      evaluate: () =>
+        Promise.resolve({ detail: { scoreId: "score-x" }, duplicate: false }),
+    };
+    let budgetCalls = 0;
+    const enforceBudget = () => {
+      budgetCalls += 1;
+      if (budgetCalls > 2)
+        throw Object.assign(new Error("too many"), {
+          code: "RATE_LIMITED",
+          status: 429,
+        });
+    };
+    const result = await service.reEvaluateAll(userA, "persona-base", {
+      scoring,
+      enforceBudget,
+    });
+    // Should have attempted 2 successes then 1 rate-limited failure, leaving 1+? remaining
+    // With 4 pending, 2 successes, 1 rate-limited => remaining = 4-2=2
+    expect(result.audit.filter((e) => e.status === "scored")).toHaveLength(2);
+    expect(
+      result.audit.some(
+        (e) =>
+          e.status === "failed" &&
+          (e as { code: string }).code === "RATE_LIMITED",
+      ),
+    ).toBe(true);
+    expect(result.remainingJobs).toBe(2);
+  });
+
+  it("caps batch to MAX_REEVALUATE_JOBS=5 (#194)", () => {
+    expect(MAX_REEVALUATE_JOBS).toBe(5);
+  });
+});
+
+describe("PersonaUpdateService.approve stale check (#186)", () => {
+  it("rejects stale base approval with 409", () => {
+    const ids = seedBaseAndApplication();
+    const firstSnapshot = proposedSnapshot();
+    const secondSnapshot = proposedSnapshot([
+      {
+        id: "ev-extra",
+        sourceType: "user_input",
+        sourceId: "reflection:second",
+        summary: "second",
+      },
+    ]);
+    // First approval from v1 -> v2
+    const first = service.approve(userA, {
+      basePersonaVersionId: ids.personaVersionId,
+      requestId: "req-first",
+      snapshot: firstSnapshot,
+    });
+    expect(first.version).toBe(2);
+    // Second approval still using old base v1 should be rejected
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: ids.personaVersionId,
+        requestId: "req-second",
+        snapshot: secondSnapshot,
+      }),
+    ).toThrow(expect.objectContaining({ code: "CONFLICT", status: 409 }));
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(2);
+  });
+
+  it("allows idempotent retry with same requestId even if base is now stale", () => {
+    const ids = seedBaseAndApplication();
+    const snapshot = proposedSnapshot();
+    const first = service.approve(userA, {
+      basePersonaVersionId: ids.personaVersionId,
+      requestId: "req-idempotent",
+      snapshot,
+    });
+    expect(first.version).toBe(2);
+    // Create another version via different request to make base stale, but retry same requestId should return existing
+    const other = service.approve(userA, {
+      basePersonaVersionId: first.personaVersionId,
+      requestId: "req-other",
+      snapshot: proposedSnapshot(),
+    });
+    expect(other.version).toBe(3);
+    // Retry first requestId – should return original v2 even though base is stale relative to latest v3
+    const replay = service.approve(userA, {
+      basePersonaVersionId: ids.personaVersionId,
+      requestId: "req-idempotent",
+      snapshot,
+    });
+    expect(replay.personaVersionId).toBe(first.personaVersionId);
+    expect(replay.version).toBe(2);
   });
 });
