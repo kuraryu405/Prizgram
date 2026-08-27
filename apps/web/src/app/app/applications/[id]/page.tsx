@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ApplicationDocumentsSection } from "@/components/application-documents/documents-section";
 import { ApplicationUpdateForm } from "@/components/applications/application-update-form";
 import {
   applicationStatusLabels as statusLabels,
@@ -160,9 +161,7 @@ export default async function ApplicationDetailPage({
 
         <section aria-labelledby="documents-title" className="card">
           <h2 id="documents-title">応募書類 / ES</h2>
-          <div className="workspace-placeholder">
-            <p className="hint-text">応募書類はまだ登録されていません。</p>
-          </div>
+          <ApplicationDocumentsSection applicationId={detail.applicationId} />
         </section>
 
         <section aria-labelledby="interview-title" className="card">
