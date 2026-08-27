@@ -230,30 +230,10 @@ export class JobService {
     const now = options.now ?? (() => new Date());
     const retrievedAt = now().toISOString();
 
-    // Provider provenance identifies the logical job; its content may have
-    // changed since last fetch, so we resolve the logical job id here but
-    // defer duplicate handling until after the posting is structured and its
-    // content hash is known. This allows updated postings to append a new
-    // immutable version instead of being silently treated as duplicates.
     const externalProvenance =
       input.sourceKind === undefined || input.sourceExternalId === undefined
         ? undefined
         : { kind: input.sourceKind, externalId: input.sourceExternalId };
-    let provisionedJobId: string | undefined;
-    if (externalProvenance !== undefined) {
-      const provisioned = this.connection.db
-        .select({ id: jobs.id })
-        .from(jobs)
-        .where(
-          and(
-            eq(jobs.userId, user.id),
-            eq(jobs.sourceKind, externalProvenance.kind),
-            eq(jobs.sourceExternalId, externalProvenance.externalId),
-          ),
-        )
-        .get();
-      provisionedJobId = provisioned?.id;
-    }
 
     const generation = {
       messages: buildJobImportMessages(input),
@@ -278,50 +258,158 @@ export class JobService {
 
     const contentHash = jobContentHash(snapshot);
 
+    // Transaction implements the logical-identity-first design (#153):
+    // 1. Re-resolve provider identity inside the transaction to avoid races
+    // 2. Validate explicit jobId before any hash lookup
+    // 3. Scope contentHash dedupe to the logical job when identity is present
+    // 4. Bind provider identity to an existing manual job when requested
+    // 5. Absorb concurrent provider inserts via unique-violation re-fetch
+    const JOBS_SOURCE_UNIQUE = /jobs_source_external_unique/i;
+    const isJobsSourceUniqueViolation = (error: unknown): boolean => {
+      if (typeof error !== "object" || error === null) return false;
+      const { code, message } = error as { code?: unknown; message?: unknown };
+      return (
+        typeof code === "string" &&
+        code.startsWith("SQLITE_CONSTRAINT") &&
+        typeof message === "string" &&
+        JOBS_SOURCE_UNIQUE.test(message)
+      );
+    };
+
     return this.connection.db.transaction((transaction) => {
-      const existing = transaction
-        .select({ jobId: jobVersions.jobId, id: jobVersions.id })
-        .from(jobVersions)
-        .where(
-          and(
-            eq(jobVersions.userId, user.id),
-            eq(jobVersions.contentHash, contentHash),
-          ),
-        )
-        .get();
-      if (existing !== undefined) {
-        const currentVersion = transaction
-          .select({ version: jobVersions.version })
-          .from(jobVersions)
-          .where(eq(jobVersions.id, existing.id))
+      // Re-resolve provider logical job inside transaction (#153 root cause A)
+      let provisionedJobId: string | undefined;
+      if (externalProvenance !== undefined) {
+        const provisioned = transaction
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(
+            and(
+              eq(jobs.userId, user.id),
+              eq(jobs.sourceKind, externalProvenance.kind),
+              eq(jobs.sourceExternalId, externalProvenance.externalId),
+            ),
+          )
           .get();
-        return {
-          jobId: existing.jobId,
-          jobVersionId: existing.id,
-          version: currentVersion?.version ?? 1,
-          duplicate: true,
-        };
+        provisionedJobId = provisioned?.id;
       }
 
-      // Provider-identified logical job takes precedence: if an existing job
-      // shares the same external identity, updates belong to it regardless of
-      // whether the caller supplied an explicit jobId (unless mismatched).
-      if (provisionedJobId !== undefined) {
-        if (input.jobId !== undefined && input.jobId !== provisionedJobId) {
+      // Explicit jobId ownership/existence must be validated before hash lookup (#153 C/D)
+      if (input.jobId !== undefined) {
+        const owned = transaction
+          .select({ id: jobs.id })
+          .from(jobs)
+          .where(and(eq(jobs.id, input.jobId), eq(jobs.userId, user.id)))
+          .get();
+        if (owned === undefined) {
+          throw new AppError("NOT_FOUND", "Job not found", 404);
+        }
+        // If provider identity exists, it must match the explicit jobId
+        if (
+          provisionedJobId !== undefined &&
+          provisionedJobId !== input.jobId
+        ) {
           throw new AppError(
-            "VALIDATION_ERROR",
-            "jobId does not match the provider's logical job",
-            400,
+            "CONFLICT",
+            "Provider identity is already bound to another job",
+            409,
           );
         }
-        const jobId = provisionedJobId;
+        // If provider provenance + explicit jobId and the job is currently
+        // unbound, bind the provider identity atomically (#153 E)
+        if (
+          externalProvenance !== undefined &&
+          provisionedJobId === undefined
+        ) {
+          // Ensure no other job already holds this provider identity (concurrent)
+          // Already checked: provisionedJobId === undefined means no other job has it
+          const current = transaction
+            .select({
+              sourceKind: jobs.sourceKind,
+              sourceExternalId: jobs.sourceExternalId,
+            })
+            .from(jobs)
+            .where(eq(jobs.id, input.jobId))
+            .get();
+          if (
+            current?.sourceKind === null ||
+            current?.sourceExternalId === null
+          ) {
+            try {
+              transaction
+                .update(jobs)
+                .set({
+                  sourceKind: externalProvenance.kind,
+                  sourceExternalId: externalProvenance.externalId,
+                })
+                .where(eq(jobs.id, input.jobId))
+                .run();
+              provisionedJobId = input.jobId;
+            } catch (error) {
+              if (isJobsSourceUniqueViolation(error)) {
+                throw new AppError(
+                  "CONFLICT",
+                  "Provider identity is already bound to another job",
+                  409,
+                );
+              }
+              throw error;
+            }
+          } else if (
+            current?.sourceKind !== externalProvenance.kind ||
+            current?.sourceExternalId !== externalProvenance.externalId
+          ) {
+            throw new AppError(
+              "CONFLICT",
+              "Job is already bound to a different provider identity",
+              409,
+            );
+          } else {
+            provisionedJobId = input.jobId;
+          }
+        }
+      }
+
+      // Determine target logical job for scoped dedupe
+      const targetJobId = provisionedJobId ?? input.jobId;
+
+      if (targetJobId !== undefined) {
+        // Scoped contentHash check within the logical job (#153 B/C)
+        const existingScoped = transaction
+          .select({ jobId: jobVersions.jobId, id: jobVersions.id })
+          .from(jobVersions)
+          .where(
+            and(
+              eq(jobVersions.userId, user.id),
+              eq(jobVersions.jobId, targetJobId),
+              eq(jobVersions.contentHash, contentHash),
+            ),
+          )
+          .get();
+        if (existingScoped !== undefined) {
+          const currentVersion = transaction
+            .select({ version: jobVersions.version })
+            .from(jobVersions)
+            .where(eq(jobVersions.id, existingScoped.id))
+            .get();
+          return {
+            jobId: existingScoped.jobId,
+            jobVersionId: existingScoped.id,
+            version: currentVersion?.version ?? 1,
+            duplicate: true,
+          };
+        }
+        // Append new version to the existing logical job
         const maxVersion = transaction
           .select({
             value: sql<number>`coalesce(max(${jobVersions.version}), 0)`,
           })
           .from(jobVersions)
           .where(
-            and(eq(jobVersions.userId, user.id), eq(jobVersions.jobId, jobId)),
+            and(
+              eq(jobVersions.userId, user.id),
+              eq(jobVersions.jobId, targetJobId),
+            ),
           )
           .get();
         const nextVersion = Number(maxVersion?.value ?? 0) + 1;
@@ -331,7 +419,7 @@ export class JobService {
           .values({
             id: jobVersionId,
             userId: user.id,
-            jobId,
+            jobId: targetJobId,
             version: nextVersion,
             snapshot,
             contentHash,
@@ -339,65 +427,164 @@ export class JobService {
             promptVersion: JOB_IMPORT_PROMPT_VERSION,
           })
           .run();
-        return { jobId, jobVersionId, version: nextVersion, duplicate: false };
+        return {
+          jobId: targetJobId,
+          jobVersionId,
+          version: nextVersion,
+          duplicate: false,
+        };
       }
 
-      const targetJobId = input.jobId;
-      let jobId: string;
-      let nextVersion: number;
-      if (targetJobId === undefined) {
-        jobId = randomUUID();
-        nextVersion = 1;
+      // No logical identity: manual import
+      if (externalProvenance === undefined) {
+        // User-wide dedupe is only for manual, identity-free imports (#153)
+        const existing = transaction
+          .select({ jobId: jobVersions.jobId, id: jobVersions.id })
+          .from(jobVersions)
+          .where(
+            and(
+              eq(jobVersions.userId, user.id),
+              eq(jobVersions.contentHash, contentHash),
+            ),
+          )
+          .get();
+        if (existing !== undefined) {
+          const currentVersion = transaction
+            .select({ version: jobVersions.version })
+            .from(jobVersions)
+            .where(eq(jobVersions.id, existing.id))
+            .get();
+          return {
+            jobId: existing.jobId,
+            jobVersionId: existing.id,
+            version: currentVersion?.version ?? 1,
+            duplicate: true,
+          };
+        }
+        // Create new manual job
+        const jobId = randomUUID();
+        transaction.insert(jobs).values({ id: jobId, userId: user.id }).run();
+        const jobVersionId = randomUUID();
+        transaction
+          .insert(jobVersions)
+          .values({
+            id: jobVersionId,
+            userId: user.id,
+            jobId,
+            version: 1,
+            snapshot,
+            contentHash,
+            ...(model === null ? {} : { model }),
+            promptVersion: JOB_IMPORT_PROMPT_VERSION,
+          })
+          .run();
+        return { jobId, jobVersionId, version: 1, duplicate: false };
+      }
+
+      // Provider provenance without existing job nor explicit jobId: create new
+      // Handle concurrent creation via unique violation re-fetch (#153 A)
+      try {
+        const jobId = randomUUID();
         transaction
           .insert(jobs)
           .values({
             id: jobId,
             userId: user.id,
-            ...(externalProvenance === undefined
-              ? {}
-              : {
-                  sourceKind: externalProvenance.kind,
-                  sourceExternalId: externalProvenance.externalId,
-                }),
+            sourceKind: externalProvenance.kind,
+            sourceExternalId: externalProvenance.externalId,
           })
           .run();
-      } else {
-        const ownedJob = transaction
-          .select({ id: jobs.id })
-          .from(jobs)
-          .where(and(eq(jobs.id, targetJobId), eq(jobs.userId, user.id)))
-          .get();
-        if (ownedJob === undefined) {
-          throw new AppError("NOT_FOUND", "Job not found", 404);
-        }
-        jobId = targetJobId;
-        const maxVersion = transaction
-          .select({
-            value: sql<number>`coalesce(max(${jobVersions.version}), 0)`,
+        const jobVersionId = randomUUID();
+        transaction
+          .insert(jobVersions)
+          .values({
+            id: jobVersionId,
+            userId: user.id,
+            jobId,
+            version: 1,
+            snapshot,
+            contentHash,
+            ...(model === null ? {} : { model }),
+            promptVersion: JOB_IMPORT_PROMPT_VERSION,
           })
-          .from(jobVersions)
-          .where(
-            and(eq(jobVersions.userId, user.id), eq(jobVersions.jobId, jobId)),
-          )
-          .get();
-        nextVersion = Number(maxVersion?.value ?? 0) + 1;
+          .run();
+        return { jobId, jobVersionId, version: 1, duplicate: false };
+      } catch (error) {
+        if (isJobsSourceUniqueViolation(error)) {
+          // Winner inserted first – re-resolve and append as scoped (or dedupe)
+          const winner = transaction
+            .select({ id: jobs.id })
+            .from(jobs)
+            .where(
+              and(
+                eq(jobs.userId, user.id),
+                eq(jobs.sourceKind, externalProvenance.kind),
+                eq(jobs.sourceExternalId, externalProvenance.externalId),
+              ),
+            )
+            .get();
+          if (winner === undefined) throw error;
+          // Check scoped dedupe before appending
+          const existingScoped = transaction
+            .select({ jobId: jobVersions.jobId, id: jobVersions.id })
+            .from(jobVersions)
+            .where(
+              and(
+                eq(jobVersions.userId, user.id),
+                eq(jobVersions.jobId, winner.id),
+                eq(jobVersions.contentHash, contentHash),
+              ),
+            )
+            .get();
+          if (existingScoped !== undefined) {
+            const currentVersion = transaction
+              .select({ version: jobVersions.version })
+              .from(jobVersions)
+              .where(eq(jobVersions.id, existingScoped.id))
+              .get();
+            return {
+              jobId: existingScoped.jobId,
+              jobVersionId: existingScoped.id,
+              version: currentVersion?.version ?? 1,
+              duplicate: true,
+            };
+          }
+          const maxVersion = transaction
+            .select({
+              value: sql<number>`coalesce(max(${jobVersions.version}), 0)`,
+            })
+            .from(jobVersions)
+            .where(
+              and(
+                eq(jobVersions.userId, user.id),
+                eq(jobVersions.jobId, winner.id),
+              ),
+            )
+            .get();
+          const nextVersion = Number(maxVersion?.value ?? 0) + 1;
+          const jobVersionId = randomUUID();
+          transaction
+            .insert(jobVersions)
+            .values({
+              id: jobVersionId,
+              userId: user.id,
+              jobId: winner.id,
+              version: nextVersion,
+              snapshot,
+              contentHash,
+              ...(model === null ? {} : { model }),
+              promptVersion: JOB_IMPORT_PROMPT_VERSION,
+            })
+            .run();
+          return {
+            jobId: winner.id,
+            jobVersionId,
+            version: nextVersion,
+            duplicate: false,
+          };
+        }
+        throw error;
       }
-
-      const jobVersionId = randomUUID();
-      transaction
-        .insert(jobVersions)
-        .values({
-          id: jobVersionId,
-          userId: user.id,
-          jobId,
-          version: nextVersion,
-          snapshot,
-          contentHash,
-          ...(model === null ? {} : { model }),
-          promptVersion: JOB_IMPORT_PROMPT_VERSION,
-        })
-        .run();
-      return { jobId, jobVersionId, version: nextVersion, duplicate: false };
     });
   }
 

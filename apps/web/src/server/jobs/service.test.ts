@@ -488,3 +488,202 @@ describe("JobService.importJob with provider provenance", () => {
     );
   });
 });
+
+describe("JobService.importJob logical identity (#153)", () => {
+  it("does not absorb provider import into a different job via user-wide hash", async () => {
+    const service = new JobService(connection);
+    // Create Job A with manual content hash H
+    const jobA = await service.importJob(
+      userA,
+      { body: postingText() },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    // Create Job B via provider
+    const externalB = {
+      sourceName: "Careerjet",
+      sourceKind: "licensed_source" as const,
+      sourceExternalId: "external-B",
+      sourceUrl: "https://example.test/b",
+    };
+    const jobB = await service.importJob(
+      userA,
+      {
+        body: postingText("B用の別本文を追加して内容を変える\n"),
+        ...externalB,
+      },
+      {
+        client: clientReturning({
+          ...validProviderPayload,
+          company: "株式会社B",
+        }),
+        model: "test-model",
+      },
+    );
+    // Re-import B's provider with content identical to A (same hash) but provider identity is B
+    // It should create a new version for B, not return A as duplicate
+    const secondB = await service.importJob(
+      userA,
+      { body: postingText(), ...externalB },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    // Because provider identity is B, hash match should be scoped to B, not user-wide A
+    // First import of B had different hash (B company), second has A hash, so not duplicate to B's first version
+    // It should be new version for B, not duplicate of A
+    expect(secondB.jobId).toBe(jobB.jobId);
+    expect(secondB.duplicate).toBe(false);
+    expect(secondB.jobId).not.toBe(jobA.jobId);
+  });
+
+  it("validates explicit jobId before hash lookup and rejects foreign id even if hash exists elsewhere", async () => {
+    const service = new JobService(connection);
+    const jobA = await service.importJob(
+      userA,
+      { body: postingText() },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    // Create a job for userB to get a foreignId
+    const foreign = await service.importJob(
+      userB,
+      { body: postingText("別ユーザの求人\n") },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    await expect(
+      errorCode(
+        service.importJob(
+          userA,
+          { body: postingText(), jobId: foreign.jobId },
+          {
+            client: clientReturning(validProviderPayload),
+            model: "test-model",
+          },
+        ),
+      ),
+    ).resolves.toBe("NOT_FOUND");
+    // Explicit jobId that is owned but hash matches another job's hash should not absorb
+    const jobB = await service.importJob(
+      userA,
+      { body: postingText("B本文\n"), jobId: jobA.jobId },
+      {
+        client: clientReturning({
+          ...validProviderPayload,
+          requirements: [{ text: "別の要件" }],
+          difficultyEvidence: [{ section: "requirements" as const, index: 0 }],
+        }),
+        model: "test-model",
+      },
+    );
+    expect(jobB.jobId).toBe(jobA.jobId);
+    // Now try to import same hash as jobA into a new manual job via different jobId should not be absorbed
+    // Create jobC manual
+    const jobC = await service.importJob(
+      userA,
+      { body: postingText("C本文で全く別\n") },
+      {
+        client: clientReturning({
+          ...validProviderPayload,
+          company: "株式会社C",
+        }),
+        model: "test-model",
+      },
+    );
+    // Try to add same hash as jobA into jobC via explicit jobId – should be scoped to C, not return A
+    const intoC = await service.importJob(
+      userA,
+      { body: postingText(), jobId: jobC.jobId },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    expect(intoC.jobId).toBe(jobC.jobId);
+  });
+
+  it("binds provider identity to an existing manual job when explicit jobId is used (#153 E)", async () => {
+    const service = new JobService(connection);
+    const manual = await service.importJob(
+      userA,
+      { body: postingText() },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    // Verify manual job has no provider identity
+    const rowBefore = connection.sqlite
+      .prepare("select source_kind from jobs where id = ?")
+      .get(manual.jobId) as { source_kind: string | null };
+    expect(rowBefore.source_kind).toBeNull();
+    // Re-import same provider content with explicit jobId
+    const external = {
+      sourceKind: "licensed_source" as const,
+      sourceExternalId: "external-bind",
+      sourceName: "Careerjet",
+      sourceUrl: "https://example.test/bind",
+    };
+    const bound = await service.importJob(
+      userA,
+      { body: postingText("更新内容\n"), jobId: manual.jobId, ...external },
+      {
+        client: clientReturning({
+          ...validProviderPayload,
+          requirements: [{ text: "更新された要件" }],
+          difficultyEvidence: [{ section: "requirements" as const, index: 0 }],
+        }),
+        model: "test-model",
+      },
+    );
+    expect(bound.jobId).toBe(manual.jobId);
+    const rowAfter = connection.sqlite
+      .prepare("select source_kind, source_external_id from jobs where id = ?")
+      .get(manual.jobId) as { source_kind: string; source_external_id: string };
+    expect(rowAfter.source_kind).toBe("licensed_source");
+    expect(rowAfter.source_external_id).toBe("external-bind");
+    // Subsequent provider-only import without jobId should resolve to same job
+    const viaProvider = await service.importJob(
+      userA,
+      { body: postingText("さらに更新\n"), ...external },
+      {
+        client: clientReturning({
+          ...validProviderPayload,
+          company: "更新後会社",
+        }),
+        model: "test-model",
+      },
+    );
+    expect(viaProvider.jobId).toBe(manual.jobId);
+  });
+
+  it("rejects silent merge when provider identity is already bound to another job", async () => {
+    const service = new JobService(connection);
+    await service.importJob(
+      userA,
+      {
+        body: postingText(),
+        sourceKind: "licensed_source",
+        sourceExternalId: "dup-external",
+        sourceName: "Careerjet",
+      },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+    const manual2 = await service.importJob(
+      userA,
+      { body: postingText("別求人\n") },
+      {
+        client: clientReturning({ ...validProviderPayload, company: "別会社" }),
+        model: "test-model",
+      },
+    );
+    await expect(
+      errorCode(
+        service.importJob(
+          userA,
+          {
+            body: postingText(),
+            jobId: manual2.jobId,
+            sourceKind: "licensed_source",
+            sourceExternalId: "dup-external",
+            sourceName: "Careerjet",
+          },
+          {
+            client: clientReturning(validProviderPayload),
+            model: "test-model",
+          },
+        ),
+      ),
+    ).resolves.toBe("CONFLICT");
+  });
+});
