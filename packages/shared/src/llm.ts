@@ -107,27 +107,48 @@ export const personaStructuredOutput: StructuredOutputContract<
   normalize: normalizePersona,
 };
 
-const providerScoreDimensionSchema = z
-  .object({
-    score: z.number().int().min(0).max(100),
-    reasons: z.array(providerString).min(1).max(20),
-    evidenceRefs: z.array(providerId).min(1).max(100),
-  })
-  .strict();
+function createProviderScoreDimensionSchema(
+  evidenceRefSchema: z.ZodType<string>,
+) {
+  return z
+    .object({
+      score: z.number().int().min(0).max(100),
+      reasons: z.array(providerString).min(1).max(20),
+      evidenceRefs: z.array(evidenceRefSchema).min(1).max(100),
+    })
+    .strict();
+}
 
-export const scoringProviderOutputSchema = z
-  .object({
-    skillFit: providerScoreDimensionSchema,
-    cultureValueFit: providerScoreDimensionSchema,
-    difficultyGap: providerScoreDimensionSchema,
-  })
-  .strict();
+function createScoringProviderOutputSchema(
+  evidenceRefSchema: z.ZodType<string>,
+) {
+  const scoreDimensionSchema =
+    createProviderScoreDimensionSchema(evidenceRefSchema);
+  return z
+    .object({
+      skillFit: scoreDimensionSchema,
+      cultureValueFit: scoreDimensionSchema,
+      difficultyGap: scoreDimensionSchema,
+    })
+    .strict();
+}
+
+export const scoringProviderOutputSchema =
+  createScoringProviderOutputSchema(providerId);
 
 export function createScoringStructuredOutput(
   allowedEvidenceRefs: ReadonlySet<string>,
 ): StructuredOutputContract<ScoringOutput, ScoringOutput> {
+  const allowedRefValues = [...allowedEvidenceRefs];
+  const providerSchema =
+    allowedRefValues.length === 0
+      ? scoringProviderOutputSchema
+      : createScoringProviderOutputSchema(
+          z.enum(allowedRefValues as [string, ...string[]]),
+        );
+
   return {
-    providerSchema: scoringProviderOutputSchema,
+    providerSchema,
     domainSchema: createScoringLlmOutputSchema(allowedEvidenceRefs),
     normalize: (value) => value,
   };
