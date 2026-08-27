@@ -197,6 +197,7 @@ function clientReturning(payload: unknown): {
 
 let temporaryDirectory: string;
 let connection: DatabaseConnection;
+let originalModel: string | undefined;
 
 beforeEach(() => {
   temporaryDirectory = fs.mkdtempSync(
@@ -204,11 +205,15 @@ beforeEach(() => {
   );
   connection = createDatabase(path.join(temporaryDirectory, "scoring.sqlite"));
   migrateDatabase(connection, migrationsFolder);
+  originalModel = process.env.OPENAI_MODEL;
+  process.env.OPENAI_MODEL = "test-model";
 });
 
 afterEach(() => {
   connection.close();
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  if (originalModel === undefined) delete process.env.OPENAI_MODEL;
+  else process.env.OPENAI_MODEL = originalModel;
 });
 
 describe("ScoringService.evaluateJob", () => {
@@ -506,6 +511,56 @@ describe("ScoringService freshness (#129)", () => {
     expect(service.getCurrentScores(userA.id, ["job-1", "job-2"]).size).toBe(0);
     // Historical still returns old
     expect(service.getLatestScores(userA.id, ["job-1", "job-2"]).size).toBe(2);
+  });
+
+  it("treats a score with old model as stale (#152)", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeDefined();
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("fresh");
+    // Simulate model rotation
+    process.env.OPENAI_MODEL = "new-model";
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeUndefined();
+    expect(service.getCurrentScores(userA.id, ["job-1"]).size).toBe(0);
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("stale");
+    expect(service.describeFreshness(userA.id, "job-1").detail).toBeDefined();
+    // history still returns old score
+    expect(service.getLatestScore(userA.id, "job-1")).toBeDefined();
+    expect(service.getLatestScores(userA.id, ["job-1"]).size).toBe(1);
+    // Re-evaluating with new model restores freshness
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "new-model",
+    });
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeDefined();
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("fresh");
+  });
+
+  it("treats a score with old promptVersion as stale (#152)", async () => {
+    const service = new ScoringService(connection);
+    insertPersonaVersion(userA.id, 1);
+    insertJobVersion(userA.id, "job-1", 1);
+    await service.evaluateJob(userA.id, "job-1", {
+      client: clientReturning(scoringPayload()).client,
+      model: "test-model",
+    });
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeDefined();
+    // Directly corrupt promptVersion to simulate old scoring logic
+    connection.sqlite
+      .prepare("update match_scores set prompt_version = ? where user_id = ?")
+      .run("scoring-v0", userA.id);
+    expect(service.getCurrentScore(userA.id, "job-1")).toBeUndefined();
+    expect(service.getCurrentScores(userA.id, ["job-1"]).size).toBe(0);
+    expect(service.describeFreshness(userA.id, "job-1").status).toBe("stale");
+    expect(service.getLatestScore(userA.id, "job-1")).toBeDefined();
+    expect(service.listScores(userA.id, "job-1")[0]?.promptVersion).toBe(
+      "scoring-v0",
+    );
   });
 });
 
