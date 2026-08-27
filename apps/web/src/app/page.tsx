@@ -18,7 +18,6 @@ import {
   ProblemSection,
   ProductPreviewSection,
 } from "@/components/landing-v2/landing-sections";
-import "@/components/landing-v2/landing.css";
 
 export default async function Home() {
   const token = (await cookies()).get(sessionCookieName())?.value;

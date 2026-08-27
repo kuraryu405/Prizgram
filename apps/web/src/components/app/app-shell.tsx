@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import { ToastProvider } from "@/components/ui/toast";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -7,7 +9,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { describeApiError } from "@/lib/error-messages";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { ToastProvider } from "@/components/ui/toast";
 
 function HomeIcon() {
   return (
@@ -239,9 +240,20 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           本文へスキップ
         </a>
         <div className="app-layout">
-          <header className="app-header">
-            <Link aria-label="PRIZGRAM" className="app-brand" href="/app">
-              PRIZGRAM
+          <header className="app-header lp-nav is-scrolled">
+            <Link
+              aria-label="Prizgram ホーム"
+              className="app-brand lp-nav-left"
+              href="/app"
+            >
+              <Image
+                src="/brand/prizgram-horizontal.svg"
+                alt=""
+                width={2103}
+                height={748}
+                className="app-brand-logo lp-nav-logo"
+                priority
+              />
             </Link>
             <nav aria-label="メインナビゲーション" className="app-nav">
               <ul>

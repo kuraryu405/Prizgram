@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { RegisterForm } from "@/components/auth/register-form";
+import { PublicHeader } from "@/components/landing-v2/public-header";
 import { AuthService, sessionCookieName } from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
@@ -16,14 +17,17 @@ export default async function RegisterPage() {
   }
 
   return (
-    <main className="auth-page">
-      <section aria-labelledby="register-title" className="card auth-card">
-        <h1 id="register-title">新規登録</h1>
-        <RegisterForm />
-        <p className="auth-switch">
-          既にアカウントをお持ちの方は <Link href="/login">ログイン</Link>へ
-        </p>
-      </section>
-    </main>
+    <>
+      <PublicHeader actionHref="/login" actionLabel="ログイン" />
+      <main className="auth-page">
+        <section aria-labelledby="register-title" className="card auth-card">
+          <h1 id="register-title">新規登録</h1>
+          <RegisterForm />
+          <p className="auth-switch">
+            既にアカウントをお持ちの方は <Link href="/login">ログイン</Link>へ
+          </p>
+        </section>
+      </main>
+    </>
   );
 }

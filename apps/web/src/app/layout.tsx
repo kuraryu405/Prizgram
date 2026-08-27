@@ -5,6 +5,7 @@ import { AuthProvider } from "@/components/auth/auth-provider";
 
 import "./styles.css";
 import "./app-shell-responsive.css";
+import "@/components/landing-v2/landing.css";
 
 export const metadata: Metadata = {
   title: "Prizgram",
