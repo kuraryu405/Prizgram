@@ -1,0 +1,9 @@
+@media (max-width: 899px) {
+  .app-account-copy {
+    display: none;
+  }
+
+  .app-account-trigger {
+    padding-inline: 0.25rem;
+  }
+}
