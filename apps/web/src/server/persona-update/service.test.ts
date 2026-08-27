@@ -128,7 +128,7 @@ describe("PersonaUpdateService", () => {
       {
         id: "ev-reflection",
         sourceType: "user_input",
-        sourceId: "reflection:abc123",
+        sourceId: "reflection:req-update-1",
         summary: "ユーザーの振り返りメモ",
       },
     ]);
@@ -409,6 +409,42 @@ describe("PersonaUpdateService", () => {
       }),
     ).toThrow(AppError);
   });
+
+  it("rejects arbitrary reflection:* that does not match requestId (#166)", () => {
+    const ids = seedBaseAndApplication();
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: ids.personaVersionId,
+        requestId: "req-fixed-123",
+        snapshot: proposedSnapshot([
+          {
+            id: "ev-bad-reflection",
+            sourceType: "user_input",
+            sourceId: "reflection:arbitrary-value",
+            summary: "任意のreflection idを偽装",
+          },
+        ]),
+      }),
+    ).toThrow(AppError);
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
+
+  it("allows only reflection:<requestId> as new user_input source (#166)", () => {
+    const ids = seedBaseAndApplication();
+    const good = service.approve(userA, {
+      basePersonaVersionId: ids.personaVersionId,
+      requestId: "req-allowed-123",
+      snapshot: proposedSnapshot([
+        {
+          id: "ev-good-reflection",
+          sourceType: "user_input",
+          sourceId: "reflection:req-allowed-123",
+          summary: "正しいreflection id",
+        },
+      ]),
+    });
+    expect(good.version).toBe(2);
+  });
 });
 
 describe("PersonaUpdateService.propose error contract", () => {
@@ -424,6 +460,7 @@ describe("PersonaUpdateService.propose error contract", () => {
         {
           personaVersionId: ids.personaVersionId,
           reflection: "面接でデータ基盤への興味を評価された。",
+          requestId: "req-propose-1",
         },
         { client: failingClient },
       ),
@@ -445,6 +482,7 @@ describe("PersonaUpdateService.propose error contract", () => {
         {
           personaVersionId: ids.personaVersionId,
           reflection: "面接でデータ基盤への興味を評価された。",
+          requestId: "req-propose-2",
         },
         { client: failingClient },
       ),
@@ -468,8 +506,44 @@ describe("PersonaUpdateService.propose error contract", () => {
         {
           personaVersionId: ids.personaVersionId,
           reflection: "振り返りメモ",
+          requestId: "req-propose-3",
         },
         { client: droppedClient },
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
+
+  it("rejects propose when LLM returns wrong reflection:* sourceId (#166)", async () => {
+    const ids = seedBaseAndApplication();
+    const badClient = {
+      generateStructured: () =>
+        Promise.resolve(
+          personaSnapshotSchema.parse({
+            ...baseSnapshot(),
+            strengths: ["データ基盤への興味が明確化"],
+            evidence: [
+              ...baseSnapshot().evidence,
+              {
+                id: "ev-bad",
+                sourceType: "user_input" as const,
+                sourceId: "reflection:wrong-id-123",
+                summary: "LLMが誤ったreflection idを使用",
+              },
+            ],
+            confidence: 0.8,
+          }),
+        ),
+    } as unknown as StructuredLlmClient;
+    await expect(
+      service.propose(
+        userA,
+        {
+          personaVersionId: ids.personaVersionId,
+          reflection: "振り返りメモ",
+          requestId: "req-propose-allowed-123",
+        },
+        { client: badClient },
       ),
     ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
     expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
@@ -743,7 +817,7 @@ describe("PersonaUpdateService.approve stale check (#186)", () => {
       {
         id: "ev-extra",
         sourceType: "user_input",
-        sourceId: "reflection:second",
+        sourceId: "reflection:req-second",
         summary: "second",
       },
     ]);

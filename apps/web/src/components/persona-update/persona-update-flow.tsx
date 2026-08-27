@@ -60,6 +60,7 @@ export function PersonaUpdateFlow({
             ? { applicationId: capturedApplicationId }
             : {}),
           reflection: reflection.trim(),
+          requestId,
         }),
       );
       setProposed({
