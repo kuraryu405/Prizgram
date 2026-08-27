@@ -25,6 +25,7 @@ const TERMINAL_APPLICATION_STATUSES = new Set([
   "accepted",
   "rejected",
   "withdrawn",
+  "cancelled",
 ]);
 
 const priorityRank: Record<ReminderPriority, number> = {
@@ -191,6 +192,7 @@ export class ReminderService {
             "accepted",
             "rejected",
             "withdrawn",
+            "cancelled",
           ]),
         ),
       )
@@ -245,10 +247,9 @@ export class ReminderService {
       const existing = activeByDeadline.get(row.id) ?? [];
 
       if (desired === null) {
-        // Too far away: dismiss any active reminders that would otherwise
-        // linger from a previous closer window.
+        // Too far away: delete system-stale reminders so they don't block regeneration (#174)
         if (existing.length > 0) {
-          this.dismissMany(
+          this.deleteMany(
             row.userId,
             existing.map((r) => r.id),
           );
@@ -267,14 +268,12 @@ export class ReminderService {
         title: row.title,
       });
 
-      // Dismiss any active reminder whose dedupe does not match the current
-      // desired state: that includes superseded buckets (e.g. 7d while 3d is
-      // now desired), overdue transitions, and stale dueAt/timezone/title.
+      // Delete system-stale reminder whose dedupe does not match the current desired state (#174)
       const staleIds = existing
         .filter((r) => r.dedupeKey !== expectedKey)
         .map((r) => r.id);
       if (staleIds.length > 0) {
-        this.dismissMany(row.userId, staleIds);
+        this.deleteMany(row.userId, staleIds);
       }
 
       const hasExpected = existing.some((r) => r.dedupeKey === expectedKey);
@@ -310,16 +309,14 @@ export class ReminderService {
   }
 
   /**
-   * Lists active (pending + sent) reminders ordered by urgency. This is a
-   * pure read: it never flips `pending` to `sent` (#171). Stale reminders
-   * (completed/deleted/terminal/rescheduled) are still dismissed.
+   * Lists active (pending + sent) reminders ordered by urgency. Pure read
+   * (#171): it never flips pending to sent. Stale system reminders are
+   * deleted (not dismissed) so they don't block regeneration (#174).
    *
    * Reminders whose deadline has since been completed, moved to a terminal
    * application status, been deleted, rescheduled/renamed, changed timezone,
    * or whose bucket is no longer the single most-urgent applicable bucket
-   * are transitioned to `dismissed` and excluded: nothing else ever moves a
-   * reminder out of the active set, so without this sweep they would
-   * accumulate forever or display stale times/titles.
+   * are deleted and excluded.
    */
   listActive(userId: string, now: Date = new Date()): ReminderRow[] {
     const rows = this.db
@@ -335,7 +332,8 @@ export class ReminderService {
 
     const staleIds = this.staleReminderIds(userId, rows, now);
     if (staleIds.length > 0) {
-      this.dismissMany(userId, staleIds);
+      // System stale must not be treated as user dismiss (#174) – delete so dedupe can be regenerated
+      this.deleteMany(userId, staleIds);
     }
 
     const staleIdSet = new Set(staleIds);
@@ -479,6 +477,16 @@ export class ReminderService {
         dismissedAt: new Date(),
         updatedAt: new Date(),
       })
+      .where(
+        and(eq(reminders.userId, userId), inArray(reminders.id, reminderIds)),
+      )
+      .run();
+    return result.changes;
+  }
+
+  private deleteMany(userId: string, reminderIds: string[]): number {
+    const result = this.db
+      .delete(reminders)
       .where(
         and(eq(reminders.userId, userId), inArray(reminders.id, reminderIds)),
       )
