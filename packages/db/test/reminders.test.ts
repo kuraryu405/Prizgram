@@ -316,7 +316,7 @@ describe("ReminderService.listActive stale sweep", () => {
     }
   });
 
-  it("keeps active reminders for open deadlines untouched as sent", () => {
+  it("keeps active reminders for open deadlines pending when only read", () => {
     seedApplication("app-a", "interview");
     const now = new Date("2026-08-26T00:00:00Z");
     seedDeadline("dl-live", "app-a", now.getTime() + 12 * HOUR_MS);
@@ -325,7 +325,26 @@ describe("ReminderService.listActive stale sweep", () => {
     const active = service.listActive(userA, now);
     expect(active).toHaveLength(1);
     for (const row of storedReminderStatuses()) {
-      expect(["sent", "pending"]).toContain(row.status);
+      expect(row.status).toBe("pending");
     }
+  });
+
+  it("does not mark reminders outside the displayed page as sent", () => {
+    seedApplication("app-a", "interview");
+    const now = new Date("2026-08-26T00:00:00Z");
+    seedDeadline("dl-one", "app-a", now.getTime() + 12 * HOUR_MS);
+    service.generateDueReminders({ now });
+
+    const reminder = connection.sqlite
+      .prepare("select id, status from reminders limit 1")
+      .get() as { id: string; status: string };
+    expect(reminder.status).toBe("pending");
+
+    service.listActive(userA, now);
+
+    const after = connection.sqlite
+      .prepare("select status from reminders where id = ?")
+      .get(reminder.id) as { status: string };
+    expect(after.status).toBe("pending");
   });
 });
