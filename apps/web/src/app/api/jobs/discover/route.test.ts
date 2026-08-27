@@ -3,13 +3,19 @@ import { z } from "zod";
 
 const mocks = vi.hoisted(() => ({
   enforce: vi.fn<(userId: string) => void>(),
-  discover: vi.fn(() =>
-    Promise.resolve({
-      query: { keywords: "k" },
-      promptVersion: "test",
-      hits: 0,
-      jobs: [],
-    }),
+  discover: vi.fn(
+    (
+      _user: unknown,
+      _input: unknown,
+      _context: unknown,
+      _options?: { onLlmUse?: () => void },
+    ) =>
+      Promise.resolve({
+        query: { keywords: "k" },
+        promptVersion: "test",
+        hits: 0,
+        jobs: [],
+      }),
   ),
   requireUser: vi.fn(() => ({ id: "user-1", loginId: "route.user" })),
 }));
@@ -70,9 +76,7 @@ describe("POST /api/jobs/discover", () => {
       expect.objectContaining({ onLlmUse: expect.any(Function) }),
     );
 
-    const options = mocks.discover.mock.calls[0]?.[3] as
-      | { onLlmUse?: () => void }
-      | undefined;
+    const options = mocks.discover.mock.calls[0]?.[3];
     options?.onLlmUse?.();
     options?.onLlmUse?.();
     expect(mocks.enforce).toHaveBeenCalledTimes(1);
