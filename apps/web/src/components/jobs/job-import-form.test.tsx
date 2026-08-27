@@ -51,7 +51,7 @@ describe("JobImportForm", () => {
     expect(companyInput.getAttribute("maxlength")).toBe("200");
 
     await user.type(companyInput, "x".repeat(201));
-    expect(companyInput.value).toHaveLength(200);
+    expect(companyInput).toHaveProperty("value", "x".repeat(200));
 
     await user.click(screen.getByRole("button", { name: "求人票を取り込む" }));
     await waitFor(() => expect(navigationMocks.refresh).toHaveBeenCalledOnce());
