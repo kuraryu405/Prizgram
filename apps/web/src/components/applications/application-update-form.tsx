@@ -16,7 +16,17 @@ export type ApplicationUpdateFormProps = Readonly<{
   initialNote?: string;
 }>;
 
-export function ApplicationUpdateForm({
+export function ApplicationUpdateForm(props: ApplicationUpdateFormProps) {
+  const stateKey = JSON.stringify([
+    props.applicationId,
+    props.initialStageLabel ?? "",
+    props.initialNextAction ?? "",
+    props.initialNote ?? "",
+  ]);
+  return <ApplicationUpdateFormState key={stateKey} {...props} />;
+}
+
+function ApplicationUpdateFormState({
   applicationId,
   currentStatus,
   allowedNextStatuses,
