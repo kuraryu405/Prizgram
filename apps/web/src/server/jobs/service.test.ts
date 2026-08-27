@@ -335,6 +335,26 @@ describe("JobService.importJob", () => {
       ),
     ).resolves.toBe("NOT_FOUND");
   });
+
+  it("archives and restores only an owned job without deleting its versions", async () => {
+    const service = new JobService(connection);
+    const imported = await service.importJob(
+      userA,
+      { body: postingText() },
+      { client: clientReturning(validProviderPayload), model: "test-model" },
+    );
+
+    const archived = service.setArchived(userA.id, imported.jobId, true);
+    expect(archived.archivedAt).toBeDefined();
+    expect(service.listJobs(userA.id)).toHaveLength(0);
+    expect(service.listJobs(userA.id, { archived: true })).toHaveLength(1);
+    expect(archived.versions).toHaveLength(1);
+    expect(() => service.setArchived(userB.id, imported.jobId, true)).toThrow();
+
+    const restored = service.setArchived(userA.id, imported.jobId, false);
+    expect(restored.archivedAt).toBeUndefined();
+    expect(service.listJobs(userA.id)).toHaveLength(1);
+  });
 });
 
 describe("JobService.importJob with provider provenance", () => {

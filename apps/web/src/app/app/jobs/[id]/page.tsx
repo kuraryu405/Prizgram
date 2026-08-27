@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ScoreEvaluateButton } from "@/components/scoring/score-panel";
+import { JobArchiveButton } from "@/components/jobs/job-archive-button";
 import { decodeJsonColumn, personaSnapshotSchema } from "@prizgram/shared";
 
 import { AppError } from "@/server/api";
@@ -131,6 +132,10 @@ export default async function JobDetailPage({
         {employmentTypeLabels[snapshot.employmentType] ??
           snapshot.employmentType}
       </p>
+      <JobArchiveButton
+        jobId={detail.jobId}
+        archived={detail.archivedAt !== undefined}
+      />
 
       <section aria-labelledby="job-description" className="card">
         <h2 id="job-description">本文</h2>
@@ -291,10 +296,16 @@ export default async function JobDetailPage({
             </ul>
           </details>
         )}
-        <ScoreEvaluateButton
-          jobId={detail.jobId}
-          evidenceTextById={Object.fromEntries(evidenceTextById)}
-        />
+        {detail.archivedAt === undefined ? (
+          <ScoreEvaluateButton
+            jobId={detail.jobId}
+            evidenceTextById={Object.fromEntries(evidenceTextById)}
+          />
+        ) : (
+          <p className="hint-text">
+            アーカイブ済みの求人は評価できません。復元してから評価してください。
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="job-versions" className="card">

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -70,6 +70,7 @@ export type JobListItem = Readonly<{
   sourceName: string;
   sourceUrl?: string;
   importedAt: string;
+  archivedAt?: string;
 }>;
 
 export type JobVersionMeta = Readonly<{
@@ -83,6 +84,7 @@ export type JobVersionMeta = Readonly<{
 export type JobDetail = Readonly<{
   jobId: string;
   createdAt: string;
+  archivedAt?: string;
   versions: readonly JobVersionMeta[];
   latest: JobVersionMeta & { snapshot: JobSnapshot };
 }>;
@@ -378,21 +380,25 @@ export class JobService {
     });
   }
 
-  listJobs(userId: string): JobListItem[] {
+  listJobs(
+    userId: string,
+    options: { archived?: boolean } = {},
+  ): JobListItem[] {
     const rows = this.connection.sqlite
       .prepare(
         `select j.id as job_id,
                 j.created_at as job_created_at,
                 lv.version as version,
                 lv.snapshot as snapshot,
-                lv.created_at as version_created_at
+                lv.created_at as version_created_at,
+                j.archived_at as archived_at
          from jobs j
          join job_versions lv
            on lv.job_id = j.id
           and lv.version = (
                 select max(v.version) from job_versions v where v.job_id = j.id
               )
-         where j.user_id = ?
+         where j.user_id = ? and j.archived_at is ${options.archived === true ? "not null" : "null"}
          order by j.created_at desc, j.id asc`,
       )
       .all(userId) as Array<{
@@ -401,6 +407,7 @@ export class JobService {
       version: number;
       snapshot: string;
       version_created_at: number;
+      archived_at: number | null;
     }>;
 
     return rows.map((row) => {
@@ -421,13 +428,20 @@ export class JobService {
           ? {}
           : { sourceUrl: snapshot.source.url }),
         importedAt: new Date(row.version_created_at).toISOString(),
+        ...(row.archived_at === null
+          ? {}
+          : { archivedAt: new Date(row.archived_at).toISOString() }),
       };
     });
   }
 
   getJobDetail(userId: string, jobId: string): JobDetail {
     const job = this.connection.db
-      .select({ id: jobs.id, createdAt: jobs.createdAt })
+      .select({
+        id: jobs.id,
+        createdAt: jobs.createdAt,
+        archivedAt: jobs.archivedAt,
+      })
       .from(jobs)
       .where(and(eq(jobs.id, jobId), eq(jobs.userId, userId)))
       .get();
@@ -475,6 +489,9 @@ export class JobService {
     return {
       jobId: job.id,
       createdAt: job.createdAt.toISOString(),
+      ...(job.archivedAt === null
+        ? {}
+        : { archivedAt: job.archivedAt.toISOString() }),
       versions,
       latest: {
         jobVersionId: latestRow.id,
@@ -487,5 +504,29 @@ export class JobService {
         snapshot: latestSnapshot,
       },
     };
+  }
+
+  setArchived(userId: string, jobId: string, archived: boolean): JobDetail {
+    const result = this.connection.db
+      .update(jobs)
+      .set({ archivedAt: archived ? new Date() : null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          eq(jobs.userId, userId),
+          archived ? isNull(jobs.archivedAt) : isNotNull(jobs.archivedAt),
+        ),
+      )
+      .run();
+    if (result.changes === 0) {
+      const owned = this.connection.db
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(and(eq(jobs.id, jobId), eq(jobs.userId, userId)))
+        .get();
+      if (owned === undefined)
+        throw new AppError("NOT_FOUND", "Job not found", 404);
+    }
+    return this.getJobDetail(userId, jobId);
   }
 }

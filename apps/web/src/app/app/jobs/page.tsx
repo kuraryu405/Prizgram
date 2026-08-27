@@ -26,6 +26,9 @@ function formatDateTime(iso: string): string {
 export default async function JobsPage() {
   const user = await requireSessionUserPage();
   const jobs = new JobService(getDatabase()).listJobs(user.id);
+  const archivedJobs = new JobService(getDatabase()).listJobs(user.id, {
+    archived: true,
+  });
 
   return (
     <div className="page page-jobs">
@@ -53,6 +56,22 @@ export default async function JobsPage() {
                 —{" "}
                 {employmentTypeLabels[job.employmentType] ?? job.employmentType}
                 （{formatDateTime(job.importedAt)}に取り込み）
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section aria-labelledby="archived-jobs-list" className="card">
+        <h2 id="archived-jobs-list">アーカイブ済み</h2>
+        {archivedJobs.length === 0 ? (
+          <p className="hint-text">アーカイブ済みの求人はありません。</p>
+        ) : (
+          <ul className="job-list">
+            {archivedJobs.map((job) => (
+              <li key={job.jobId}>
+                <Link href={`/app/jobs/${job.jobId}`}>
+                  {job.company} / {job.role}
+                </Link>
               </li>
             ))}
           </ul>

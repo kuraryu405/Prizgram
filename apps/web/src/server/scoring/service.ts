@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import {
   decodeJsonColumn,
@@ -271,7 +271,13 @@ export class ScoringService {
     const owned = this.connection.db
       .select({ id: jobs.id })
       .from(jobs)
-      .where(and(eq(jobs.id, jobId), eq(jobs.userId, userId)))
+      .where(
+        and(
+          eq(jobs.id, jobId),
+          eq(jobs.userId, userId),
+          isNull(jobs.archivedAt),
+        ),
+      )
       .get();
     if (owned === undefined) {
       throw new AppError("NOT_FOUND", "Job not found", 404);
