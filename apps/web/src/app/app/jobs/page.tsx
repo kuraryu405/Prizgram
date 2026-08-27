@@ -64,7 +64,10 @@ export default async function JobsPage() {
             <ul className="saved-job-list">
               {jobs.map((job) => (
                 <li className="saved-job-item" key={job.jobId}>
-                  <Link href={`/app/jobs/${job.jobId}`}>
+                  <Link
+                    aria-label={`${job.company} / ${job.role}`}
+                    href={`/app/jobs/${job.jobId}`}
+                  >
                     <strong>{job.role}</strong>
                     <span>{job.company}</span>
                   </Link>
@@ -94,7 +97,10 @@ export default async function JobsPage() {
             <ul className="saved-job-list">
               {archivedJobs.map((job) => (
                 <li className="saved-job-item" key={job.jobId}>
-                  <Link href={`/app/jobs/${job.jobId}`}>
+                  <Link
+                    aria-label={`${job.company} / ${job.role}`}
+                    href={`/app/jobs/${job.jobId}`}
+                  >
                     <strong>{job.role}</strong>
                     <span>{job.company}</span>
                   </Link>
