@@ -21,6 +21,9 @@ export default async function LoginPage() {
         <h1 id="login-title">ログイン</h1>
         <LoginForm />
         <p className="auth-switch">
+          <Link href="/password-change">パスワードを変更する</Link>
+        </p>
+        <p className="auth-switch">
           アカウントをお持ちでない方は <Link href="/register">新規登録</Link>へ
         </p>
       </section>
