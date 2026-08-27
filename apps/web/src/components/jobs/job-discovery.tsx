@@ -411,7 +411,7 @@ export function JobDiscovery() {
         <h2 id="job-discovery">求人を探す</h2>
         <p className="hint-text">
           承認済みペルソナから検索条件を生成し、外部求人検索API（
-          {result?.jobs[0]?.sourceName ?? "Careerjet / Himalayas"}
+          {result?.jobs[0]?.sourceName ?? "Careerjet / Himalayas / Jobicy"}
           ）から候補を取得します。
         </p>
         <details className="discovery-help">

@@ -34,6 +34,11 @@ import {
   HIMALAYAS_SOURCE_KIND,
   HimalayasProvider,
 } from "./provider/himalayas";
+import {
+  JOBICY_PROVIDER_NAME,
+  JOBICY_SOURCE_KIND,
+  JobicyProvider,
+} from "./provider/jobicy";
 
 export const JOB_SEARCH_PROMPT_VERSION = "job-search-v1";
 
@@ -284,6 +289,25 @@ function defaultProviders(): ProviderAdapter[] {
       sourceKind: HIMALAYAS_SOURCE_KIND,
       sourceName: HIMALAYAS_PROVIDER_NAME,
       search: himalayas.search.bind(himalayas),
+    });
+  } catch (error) {
+    if (
+      error instanceof JobSearchProviderError &&
+      error.code === "PROVIDER_NOT_CONFIGURED"
+    ) {
+      // Invalid custom timeout config etc.; treat as skipped
+    } else {
+      throw error;
+    }
+  }
+  // Jobicy is public (no API key) and always available
+  try {
+    const jobicy = JobicyProvider.fromEnvironment();
+    providers.push({
+      name: JOBICY_PROVIDER_NAME,
+      sourceKind: JOBICY_SOURCE_KIND,
+      sourceName: JOBICY_PROVIDER_NAME,
+      search: jobicy.search.bind(jobicy),
     });
   } catch (error) {
     if (
