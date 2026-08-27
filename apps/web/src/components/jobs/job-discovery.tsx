@@ -76,7 +76,11 @@ function candidateBody(candidate: Candidate): string {
   ].join("\n");
 }
 
-export function JobDiscovery() {
+type JobDiscoveryProps = Readonly<{
+  importedExternalIds?: readonly string[];
+}>;
+
+export function JobDiscovery({ importedExternalIds = [] }: JobDiscoveryProps) {
   const router = useRouter();
   const [keywords, setKeywords] = useState("");
   const [location, setLocation] = useState("");
@@ -90,7 +94,7 @@ export function JobDiscovery() {
 
   const [importingId, setImportingId] = useState<string | null>(null);
   const [importedIds, setImportedIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
+    () => new Set(importedExternalIds),
   );
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -130,6 +134,18 @@ export function JobDiscovery() {
     }
   };
 
+  const onReset = (): void => {
+    if (searching) return;
+    setKeywords("");
+    setLocation("");
+    setEmploymentType("");
+    setResult(null);
+    setFormError(null);
+    setSearchFieldErrors({});
+    setImportMessage(null);
+    setImportError(null);
+  };
+
   const onImport = async (job: DiscoveredJob): Promise<void> => {
     const { candidate } = job;
     if (importingId !== null || importedIds.has(candidate.externalId)) return;
@@ -166,9 +182,20 @@ export function JobDiscovery() {
     }
   };
 
+  const hasSearchInput =
+    keywords.trim() !== "" || location.trim() !== "" || employmentType !== "";
+
   return (
-    <section aria-labelledby="job-discovery" className="card form-stack">
-      <h2 id="job-discovery">求人を探す</h2>
+    <section aria-labelledby="job-discovery" className="card job-discovery">
+      <div className="section-heading job-discovery-heading">
+        <div>
+          <p className="eyebrow">PERSONA-POWERED SEARCH</p>
+          <h2 id="job-discovery">求人を探す</h2>
+        </div>
+        <span className="source-badge">
+          {result?.jobs[0]?.sourceName ?? "Careerjet"}
+        </span>
+      </div>
       <p className="hint-text">
         承認済みペルソナから検索条件を生成し、外部求人検索API（
         {result?.jobs[0]?.sourceName ?? "Careerjet"}）から候補を取得します。
@@ -179,8 +206,12 @@ export function JobDiscovery() {
           {formError}
         </p>
       )}
-      <form noValidate onSubmit={(event) => void onSearch(event)}>
-        <div className="field-row">
+      <form
+        className="job-search-form"
+        noValidate
+        onSubmit={(event) => void onSearch(event)}
+      >
+        <div className="job-search-fields">
           <div className="field">
             <label htmlFor="discovery-keywords">キーワード（任意）</label>
             <input
@@ -239,14 +270,26 @@ export function JobDiscovery() {
             </select>
           </div>
         </div>
-        <button
-          aria-busy={searching}
-          className="button button-primary"
-          disabled={searching}
-          type="submit"
-        >
-          {searching ? "検索中…" : "求人を探す"}
-        </button>
+        <div className="job-search-actions">
+          <button
+            aria-busy={searching}
+            className="button button-primary"
+            disabled={searching}
+            type="submit"
+          >
+            {searching ? "検索中…" : "求人を探す"}
+          </button>
+          {hasSearchInput && (
+            <button
+              className="button button-quiet"
+              disabled={searching}
+              onClick={onReset}
+              type="button"
+            >
+              条件をクリア
+            </button>
+          )}
+        </div>
       </form>
 
       {importMessage !== null && (
@@ -261,66 +304,120 @@ export function JobDiscovery() {
       )}
 
       {result !== null && (
-        <>
-          <p className="hint-text">
-            検索条件: {result.query.keywords}
-            {result.query.location !== undefined &&
-              ` / 勤務地: ${result.query.location}`}
-            （{result.hits}件中{result.jobs.length}件表示）
-          </p>
+        <section aria-labelledby="job-results" className="job-results">
+          <div className="job-results-header">
+            <div>
+              <p className="eyebrow">RESULTS</p>
+              <h2 id="job-results">検索結果</h2>
+            </div>
+            <div className="job-results-stats" aria-live="polite">
+              <strong>{result.hits.toLocaleString("ja-JP")}件</strong>
+              <span>{result.jobs.length}件表示中</span>
+            </div>
+          </div>
+          <div className="job-results-toolbar">
+            <div className="active-filters" aria-label="適用中の検索条件">
+              <span className="filter-label">検索条件</span>
+              <span className="filter-chip">
+                {result.query.keywords || "ペルソナから自動生成"}
+              </span>
+              {result.query.location !== undefined &&
+                result.query.location !== "" && (
+                  <span className="filter-chip">
+                    勤務地: {result.query.location}
+                  </span>
+                )}
+              {result.query.contractType !== undefined &&
+                result.query.contractType !== "" && (
+                  <span className="filter-chip">
+                    雇用形態: {result.query.contractType}
+                  </span>
+                )}
+            </div>
+            <span className="sort-label">並び順: 関連度順</span>
+          </div>
+          {result.hits > result.jobs.length && (
+            <p className="results-limit" role="status">
+              外部検索APIの上限により、先頭{result.jobs.length}
+              件を表示しています。追加取得・ページネーションは未対応です。
+            </p>
+          )}
           {result.jobs.length === 0 ? (
             <p className="hint-text">候補が見つかりませんでした。</p>
           ) : (
-            <ul className="job-list">
+            <ul className="job-list job-result-list">
               {result.jobs.map((job) => {
                 const { candidate } = job;
                 const imported = importedIds.has(candidate.externalId);
                 return (
                   <li key={candidate.externalId}>
                     <article className="job-candidate">
-                      <h3>{candidate.title}</h3>
-                      <p className="hint-text">
-                        {candidate.company ?? "企業名非公開"}
-                        {candidate.location !== undefined &&
-                          ` / ${candidate.location}`}
-                        {candidate.salaryText !== undefined &&
-                          ` / ${candidate.salaryText}`}
-                        {candidate.postedAt !== undefined &&
-                          ` / ${formatDate(candidate.postedAt)}掲載`}
-                        {" / "}
-                        <a
-                          href={candidate.url}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                        >
-                          出典元で確認する
-                        </a>
-                      </p>
+                      <header className="job-candidate-header">
+                        <div>
+                          <h3>{candidate.title}</h3>
+                          <p className="job-candidate-company">
+                            {candidate.company ?? "企業名非公開"}
+                          </p>
+                        </div>
+                        {imported && (
+                          <span className="status-badge">取り込み済み</span>
+                        )}
+                      </header>
+                      <dl className="job-meta">
+                        {candidate.location !== undefined && (
+                          <div>
+                            <dt>勤務地</dt>
+                            <dd>{candidate.location}</dd>
+                          </div>
+                        )}
+                        {candidate.salaryText !== undefined && (
+                          <div>
+                            <dt>給与</dt>
+                            <dd>{candidate.salaryText}</dd>
+                          </div>
+                        )}
+                        {candidate.postedAt !== undefined && (
+                          <div>
+                            <dt>掲載日</dt>
+                            <dd>{formatDate(candidate.postedAt)}</dd>
+                          </div>
+                        )}
+                      </dl>
                       {candidate.description !== undefined && (
                         <p className="job-candidate-description">
                           {candidate.description}
                         </p>
                       )}
-                      <button
-                        aria-busy={importingId === candidate.externalId}
-                        className="button button-secondary"
-                        disabled={imported || importingId !== null}
-                        onClick={() => void onImport(job)}
-                        type="button"
-                      >
-                        {imported
-                          ? "取り込み済み"
-                          : importingId === candidate.externalId
-                            ? "取り込み中…"
-                            : "この候補を取り込む"}
-                      </button>
+                      <footer className="job-candidate-footer">
+                        <a
+                          className="source-link"
+                          href={candidate.url}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                        >
+                          {job.sourceName}で詳細を見る ↗
+                        </a>
+                        <button
+                          aria-busy={importingId === candidate.externalId}
+                          className="button button-secondary"
+                          disabled={imported || importingId !== null}
+                          onClick={() => void onImport(job)}
+                          type="button"
+                        >
+                          {imported
+                            ? "取り込み済み"
+                            : importingId === candidate.externalId
+                              ? "取り込み中…"
+                              : "この候補を取り込む"}
+                        </button>
+                      </footer>
                     </article>
                   </li>
                 );
               })}
             </ul>
           )}
-        </>
+        </section>
       )}
     </section>
   );

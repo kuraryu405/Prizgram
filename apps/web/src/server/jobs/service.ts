@@ -68,6 +68,7 @@ export type JobListItem = Readonly<{
   difficultyLevel: JobSnapshot["difficulty"]["level"];
   latestVersion: number;
   sourceName: string;
+  sourceExternalId?: string;
   sourceUrl?: string;
   importedAt: string;
   archivedAt?: string;
@@ -435,6 +436,9 @@ export class JobService {
         difficultyLevel: snapshot.difficulty.level,
         latestVersion: row.version,
         sourceName: snapshot.source.name,
+        ...(snapshot.source.externalId === undefined
+          ? {}
+          : { sourceExternalId: snapshot.source.externalId }),
         ...(snapshot.source.url === undefined
           ? {}
           : { sourceUrl: snapshot.source.url }),

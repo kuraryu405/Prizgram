@@ -107,7 +107,7 @@ export function JobImportForm() {
 
   return (
     <form
-      className="card form-stack"
+      className="card form-stack job-import-card"
       noValidate
       onSubmit={(event) => void onSubmit(event)}
     >
