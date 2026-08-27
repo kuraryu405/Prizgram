@@ -47,6 +47,62 @@ const japaneseRoleReplacements: readonly [RegExp, string][] = [
   [/インターン(?:シップ)?/giu, "intern"],
 ];
 
+const japaneseJapanLocations = [
+  "日本",
+  "北海道",
+  "青森",
+  "岩手",
+  "宮城",
+  "秋田",
+  "山形",
+  "福島",
+  "茨城",
+  "栃木",
+  "群馬",
+  "埼玉",
+  "千葉",
+  "東京",
+  "神奈川",
+  "新潟",
+  "富山",
+  "石川",
+  "福井",
+  "山梨",
+  "長野",
+  "岐阜",
+  "静岡",
+  "愛知",
+  "三重",
+  "滋賀",
+  "京都",
+  "大阪",
+  "兵庫",
+  "奈良",
+  "和歌山",
+  "鳥取",
+  "島根",
+  "岡山",
+  "広島",
+  "山口",
+  "徳島",
+  "香川",
+  "愛媛",
+  "高知",
+  "福岡",
+  "佐賀",
+  "長崎",
+  "熊本",
+  "大分",
+  "宮崎",
+  "鹿児島",
+  "沖縄",
+  "横浜",
+  "名古屋",
+  "札幌",
+  "仙台",
+  "神戸",
+] as const;
+
 function containsJapanese(value: string): boolean {
   return /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u.test(value);
 }
@@ -91,7 +147,10 @@ function isJapanLocation(location: string): boolean {
     .trim()
     .toLowerCase()
     .replace(/[\s_-]+/g, "");
-  if (containsJapanese(location)) return true;
+  if (
+    japaneseJapanLocations.some((candidate) => location.includes(candidate))
+  )
+    return true;
   return [
     "japan",
     "jp",
@@ -121,6 +180,11 @@ function queryWithoutLocation(
   };
 }
 
+function shouldDropInternationalLocation(location: string): boolean {
+  return isRemoteLocation(location) ||
+    (containsJapanese(location) && !isJapanLocation(location));
+}
+
 /** Maps the app-level query onto the semantics of each provider. */
 export function adaptQueryForProvider(
   providerName: string,
@@ -136,7 +200,11 @@ export function adaptQueryForProvider(
   const base = queryWithoutLocation(query, keywords);
 
   if (providerName === HIMALAYAS_PROVIDER_NAME) {
-    if (location === undefined || location === "" || isRemoteLocation(location))
+    if (
+      location === undefined ||
+      location === "" ||
+      shouldDropInternationalLocation(location)
+    )
       return base;
     return {
       ...base,
@@ -145,7 +213,11 @@ export function adaptQueryForProvider(
   }
 
   if (providerName === JOBICY_PROVIDER_NAME) {
-    if (location === undefined || location === "" || isRemoteLocation(location))
+    if (
+      location === undefined ||
+      location === "" ||
+      shouldDropInternationalLocation(location)
+    )
       return base;
     return {
       ...base,
