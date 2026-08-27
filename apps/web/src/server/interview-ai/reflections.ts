@@ -146,7 +146,10 @@ export class InterviewReflectionService {
       .run();
   }
 
-  private getOwned(userId: string, reflectionId: string): InterviewReflectionView {
+  private getOwned(
+    userId: string,
+    reflectionId: string,
+  ): InterviewReflectionView {
     return this.toView(this.getOwnedRow(userId, reflectionId));
   }
 
