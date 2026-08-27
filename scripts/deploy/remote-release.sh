@@ -39,13 +39,26 @@ pnpm_binary="${PNPM_BINARY:-$HOME/.local/bin/pnpm}"
 
 mkdir -p "$shared_directory/data" "$shared_directory/backups" "$service_directory"
 
+# Consistent pre-deploy backup using SQLite snapshot API (#178) with unique name (#216)
 if [[ -f "$database_file" ]]; then
-  cp -- "$database_file" "$shared_directory/backups/prizgram-$DEPLOY_SHA.sqlite"
-  for sidecar in "$database_file-wal" "$database_file-shm"; do
-    if [[ -f "$sidecar" ]]; then
-      cp -- "$sidecar" "$shared_directory/backups/$(basename "$sidecar").$DEPLOY_SHA"
-    fi
-  done
+  timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
+  backup_file="$shared_directory/backups/prizgram-${timestamp}-${DEPLOY_SHA}.sqlite"
+  if [[ -e "$backup_file" ]]; then
+    backup_file="${backup_file%.sqlite}-$(date +%s%N).sqlite"
+  fi
+  echo "Creating pre-deploy snapshot: $backup_file"
+  if ! sqlite3 "$database_file" ".backup '$backup_file'"; then
+    echo "Backup failed; aborting deploy before migration" >&2
+    exit 1
+  fi
+  integrity="$(sqlite3 "$backup_file" "PRAGMA integrity_check;" 2>&1 || true)"
+  if [[ "$integrity" != "ok" ]]; then
+    echo "Backup integrity_check failed: $integrity" >&2
+    exit 1
+  fi
+  echo "Backup verified: $backup_file"
+else
+  echo "No existing database; skipping backup"
 fi
 
 export DATABASE_URL="file:$database_file"
