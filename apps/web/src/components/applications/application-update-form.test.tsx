@@ -139,4 +139,26 @@ describe("ApplicationUpdateForm", () => {
       nextAction: "面接日程を返信する（確認済み）",
     });
   });
+
+  test("preserves the success status when refreshed server props remount form state", async () => {
+    successfulPatch();
+    const user = userEvent.setup();
+    const view = render(<ApplicationUpdateForm {...defaultProps} />);
+
+    await user.clear(screen.getByLabelText("現在の段階（任意）"));
+    await user.type(screen.getByLabelText("現在の段階（任意）"), "1次面接");
+    await user.click(screen.getByRole("button", { name: "更新する" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("更新しました。");
+
+    view.rerender(
+      <ApplicationUpdateForm {...defaultProps} initialStageLabel="1次面接" />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("更新しました。");
+    expect(screen.getByLabelText("現在の段階（任意）")).toHaveProperty(
+      "value",
+      "1次面接",
+    );
+  });
 });
