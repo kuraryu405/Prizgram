@@ -71,7 +71,9 @@ export function isPersonaVersionUniqueViolation(error: unknown): boolean {
 export interface EventEvidenceSource {
   eventId: string;
   sequence: number;
+  fromStatus: string | null;
   toStatus: string;
+  note: string | null;
   occurredAt: string;
 }
 
@@ -168,7 +170,9 @@ export class PersonaUpdateService {
     return rows.map((row) => ({
       eventId: row.id,
       sequence: row.sequence,
+      fromStatus: row.fromStatus ?? null,
       toStatus: row.toStatus,
+      note: row.note ?? null,
       occurredAt: row.occurredAt.toISOString(),
     }));
   }
@@ -357,10 +361,15 @@ export class PersonaUpdateService {
   static buildEventDigest(events: readonly EventEvidenceSource[]): string {
     if (events.length === 0) return "（選考イベントはありません）";
     return events
-      .map(
-        (event) =>
-          `- [id=${event.eventId}] ${event.toStatus} (${event.occurredAt})`,
-      )
+      .map((event) => {
+        const notePart =
+          event.note !== null && event.note.trim().length > 0
+            ? ` note: ${JSON.stringify(event.note)}`
+            : "";
+        const fromPart =
+          event.fromStatus !== null ? `${event.fromStatus} -> ` : "";
+        return `- [id=${event.eventId}] ${fromPart}${event.toStatus} (${event.occurredAt})${notePart}`;
+      })
       .join("\n");
   }
 
