@@ -213,7 +213,10 @@ export class ApplicationService {
         { jobId: created.jobId, jobVersionId: created.jobVersionId },
       ]);
       const fallback = this.companyRole(user.id, input.jobId);
-      const resolved = pinned.get(created.jobId) ?? fallback;
+      const resolved =
+        (created.jobVersionId == null
+          ? undefined
+          : pinned.get(created.jobVersionId)) ?? fallback;
       return {
         ...this.coreFromDrizzle(created),
         company: resolved.company,
@@ -256,14 +259,15 @@ export class ApplicationService {
       rows.map((r) => ({ jobId: r.jobId, jobVersionId: r.jobVersionId })),
     );
     const missingJobIds = rows
-      .filter((r) => !pinnedMap.has(r.jobId))
+      .filter((r) => r.jobVersionId == null || !pinnedMap.has(r.jobVersionId))
       .map((r) => r.jobId);
     const latestFallback =
       missingJobIds.length > 0
         ? this.latestJobVersions(userId, missingJobIds)
         : new Map<string, { company: string; role: string }>();
     return rows.map((row) => {
-      const pinned = pinnedMap.get(row.jobId);
+      const pinned =
+        row.jobVersionId == null ? undefined : pinnedMap.get(row.jobVersionId);
       const fallback = latestFallback.get(row.jobId);
       const resolved = pinned ??
         fallback ?? { company: "(不明)", role: "(不明)" };
@@ -292,7 +296,7 @@ export class ApplicationService {
         ? undefined
         : this.companyRoleForApplications(userId, [
             { jobId: row.jobId, jobVersionId: row.jobVersionId },
-          ]).get(row.jobId);
+          ]).get(row.jobVersionId);
     const latest = this.companyRole(userId, row.jobId);
     const resolved = pinned ?? latest;
     const applied = pinned ?? latest;
@@ -527,9 +531,9 @@ export class ApplicationService {
       if (jobVersionId == null) continue;
       const row = byId.get(jobVersionId);
       if (row === undefined) continue;
-      // Ensure the pinned version's jobId matches the application's jobId (ownership already validated at creation)
+      // Ensure the pinned version's jobId matches the application's jobId.
       if (row.jobId !== jobId) continue;
-      result.set(jobId, {
+      result.set(jobVersionId, {
         company: row.snapshot.company,
         role: row.snapshot.role,
       });
