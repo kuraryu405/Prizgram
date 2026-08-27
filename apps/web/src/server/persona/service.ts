@@ -255,8 +255,9 @@ export class PersonaService {
     // produced a version (e.g. process crash). A fresh claim must not be
     // reclaimed immediately while the original LLM request may still be
     // running; only stale claims become retriable (#202).
+    const claimAt = now();
     if (intake.status === "completed") {
-      const ageMs = now().getTime() - new Date(intake.updatedAt).getTime();
+      const ageMs = claimAt.getTime() - new Date(intake.updatedAt).getTime();
       const staleMs = personaGenerationStaleMs();
       if (ageMs < staleMs) {
         throw new AppError(
@@ -268,7 +269,7 @@ export class PersonaService {
       // Stale claim: bump updatedAt atomically so only one retrier wins.
       const reclaimed = this.connection.db
         .update(personaIntakes)
-        .set({ updatedAt: now() })
+        .set({ updatedAt: claimAt })
         .where(
           and(
             eq(personaIntakes.id, intake.id),
@@ -295,7 +296,7 @@ export class PersonaService {
       // Atomically claim the intake so parallel generations cannot both write.
       const claimed = this.connection.db
         .update(personaIntakes)
-        .set({ status: "completed", updatedAt: now() })
+        .set({ status: "completed", updatedAt: claimAt })
         .where(
           and(
             eq(personaIntakes.id, intake.id),
