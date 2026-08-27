@@ -121,7 +121,7 @@ export default async function JobDetailPage({
   }
 
   return (
-    <div className="page">
+    <div className="page page-job-detail">
       <p className="breadcrumb">
         <Link href="/app/jobs">求人一覧へ戻る</Link>
       </p>
