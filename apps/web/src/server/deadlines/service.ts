@@ -271,6 +271,18 @@ export class DeadlineService {
     if (row === undefined) {
       throw new AppError("NOT_FOUND", "Deadline not found", 404);
     }
+    // #170: changing timezone without dueLocal is ambiguous – require both
+    if (
+      input.timeZone !== undefined &&
+      input.timeZone !== row.timezone &&
+      input.dueLocal === undefined
+    ) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "timezone変更時はdueLocalも必須です",
+        400,
+      );
+    }
 
     if (
       input.timeZone !== undefined &&
