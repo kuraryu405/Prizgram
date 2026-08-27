@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ApplicationAddForm } from "@/components/applications/application-add-form";
+import { MinimalApplicationForm } from "@/components/applications/minimal-application-form";
 import { applicationStatusLabels } from "@/lib/labels";
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
@@ -37,6 +38,8 @@ export default async function ApplicationsPage({
       <p className="page-lead">
         応募ごとの選考ステータスと履歴を管理します。応募の自動送信は行いません。
       </p>
+
+      <MinimalApplicationForm />
 
       <ApplicationAddForm
         jobs={jobs.map((job) => ({
