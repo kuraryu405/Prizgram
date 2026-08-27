@@ -55,7 +55,7 @@ ul {
 
 a {
   color: var(--color-primary);
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 :focus-visible {
@@ -476,6 +476,7 @@ a {
   flex: 1;
   margin: 0 auto;
   max-width: calc(42rem + 2 * 0.875rem);
+  min-width: 0;
   padding: 1.25rem 0.875rem calc(4.75rem + env(safe-area-inset-bottom));
   width: 100%;
 }
@@ -570,7 +571,9 @@ a {
 
   .app-main {
     max-width: none;
+    min-width: 0;
     padding: 2rem 1.5rem 3rem;
+    width: auto;
   }
 
   .app-shell-alert {
@@ -582,6 +585,15 @@ a {
     margin-left: auto;
     margin-right: auto;
     max-width: 42rem;
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* Jobs benefit from the width remaining after the sidebar, while other
+     app pages retain their intentionally focused reading column. */
+  .app-main > .page-jobs,
+  .app-main > .page-job-detail {
+    max-width: 80rem;
   }
 
   /* Dashboard: use the width freed by the sidebar. Placed after the rule
@@ -630,6 +642,7 @@ a {
 .page {
   display: grid;
   gap: 1.25rem;
+  min-width: 0;
 }
 
 .page h1 {
@@ -849,6 +862,7 @@ a {
 .job-list {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .job-candidate {
@@ -856,6 +870,7 @@ a {
   border-radius: 0.5rem;
   display: grid;
   gap: 0.5rem;
+  min-width: 0;
   padding: 1rem;
 }
 
@@ -878,6 +893,7 @@ a {
 .axis-list {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .axis-item {
@@ -885,6 +901,7 @@ a {
   border-radius: 0.5rem;
   display: grid;
   gap: 0.375rem;
+  min-width: 0;
   padding: 1rem;
 }
 
@@ -919,6 +936,15 @@ a {
   line-height: 1.8;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+/* Imported postings can contain provider URLs and other unbroken strings.
+   These pages must always give the text a break opportunity inside their
+   cards instead of increasing the main track's intrinsic width. */
+.page-jobs :is(h1, h2, h3, p, li),
+.page-job-detail :is(h1, h2, h3, p, li) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Status timeline */
