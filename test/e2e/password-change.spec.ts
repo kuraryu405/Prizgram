@@ -6,6 +6,11 @@ const newPassword = "correct horse battery staple updated";
 test("changes a password from the login page and invalidates the old password", async ({
   page,
 }) => {
+  // Auth mutations intentionally share a per-source budget. Give this flow its
+  // own source so its extra old/new-password login checks cannot exhaust the
+  // budget used by unrelated E2E scenarios running in the same app process.
+  await page.setExtraHTTPHeaders({ "cf-connecting-ip": "203.0.113.219" });
+
   const loginId = `e2e.password.${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   await page.goto("/register");
