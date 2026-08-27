@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import {
+  isTerminalApplicationStatus,
+  terminalApplicationStatuses,
+  type ApplicationStatus,
+} from "@prizgram/shared";
 
 import { applicationDeadlines, applications, reminders } from "./schema";
 import type { DatabaseConnection } from "./client";
@@ -20,12 +25,6 @@ export type ReminderStatus = "pending" | "sent" | "dismissed" | "failed";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
-
-const TERMINAL_APPLICATION_STATUSES = new Set([
-  "accepted",
-  "rejected",
-  "withdrawn",
-]);
 
 const priorityRank: Record<ReminderPriority, number> = {
   urgent: 0,
@@ -187,11 +186,7 @@ export class ReminderService {
       .where(
         and(
           isNull(applicationDeadlines.completedAt),
-          notInArray(applications.status, [
-            "accepted",
-            "rejected",
-            "withdrawn",
-          ]),
+          notInArray(applications.status, [...terminalApplicationStatuses]),
         ),
       )
       .all() as Array<{
@@ -310,7 +305,8 @@ export class ReminderService {
   }
 
   /**
-   * Lists active (pending + sent) reminders ordered by urgency.
+   * Lists active (pending + sent) reminders ordered by urgency. Pending rows
+   * returned here are flipped to `sent`: listing IS the in-app delivery.
    *
    * Reminders whose deadline has since been completed, moved to a terminal
    * application status, been deleted, rescheduled/renamed, changed timezone,
@@ -337,6 +333,17 @@ export class ReminderService {
     }
 
     const staleIdSet = new Set(staleIds);
+    const pendingIds = rows
+      .filter((row) => row.status === "pending" && !staleIdSet.has(row.id))
+      .map((row) => row.id);
+    if (pendingIds.length > 0) {
+      this.db
+        .update(reminders)
+        .set({ status: "sent", updatedAt: new Date() })
+        .where(inArray(reminders.id, pendingIds))
+        .run();
+    }
+
     const activeRows = rows.filter((row) => !staleIdSet.has(row.id));
     // Enrich remaining rows with deadline timezone/dueAt for correct UI formatting.
     const activeDeadlineIds = [...new Set(activeRows.map((r) => r.deadlineId))];
@@ -437,7 +444,7 @@ export class ReminderService {
       if (
         state === undefined ||
         state.completedAt !== null ||
-        TERMINAL_APPLICATION_STATUSES.has(state.status)
+        isTerminalApplicationStatus(state.status as ApplicationStatus)
       ) {
         stale.push(row.id);
         continue;

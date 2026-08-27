@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { isTerminalApplicationStatus } from "@prizgram/shared";
+
 import {
   DeadlineCreateForm,
   DeadlineToggle,
@@ -43,10 +45,14 @@ export default async function DeadlinesPage() {
       </p>
 
       <DeadlineCreateForm
-        applications={applications.map((application) => ({
-          id: application.applicationId,
-          label: `${application.company} — ${application.role}`,
-        }))}
+        applications={applications
+          .filter(
+            (application) => !isTerminalApplicationStatus(application.status),
+          )
+          .map((application) => ({
+            id: application.applicationId,
+            label: `${application.company} — ${application.role}`,
+          }))}
       />
 
       {attention.length > 0 && (

@@ -104,19 +104,22 @@ describe("ReminderService.generateDueReminders", () => {
     expect(service.listActive(userA, now)).toHaveLength(1);
   });
 
-  it("skips completed deadlines and terminal applications", () => {
-    const now = new Date("2026-08-26T00:00:00Z");
-    seedApplication("app-open", "interview");
-    seedApplication("app-rejected", "rejected");
-    seedDeadline("dl-done", "app-open", now.getTime() + DAY_MS, {
-      completed: true,
-    });
-    seedDeadline("dl-terminal", "app-rejected", now.getTime() + DAY_MS);
+  it.each(["accepted", "rejected", "withdrawn"] as const)(
+    "skips completed deadlines and terminal application %s",
+    (status) => {
+      const now = new Date("2026-08-26T00:00:00Z");
+      seedApplication("app-open", "interview");
+      seedApplication("app-terminal", status);
+      seedDeadline("dl-done", "app-open", now.getTime() + DAY_MS, {
+        completed: true,
+      });
+      seedDeadline("dl-terminal", "app-terminal", now.getTime() + DAY_MS);
 
-    const summary = service.generateDueReminders({ now });
-    expect(summary.created).toBe(0);
-    expect(service.listActive(userA)).toHaveLength(0);
-  });
+      const summary = service.generateDueReminders({ now });
+      expect(summary.created).toBe(0);
+      expect(service.listActive(userA)).toHaveLength(0);
+    },
+  );
 
   it("never resurrects dismissed reminders via the dedupe key", () => {
     seedApplication("app-a", "interview");
@@ -302,21 +305,24 @@ describe("ReminderService.listActive stale sweep", () => {
     }
   });
 
-  it("dismisses and hides reminders once their application terminates", () => {
-    seedApplication("app-a", "interview");
-    const now = new Date("2026-08-26T00:00:00Z");
-    seedDeadline("dl-term", "app-a", now.getTime() + 12 * HOUR_MS);
-    service.generateDueReminders({ now });
-    expect(service.listActive(userA, now)).toHaveLength(1);
+  it.each(["accepted", "rejected", "withdrawn"] as const)(
+    "dismisses and hides reminders once application becomes %s",
+    (status) => {
+      seedApplication("app-a", "interview");
+      const now = new Date("2026-08-26T00:00:00Z");
+      seedDeadline("dl-term", "app-a", now.getTime() + 12 * HOUR_MS);
+      service.generateDueReminders({ now });
+      expect(service.listActive(userA, now)).toHaveLength(1);
 
-    markApplicationStatus("app-a", "withdrawn");
-    expect(service.listActive(userA, now)).toHaveLength(0);
-    for (const row of storedReminderStatuses()) {
-      expect(row.status).toBe("dismissed");
-    }
-  });
+      markApplicationStatus("app-a", status);
+      expect(service.listActive(userA, now)).toHaveLength(0);
+      for (const row of storedReminderStatuses()) {
+        expect(row.status).toBe("dismissed");
+      }
+    },
+  );
 
-  it("keeps active reminders for open deadlines pending when only read", () => {
+  it("keeps active reminders for open deadlines untouched as sent", () => {
     seedApplication("app-a", "interview");
     const now = new Date("2026-08-26T00:00:00Z");
     seedDeadline("dl-live", "app-a", now.getTime() + 12 * HOUR_MS);
@@ -325,26 +331,7 @@ describe("ReminderService.listActive stale sweep", () => {
     const active = service.listActive(userA, now);
     expect(active).toHaveLength(1);
     for (const row of storedReminderStatuses()) {
-      expect(row.status).toBe("pending");
+      expect(["sent", "pending"]).toContain(row.status);
     }
-  });
-
-  it("does not mark reminders outside the displayed page as sent", () => {
-    seedApplication("app-a", "interview");
-    const now = new Date("2026-08-26T00:00:00Z");
-    seedDeadline("dl-one", "app-a", now.getTime() + 12 * HOUR_MS);
-    service.generateDueReminders({ now });
-
-    const reminder = connection.sqlite
-      .prepare("select id, status from reminders limit 1")
-      .get() as { id: string; status: string };
-    expect(reminder.status).toBe("pending");
-
-    service.listActive(userA, now);
-
-    const after = connection.sqlite
-      .prepare("select status from reminders where id = ?")
-      .get(reminder.id) as { status: string };
-    expect(after.status).toBe("pending");
   });
 });

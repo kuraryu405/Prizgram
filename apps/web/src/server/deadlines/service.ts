@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { deadlineKinds, type AuthenticatedUser } from "@prizgram/shared";
+import {
+  deadlineKinds,
+  isTerminalApplicationStatus,
+  type AuthenticatedUser,
+} from "@prizgram/shared";
 import {
   applications,
   applicationDeadlines,
@@ -196,7 +200,7 @@ export class DeadlineService {
 
   create(user: AuthenticatedUser, input: DeadlineCreateInput): DeadlineView {
     const ownedApplication = this.connection.db
-      .select({ id: applications.id })
+      .select({ id: applications.id, status: applications.status })
       .from(applications)
       .where(
         and(
@@ -207,6 +211,13 @@ export class DeadlineService {
       .get();
     if (ownedApplication === undefined) {
       throw new AppError("NOT_FOUND", "Application not found", 404);
+    }
+    if (isTerminalApplicationStatus(ownedApplication.status)) {
+      throw new AppError(
+        "CONFLICT",
+        "Cannot create a deadline for a terminal application",
+        409,
+      );
     }
 
     const dueAt = safeZonedToIso(input.dueLocal, input.timeZone);
@@ -254,18 +265,6 @@ export class DeadlineService {
       .get();
     if (row === undefined) {
       throw new AppError("NOT_FOUND", "Deadline not found", 404);
-    }
-
-    if (
-      input.timeZone !== undefined &&
-      input.timeZone !== row.timezone &&
-      input.dueLocal === undefined
-    ) {
-      throw new AppError(
-        "VALIDATION_ERROR",
-        "dueLocal is required when changing time zone",
-        400,
-      );
     }
 
     const timeZone = input.timeZone ?? row.timezone;

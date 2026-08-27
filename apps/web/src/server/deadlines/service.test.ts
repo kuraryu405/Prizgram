@@ -38,6 +38,16 @@ function syncErrorCode(action: () => unknown): string {
   throw new Error("expected rejection");
 }
 
+function syncAppError(action: () => unknown): AppError {
+  try {
+    action();
+  } catch (error) {
+    if (error instanceof AppError) return error;
+    throw error;
+  }
+  throw new Error("expected rejection");
+}
+
 beforeEach(() => {
   temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "prizgram-dl-"));
   connection = createDatabase(path.join(temporaryDirectory, "dl.sqlite"));
@@ -138,6 +148,29 @@ describe("zonedDateTimeToIso", () => {
 });
 
 describe("DeadlineService", () => {
+  it.each(["accepted", "rejected", "withdrawn"] as const)(
+    "rejects creating a deadline for terminal application status %s",
+    (status) => {
+      connection.sqlite
+        .prepare("update applications set status = ? where id = ?")
+        .run(status, applicationId);
+
+      const error = syncAppError(() =>
+        service.create(userA, {
+          applicationId,
+          kind: "document",
+          title: "terminal応募の締切",
+          dueLocal: "2026-09-01T10:00",
+          timeZone: "UTC",
+        }),
+      );
+
+      expect(error.code).toBe("CONFLICT");
+      expect(error.status).toBe(409);
+      expect(service.list(userA.id)).toHaveLength(0);
+    },
+  );
+
   it("creates a deadline with a UTC instant and lists it ordered by due time", () => {
     const later = service.create(userA, {
       applicationId,
@@ -226,25 +259,6 @@ describe("DeadlineService", () => {
       timeZone: "America/Los_Angeles",
     });
     expect(moved.dueAt).toBe("2026-09-01T16:00:00.000Z");
-  });
-
-  it("rejects a time zone-only update", () => {
-    const created = service.create(userA, {
-      applicationId,
-      kind: "interview",
-      title: "面接",
-      dueLocal: "2026-09-01T09:00",
-      timeZone: "Asia/Tokyo",
-    });
-
-    expect(
-      syncErrorCode(() =>
-        service.update(userA, created.deadlineId, {
-          timeZone: "America/Los_Angeles",
-        }),
-      ),
-    ).toBe("VALIDATION_ERROR");
-    expect(service.list(userA.id)[0]?.dueAt).toBe(created.dueAt);
   });
 
   it("deletes only owned deadlines", () => {

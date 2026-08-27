@@ -9,6 +9,8 @@ import {
   JsonColumnValidationError,
   personaSnapshotSchema,
   scoringOutputSchema,
+  applicationStatuses,
+  isTerminalApplicationStatus,
 } from "../src";
 
 const validPersona = {
@@ -40,6 +42,13 @@ const validScoring = {
 };
 
 describe("domain schemas", () => {
+  it("identifies all and only terminal application statuses", () => {
+    const terminal = new Set(["accepted", "rejected", "withdrawn"]);
+    for (const status of applicationStatuses) {
+      expect(isTerminalApplicationStatus(status)).toBe(terminal.has(status));
+    }
+  });
+
   it("accepts a structured persona", () => {
     expect(personaSnapshotSchema.parse(validPersona)).toEqual(validPersona);
   });

@@ -248,6 +248,22 @@ export const applicationStatuses = [
   "withdrawn",
 ] as const;
 
+export const terminalApplicationStatuses = [
+  "accepted",
+  "rejected",
+  "withdrawn",
+] as const;
+
+export type ApplicationStatus = (typeof applicationStatuses)[number];
+
+export function isTerminalApplicationStatus(
+  status: ApplicationStatus,
+): boolean {
+  return terminalApplicationStatuses.includes(
+    status as (typeof terminalApplicationStatuses)[number],
+  );
+}
+
 /**
  * Allowed forward transitions between selection statuses. Terminal statuses
  * permit nothing further; `withdrawn` is reachable while still actionable,
@@ -319,7 +335,6 @@ export type PersonaSnapshot = z.infer<typeof personaSnapshotSchema>;
 export type JobSnapshot = z.infer<typeof jobSnapshotSchema>;
 export type ScoreDimension = z.infer<typeof scoreDimensionSchema>;
 export type ScoringOutput = z.infer<typeof scoringOutputSchema>;
-export type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
 export type GenerationProvenance = z.infer<typeof generationProvenanceSchema>;
 export type ApplicationDeadlineInput = z.infer<
   typeof applicationDeadlineInputSchema
