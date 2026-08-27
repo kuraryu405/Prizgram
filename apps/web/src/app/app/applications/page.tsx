@@ -39,6 +39,8 @@ export default async function ApplicationsPage({
         応募ごとの選考ステータスと履歴を管理します。応募の自動送信は行いません。
       </p>
 
+      <MinimalApplicationForm />
+
       <ApplicationAddForm
         jobs={jobs.map((job) => ({
           jobId: job.jobId,
@@ -46,8 +48,6 @@ export default async function ApplicationsPage({
           role: job.role,
         }))}
       />
-
-      <MinimalApplicationForm />
 
       <nav aria-label="ステータス絞り込み" className="filter-nav">
         <Link
