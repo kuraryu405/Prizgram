@@ -23,7 +23,9 @@ afterEach(() => {
   navigationMocks.refresh.mockClear();
 });
 
-async function fillValidBody(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+async function fillValidBody(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
   await user.type(screen.getByLabelText("求人票本文"), "a".repeat(40));
 }
 
@@ -45,7 +47,7 @@ describe("JobImportForm", () => {
     render(<JobImportForm />);
     await fillValidBody(user);
 
-    const companyInput = screen.getByLabelText("会社名（任意）") as HTMLInputElement;
+    const companyInput = screen.getByLabelText("会社名（任意）");
     expect(companyInput.getAttribute("maxlength")).toBe("200");
 
     await user.type(companyInput, "x".repeat(201));
