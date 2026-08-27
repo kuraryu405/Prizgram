@@ -35,7 +35,7 @@ export const skillSchema = z
   .object({
     name: trimmedString(120),
     level: z.enum(skillLevels),
-    evidenceRefs: z.array(idSchema).max(50),
+    evidenceRefs: z.array(idSchema).min(1).max(50),
   })
   .strict();
 
@@ -45,7 +45,7 @@ export const experienceSchema = z
     description: trimmedString(4_000),
     startedOn: z.iso.date().optional(),
     endedOn: z.iso.date().optional(),
-    evidenceRefs: z.array(idSchema).max(50),
+    evidenceRefs: z.array(idSchema).min(1).max(50),
   })
   .strict()
   .refine(

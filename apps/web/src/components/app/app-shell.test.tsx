@@ -63,7 +63,9 @@ describe("AppShell", () => {
     stubFetch(() => errorEnvelope(401, "AUTHENTICATION_REQUIRED"));
     renderShell();
     await waitFor(() =>
-      expect(navigationMocks.replace).toHaveBeenCalledWith("/login"),
+      expect(navigationMocks.replace).toHaveBeenCalledWith(
+        "/login?next=%2Fapp",
+      ),
     );
   });
 

@@ -150,8 +150,11 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (status === "unauthenticated") router.replace("/login");
-  }, [status, router]);
+    if (status === "unauthenticated") {
+      const next = encodeURIComponent(pathname);
+      router.replace(`/login?next=${next}`);
+    }
+  }, [status, router, pathname]);
 
   if (status === "unavailable") {
     // Transient failures must not look like a logged-out session.

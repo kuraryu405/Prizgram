@@ -2,8 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 
-import { terminalApplicationStatuses } from "@prizgram/shared";
-
 import { applicationDeadlines, applications, reminders } from "./schema";
 import type { DatabaseConnection } from "./client";
 
@@ -23,9 +21,11 @@ export type ReminderStatus = "pending" | "sent" | "dismissed" | "failed";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
-const TERMINAL_APPLICATION_STATUSES = new Set<string>(
-  terminalApplicationStatuses as readonly string[],
-);
+const TERMINAL_APPLICATION_STATUSES = new Set([
+  "accepted",
+  "rejected",
+  "withdrawn",
+]);
 
 const priorityRank: Record<ReminderPriority, number> = {
   urgent: 0,
@@ -310,7 +310,9 @@ export class ReminderService {
   }
 
   /**
-   * Lists active (pending + sent) reminders ordered by urgency.
+   * Lists active (pending + sent) reminders ordered by urgency. This is a
+   * pure read: it never flips `pending` to `sent` (#171). Stale reminders
+   * (completed/deleted/terminal/rescheduled) are still dismissed.
    *
    * Reminders whose deadline has since been completed, moved to a terminal
    * application status, been deleted, rescheduled/renamed, changed timezone,
@@ -337,6 +339,7 @@ export class ReminderService {
     }
 
     const staleIdSet = new Set(staleIds);
+
     const activeRows = rows.filter((row) => !staleIdSet.has(row.id));
     // Enrich remaining rows with deadline timezone/dueAt for correct UI formatting.
     const activeDeadlineIds = [...new Set(activeRows.map((r) => r.deadlineId))];
