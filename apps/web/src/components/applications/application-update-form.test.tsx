@@ -29,6 +29,7 @@ const defaultProps: ApplicationUpdateFormProps = {
   currentStatus: "応募済み",
   allowedNextStatuses: ["interview"],
   statusLabels: { interview: "面接" },
+  initialStageLabel: "書類選考",
   initialNextAction: "ESを提出する",
   initialNote: "提出前に見直す",
 };
@@ -49,13 +50,18 @@ describe("ApplicationUpdateForm", () => {
 
     render(<ApplicationUpdateForm {...defaultProps} />);
 
+    expect(screen.getByLabelText("現在の段階（任意）")).toHaveProperty(
+      "value",
+      "書類選考",
+    );
     expect(screen.getByLabelText("次のアクション")).toHaveProperty(
       "value",
       "ESを提出する",
     );
-    expect(
-      screen.getByLabelText("メモ（ステータス変更時の履歴に記録）"),
-    ).toHaveProperty("value", "提出前に見直す");
+    expect(screen.getByLabelText("メモ")).toHaveProperty(
+      "value",
+      "提出前に見直す",
+    );
 
     await user.selectOptions(
       screen.getByLabelText("ステータス変更（任意）"),
@@ -73,14 +79,17 @@ describe("ApplicationUpdateForm", () => {
 
     render(<ApplicationUpdateForm {...defaultProps} />);
 
+    await user.clear(screen.getByLabelText("現在の段階（任意）"));
     await user.clear(screen.getByLabelText("次のアクション"));
-    await user.clear(
-      screen.getByLabelText("メモ（ステータス変更時の履歴に記録）"),
-    );
+    await user.clear(screen.getByLabelText("メモ"));
     await user.click(screen.getByRole("button", { name: "更新する" }));
 
     await screen.findByRole("status");
-    expect(submittedBody(fetchMock)).toEqual({ nextAction: null, note: null });
+    expect(submittedBody(fetchMock)).toEqual({
+      stageLabel: null,
+      nextAction: null,
+      note: null,
+    });
     expect(
       screen.getByRole("button", { name: "更新する" }).matches(":disabled"),
     ).toBe(true);
@@ -98,20 +107,26 @@ describe("ApplicationUpdateForm", () => {
     view.rerender(
       <ApplicationUpdateForm
         {...defaultProps}
+        initialStageLabel="1次面接"
         initialNextAction="面接日程を返信する"
         initialNote="候補日は金曜日"
       />,
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText("次のアクション")).toHaveProperty(
+      expect(screen.getByLabelText("現在の段階（任意）")).toHaveProperty(
         "value",
-        "面接日程を返信する",
+        "1次面接",
       ),
     );
-    expect(
-      screen.getByLabelText("メモ（ステータス変更時の履歴に記録）"),
-    ).toHaveProperty("value", "候補日は金曜日");
+    expect(screen.getByLabelText("次のアクション")).toHaveProperty(
+      "value",
+      "面接日程を返信する",
+    );
+    expect(screen.getByLabelText("メモ")).toHaveProperty(
+      "value",
+      "候補日は金曜日",
+    );
     expect(
       screen.getByRole("button", { name: "更新する" }).matches(":disabled"),
     ).toBe(true);
