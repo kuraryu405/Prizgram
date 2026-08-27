@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ApplicationAddForm } from "@/components/applications/application-add-form";
+import { MinimalApplicationForm } from "@/components/applications/minimal-application-form";
 import { applicationStatusLabels } from "@/lib/labels";
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
@@ -45,6 +46,8 @@ export default async function ApplicationsPage({
           role: job.role,
         }))}
       />
+
+      <MinimalApplicationForm />
 
       <nav aria-label="ステータス絞り込み" className="filter-nav">
         <Link
