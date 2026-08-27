@@ -251,6 +251,53 @@ export class PersonaUpdateService {
     return snapshot;
   }
 
+  /**
+   * MVP invariant for #211: base facts must not be silently dropped.
+   * If the proposal omits any base skill / experience / evidence id,
+   * reject rather than allowing latest persona to regress. Intentional
+   * deletions are not supported in MVP and must be designed separately.
+   */
+  private assertCarryForward(
+    base: PersonaSnapshot,
+    proposed: PersonaSnapshot,
+  ): void {
+    const baseEvidenceIds = new Set(base.evidence.map((e) => e.id));
+    const proposedEvidenceIds = new Set(proposed.evidence.map((e) => e.id));
+    for (const id of baseEvidenceIds) {
+      if (!proposedEvidenceIds.has(id)) {
+        throw new AppError(
+          "UPSTREAM_INVALID_RESPONSE",
+          `Proposal dropped base evidence ${id}`,
+          502,
+        );
+      }
+    }
+
+    const baseSkillNames = new Set(base.skills.map((s) => s.name));
+    const proposedSkillNames = new Set(proposed.skills.map((s) => s.name));
+    for (const name of baseSkillNames) {
+      if (!proposedSkillNames.has(name)) {
+        throw new AppError(
+          "UPSTREAM_INVALID_RESPONSE",
+          `Proposal dropped base skill ${name}`,
+          502,
+        );
+      }
+    }
+
+    const baseExpTitles = new Set(base.experiences.map((e) => e.title));
+    const proposedExpTitles = new Set(proposed.experiences.map((e) => e.title));
+    for (const title of baseExpTitles) {
+      if (!proposedExpTitles.has(title)) {
+        throw new AppError(
+          "UPSTREAM_INVALID_RESPONSE",
+          `Proposal dropped base experience ${title}`,
+          502,
+        );
+      }
+    }
+  }
+
   /** Inserts an approved snapshot as the next immutable persona version. */
   approve(
     user: AuthenticatedUser,
@@ -277,6 +324,7 @@ export class PersonaUpdateService {
       eventSources,
       input.snapshot,
     );
+    this.assertCarryForward(base.snapshot, validated);
 
     let lastError: unknown;
     // Version numbers are computed and inserted inside one transaction, and
@@ -457,6 +505,7 @@ export class PersonaUpdateService {
         );
       }
     }
+    this.assertCarryForward(baseSnapshot, validated);
 
     return {
       basePersonaVersionId: base.id,
