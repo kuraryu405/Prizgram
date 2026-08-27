@@ -24,7 +24,10 @@ export const POST = withNoStore(
       jobDiscoveryRequestSchema,
       JOB_DISCOVERY_MAX_REQUEST_BYTES,
     );
-    enforceLlmRateLimit(user.id);
+    // Manual search (keywords provided) must not consume LLM budget (#132).
+    if (input.keywords === undefined || input.keywords.trim().length === 0) {
+      enforceLlmRateLimit(user.id);
+    }
     const result = await new DiscoveryService(getDatabase()).discover(
       user,
       input,
