@@ -73,7 +73,7 @@ afterEach(() => {
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 });
 
-describe("Application note persistence", () => {
+describe("Application note persistence contract", () => {
   it("persists the initial note as current state and initial history", () => {
     const created = service.createFromJob(user, {
       jobId: "job-note",
