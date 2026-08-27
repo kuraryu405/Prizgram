@@ -12,6 +12,12 @@ import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
 
+const terminalApplicationStatuses = new Set([
+  "accepted",
+  "rejected",
+  "withdrawn",
+]);
+
 function formatInZone(view: DeadlineView): string {
   return new Intl.DateTimeFormat("ja-JP", {
     dateStyle: "medium",
@@ -34,6 +40,9 @@ export default async function DeadlinesPage() {
     (deadline) => !deadline.completed && deadline.overdue,
   );
   const completed = deadlines.filter((deadline) => deadline.completed);
+  const applicationsAcceptingDeadlines = applications.filter(
+    (application) => !terminalApplicationStatuses.has(application.status),
+  );
 
   return (
     <div className="page">
@@ -43,7 +52,7 @@ export default async function DeadlinesPage() {
       </p>
 
       <DeadlineCreateForm
-        applications={applications.map((application) => ({
+        applications={applicationsAcceptingDeadlines.map((application) => ({
           id: application.applicationId,
           label: `${application.company} — ${application.role}`,
         }))}
