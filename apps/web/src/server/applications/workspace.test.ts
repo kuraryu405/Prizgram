@@ -100,7 +100,6 @@ describe("Application workspace (#262)", () => {
     expect(created.company).toBe("Acme Corp");
     expect(created.role).toBe("Frontend Engineer");
 
-    // Update job to new version, ensure pinned does not change
     const newSnapshot = createJobSnapshot({
       company: "Acme Corp",
       role: "Backend Engineer",
@@ -123,7 +122,6 @@ describe("Application workspace (#262)", () => {
     expect(detail.jobVersionId).toBe(jobVersionId);
     expect(detail.appliedCompany).toBe("Acme Corp");
     expect(detail.appliedRole).toBe("Frontend Engineer");
-    // current latest would be Backend, but applied stays Frontend
     expect(detail.company).toBe("Acme Corp");
     expect(detail.role).toBe("Frontend Engineer");
   });
@@ -137,12 +135,30 @@ describe("Application workspace (#262)", () => {
     });
     const svc = new ApplicationService(connection);
     const created = svc.createFromJob({ id: userId } as never, { jobId });
-    // company/role are derived from pinned snapshot, not re-entered
     expect(created.company).toBe("JobCo");
     expect(created.role).toBe("Designer");
-    // findApplicationForJob returns same
+
+    const updatedSnapshot = createJobSnapshot({
+      company: "JobCo",
+      role: "Updated Designer",
+    });
+    connection.sqlite
+      .prepare(
+        "insert into job_versions (id, user_id, job_id, version, snapshot, content_hash) values (?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        `jv-${jobId}-2`,
+        userId,
+        jobId,
+        2,
+        JSON.stringify(updatedSnapshot),
+        `hash-${jobId}-2`,
+      );
+
     const found = svc.findApplicationForJob(userId, jobId);
     expect(found?.applicationId).toBe(created.applicationId);
+    expect(found?.company).toBe("JobCo");
+    expect(found?.role).toBe("Designer");
   });
 
   it("shows workspace detail with history and nextAction", () => {
@@ -181,7 +197,6 @@ describe("Application workspace (#262)", () => {
     expect(list).toHaveLength(1);
     expect(list[0]?.title).toBe("ES提出");
     expect(createdDeadline.applicationId).toBe(created.applicationId);
-    // Ensure Application.nextAction remains separate from Deadline
     const detail = appSvc.getApplicationDetail(userId, created.applicationId);
     expect(detail.nextAction).toBeUndefined();
   });
