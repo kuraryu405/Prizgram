@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ApplicationDocumentsSection } from "@/components/application-documents/documents-section";
 import { ApplicationUpdateForm } from "@/components/applications/application-update-form";
+import { InterviewSection } from "@/components/interview/interview-section";
 import {
   applicationStatusLabels as statusLabels,
   deadlineKindLabels as kindLabels,
@@ -165,11 +166,15 @@ export default async function ApplicationDetailPage({
         </section>
 
         <section aria-labelledby="interview-title" className="card">
-          <h2 id="interview-title">面接</h2>
+          <h2 id="interview-title">面接準備</h2>
           <p className="hint-text">
-            面接予定は締切として登録し、実施後の結果は選考履歴に残せます。
+            ペルソナ・応募先・ESを基に想定質問、回答骨子、深掘り、振り返りを支援します。
           </p>
-          <p>
+          <InterviewSection
+            applicationId={detail.applicationId}
+            stageLabel={detail.stageLabel}
+          />
+          <p style={{ marginTop: "0.75rem" }}>
             <Link href={`/app/deadlines?applicationId=${detail.applicationId}`}>
               面接予定を登録する
             </Link>

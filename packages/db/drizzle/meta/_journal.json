@@ -78,6 +78,13 @@
       "when": 1787839804227,
       "tag": "0010_naive_metal_master",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787847314092,
+      "tag": "0011_oval_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

@@ -669,6 +669,54 @@ export const applicationDocumentEntries = sqliteTable(
   ],
 );
 
+export const applicationInterviewReflections = sqliteTable(
+  "application_interview_reflections",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    applicationId: text("application_id").notNull(),
+    stageLabel: text("stage_label"),
+    questionsAsked: text("questions_asked").notNull().default("[]"),
+    answerNotes: text("answer_notes").notNull().default(""),
+    impression: text("impression"),
+    feedback: text("feedback"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "application_interview_reflections_questions_shape",
+      sql`length(${table.questionsAsked}) <= 20000`,
+    ),
+    check(
+      "application_interview_reflections_answer_shape",
+      sql`length(${table.answerNotes}) <= 20000`,
+    ),
+    uniqueIndex("application_interview_reflections_user_id_unique").on(
+      table.userId,
+      table.id,
+    ),
+    index("application_interview_reflections_application_idx").on(
+      table.applicationId,
+    ),
+    index("application_interview_reflections_user_application_idx").on(
+      table.userId,
+      table.applicationId,
+    ),
+    foreignKey({
+      columns: [table.userId, table.applicationId],
+      foreignColumns: [applications.userId, applications.id],
+      name: "application_interview_reflections_owner_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
 export const schema = {
   users,
   userCredentials,
@@ -685,6 +733,7 @@ export const schema = {
   reminders,
   applicationDocuments,
   applicationDocumentEntries,
+  applicationInterviewReflections,
 };
 
 export const tableNames = [
@@ -703,4 +752,5 @@ export const tableNames = [
   "reminders",
   "application_documents",
   "application_document_entries",
+  "application_interview_reflections",
 ] as const;
