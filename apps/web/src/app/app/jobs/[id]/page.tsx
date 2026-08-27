@@ -4,7 +4,10 @@ import { notFound } from "next/navigation";
 import { ScoreEvaluateButton } from "@/components/scoring/score-panel";
 import { JobArchiveButton } from "@/components/jobs/job-archive-button";
 import { JobReimportForm } from "@/components/jobs/job-reimport-form";
-import { decodeJsonColumn, personaSnapshotSchema } from "@prizgram/shared";
+import {
+  resolveEvidenceText,
+  UNKNOWN_EVIDENCE_FALLBACK,
+} from "@/server/scoring/evidence";
 
 import { AppError } from "@/server/api";
 import { getDatabase } from "@/server/database";
@@ -89,52 +92,28 @@ export default async function JobDetailPage({
   const currentScore = scoring.getCurrentScore(user.id, id);
   const history = scoring.listScores(user.id, id);
   const personaLatest = new PersonaService(db).latestPersona(user.id);
-  // Build evidence map that includes both job signals and persona evidence
-  // so cultureValueFit's persona-side refs resolve instead of empty.
-  // For #190 qualified refs: store both qualified (persona:xxx / job:xxx) and raw for legacy fallback.
-  const evidenceTextById = new Map<string, string>();
-  // Populate job signals with both forms
-  for (const [id, text] of signalTextById) {
-    evidenceTextById.set(id, text);
-    evidenceTextById.set(`job:${id}`, text);
-  }
-  const addPersonaEvidence = (
-    evidence: ReadonlyArray<{ id: string; summary: string }>,
-  ) => {
-    for (const ev of evidence) {
-      evidenceTextById.set(ev.id, ev.summary);
-      evidenceTextById.set(`persona:${ev.id}`, ev.summary);
+  // Current score evidence must be resolved from its pinned snapshots (#155)
+  const currentEvidenceMap =
+    currentScore !== undefined
+      ? scoring.evidenceMapForScore(currentScore, user.id)
+      : undefined;
+  // For the evaluate button (future evaluation preview), provide latest evidence map
+  const latestEvidenceMap = (() => {
+    const m = new Map<string, string>();
+    for (const [sid, text] of signalTextById) {
+      m.set(sid, text);
+      m.set(`job:${sid}`, text);
     }
-  };
-  if (personaLatest !== undefined) {
-    addPersonaEvidence(personaLatest.snapshot.evidence);
-  }
-  // If the current score pins an older persona version, also include its evidence
-  if (
-    currentScore !== undefined &&
-    personaLatest?.personaVersionId !== currentScore.personaVersionId
-  ) {
-    try {
-      const raw = db.sqlite
-        .prepare("select snapshot from persona_versions where id = ?")
-        .get(currentScore.personaVersionId) as { snapshot: string } | undefined;
-      if (raw !== undefined) {
-        const pinned = decodeJsonColumn(
-          "persona_versions.snapshot",
-          personaSnapshotSchema,
-          raw.snapshot,
-        );
-        for (const ev of pinned.evidence) {
-          if (!evidenceTextById.has(ev.id)) {
-            evidenceTextById.set(ev.id, ev.summary);
-            evidenceTextById.set(`persona:${ev.id}`, ev.summary);
-          }
-        }
+    if (personaLatest !== undefined) {
+      for (const ev of personaLatest.snapshot.evidence) {
+        m.set(ev.id, ev.summary);
+        m.set(`persona:${ev.id}`, ev.summary);
       }
-    } catch {
-      // Fallback to latest persona evidence already added
     }
-  }
+    return m;
+  })();
+  // Keep evidenceTextById for ScoreEvaluateButton as plain object (latest)
+  const evidenceTextById = latestEvidenceMap;
 
   return (
     <div className="page page-job-detail">
@@ -253,17 +232,16 @@ export default async function JobDetailPage({
                     <ul>
                       {dim.evidenceRefs.map((ref) => {
                         const text =
-                          evidenceTextById.get(ref) ??
-                          (ref.includes(":")
-                            ? (evidenceTextById.get(
-                                ref.split(":").slice(1).join(":"),
-                              ) ?? "")
-                            : (evidenceTextById.get(`persona:${ref}`) ??
-                              evidenceTextById.get(`job:${ref}`) ??
-                              ""));
+                          currentEvidenceMap !== undefined
+                            ? resolveEvidenceText(ref, currentEvidenceMap)
+                            : UNKNOWN_EVIDENCE_FALLBACK;
+                        const display =
+                          text === UNKNOWN_EVIDENCE_FALLBACK
+                            ? `${ref} ${UNKNOWN_EVIDENCE_FALLBACK}`
+                            : `${text}`;
                         return (
                           <li key={ref}>
-                            <span className="signal-id">{ref}</span> {text}
+                            <span className="signal-id">{ref}</span> {display}
                           </li>
                         );
                       })}
@@ -302,22 +280,48 @@ export default async function JobDetailPage({
           <details className="score-history">
             <summary>評価履歴（{history.length}件）</summary>
             <ul>
-              {history.map((entry) => (
-                <li key={entry.scoreId} className="hint-text">
-                  {new Intl.DateTimeFormat("ja-JP", {
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  }).format(new Date(entry.createdAt))}{" "}
-                  — skill {entry.axes.skillFit.score} / culture{" "}
-                  {entry.axes.cultureValueFit.score} / gap{" "}
-                  {entry.axes.difficultyGap.score}（p
-                  {entry.personaVersionId.slice(0, 6)} / j
-                  {entry.jobVersionId.slice(0, 6)}）
-                  {freshness.status === "stale" &&
-                    entry.scoreId === freshness.detail?.scoreId &&
-                    " — 古いバージョン"}
-                </li>
-              ))}
+              {history.map((entry) => {
+                const evidenceMap = scoring.evidenceMapForScore(entry, user.id);
+                const allRefs = [
+                  ...entry.axes.skillFit.evidenceRefs,
+                  ...entry.axes.cultureValueFit.evidenceRefs,
+                  ...entry.axes.difficultyGap.evidenceRefs,
+                ];
+                return (
+                  <li key={entry.scoreId} className="hint-text">
+                    <div>
+                      {new Intl.DateTimeFormat("ja-JP", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      }).format(new Date(entry.createdAt))}{" "}
+                      — skill {entry.axes.skillFit.score} / culture{" "}
+                      {entry.axes.cultureValueFit.score} / gap{" "}
+                      {entry.axes.difficultyGap.score}（p
+                      {entry.personaVersionId.slice(0, 6)} / j
+                      {entry.jobVersionId.slice(0, 6)}）
+                      {freshness.status === "stale" &&
+                        entry.scoreId === freshness.detail?.scoreId &&
+                        " — 古いバージョン"}
+                    </div>
+                    {allRefs.length > 0 && (
+                      <ul>
+                        {allRefs.map((ref) => {
+                          const text = resolveEvidenceText(ref, evidenceMap);
+                          const display =
+                            text === UNKNOWN_EVIDENCE_FALLBACK
+                              ? `${ref} ${UNKNOWN_EVIDENCE_FALLBACK}`
+                              : text;
+                          return (
+                            <li key={`${entry.scoreId}-${ref}`}>
+                              <span className="signal-id">{ref}</span> {display}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </details>
         )}
