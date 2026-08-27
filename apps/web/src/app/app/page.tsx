@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 
 import { ReminderService } from "@prizgram/db";
 
-import { deadlineKindLabels } from "@/lib/labels";
+import { applicationStatusLabels, deadlineKindLabels } from "@/lib/labels";
 import { ApplicationService } from "@/server/applications/service";
 import { AuthService, sessionCookieName } from "@/server/auth";
 import { buildNextActions } from "@/server/dashboard/actions";
@@ -91,12 +91,7 @@ export default async function AppHome() {
   const activeApplicationCount = applications.filter(
     (application) => !closedApplicationStatuses.has(application.status),
   ).length;
-  // eslint-disable-next-line react-hooks/purity -- server component render uses current time for 7-day window
-  const nowMs = Date.now();
-  const upcomingWithin7Days = upcoming.filter((d) => {
-    const diff = new Date(d.dueAt).getTime() - nowMs;
-    return diff >= 0 && diff <= 7 * 24 * 60 * 60 * 1000;
-  }).length;
+  const upcomingWithin7Days = upcoming.length;
 
   // Brand-new users get a single CTA, not a wall of empty cards.
   const onboardingNeeded =
@@ -123,12 +118,6 @@ export default async function AppHome() {
               <div className="card-footer">
                 <Link className="button button-primary" href="/app/jobs">
                   求人を探す
-                </Link>
-                <Link
-                  className="button button-secondary"
-                  href="/app/persona/intake"
-                >
-                  ペルソナを作成
                 </Link>
               </div>
             </section>
@@ -209,7 +198,10 @@ export default async function AppHome() {
               </li>
             </ul>
             <div className="card-footer">
-              <Link className="button button-secondary" href="/app/applications">
+              <Link
+                className="button button-secondary"
+                href="/app/applications"
+              >
                 応募を見る
               </Link>
               <Link className="button button-secondary" href="/app/jobs">
@@ -229,7 +221,11 @@ export default async function AppHome() {
                     >
                       {application.company} — {application.role}
                     </Link>{" "}
-                    <span className="hint-text">/ {application.status}</span>
+                    <span className="hint-text">
+                      /{" "}
+                      {applicationStatusLabels[application.status] ??
+                        application.status}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -261,7 +257,9 @@ export default async function AppHome() {
                         <span className="hint-text">未評価</span>
                       ) : (
                         <span className="hint-text">
-                          {score.axes.skillFit.score} / {score.axes.cultureValueFit.score} / {score.axes.difficultyGap.score}
+                          {score.axes.skillFit.score} /{" "}
+                          {score.axes.cultureValueFit.score} /{" "}
+                          {score.axes.difficultyGap.score}
                         </span>
                       )}
                     </li>
@@ -282,7 +280,9 @@ export default async function AppHome() {
             ) : (
               <>
                 <p className="hint-text">
-                  v{persona.version} / スキル {persona.snapshot.skills.length}・強み {persona.snapshot.strengths.length}・価値観 {persona.snapshot.values.length}
+                  v{persona.version} / スキル {persona.snapshot.skills.length}
+                  ・強み {persona.snapshot.strengths.length}・価値観{" "}
+                  {persona.snapshot.values.length}
                 </p>
                 <div className="card-footer">
                   <Link className="button button-secondary" href="/app/persona">
