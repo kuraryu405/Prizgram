@@ -138,13 +138,37 @@ describe("JobService.importJob", () => {
       "job:req:1",
     ]);
     expect(detail.latest.model).toBe("test-model");
-    expect(detail.latest.promptVersion).toBe("job-import-v1");
+    expect(detail.latest.promptVersion).toBe("job-import-v2");
 
     const list: JobListItem[] = service.listJobs(userA.id);
     expect(list).toHaveLength(1);
     expect(list[0]?.company).toBe("株式会社サンプル");
     // The raw user content is preserved as data inside the snapshot.
     expect(detail.latest.snapshot.description).toContain("React");
+  });
+
+  it("keeps provider snippets importable when company and evidence are omitted", async () => {
+    const service = new JobService(connection);
+    const imported = await service.importJob(
+      userA,
+      { body: postingText() },
+      {
+        client: clientReturning({
+          ...validProviderPayload,
+          company: "",
+          requirements: [],
+          cultureValues: [],
+          desiredSkills: [{ text: "AWS" }],
+          difficultyEvidence: [],
+        }),
+        model: "test-model",
+      },
+    );
+
+    const snapshot = service.getJobDetail(userA.id, imported.jobId).latest
+      .snapshot;
+    expect(snapshot.company).toBe("企業名非公開");
+    expect(snapshot.difficulty.evidenceRefs).toEqual(["job:skill:1"]);
   });
 
   it("returns the existing version when the identical snapshot already exists", async () => {

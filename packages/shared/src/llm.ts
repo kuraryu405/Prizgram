@@ -165,21 +165,33 @@ type JobProviderOutput = z.infer<typeof jobProviderOutputSchema>;
 type JobSignalSection =
   JobProviderOutput["difficultyEvidence"][number]["section"];
 
+export type JobStructuredOutputOptions = Readonly<{
+  /** Value to use when the posting does not disclose an employer name. */
+  fallbackCompany?: string;
+  /** Use the first extracted signal when the provider omits usable evidence. */
+  ensureDifficultyEvidence?: boolean;
+}>;
+
 /**
  * Builds a structured-output contract for user-provided job postings.
  * Signal ids are assigned deterministically from list positions so that
  * identical extractions produce identical content hashes, and difficulty
  * evidence positions are resolved to those ids. Unknown references are
- * dropped; the domain schema's min(1) then rejects extractions without any
- * usable evidence instead of persisting an unverifiable snapshot.
+ * dropped; by default the domain schema's min(1) rejects extractions without
+ * usable evidence instead of persisting an unverifiable snapshot. Import
+ * callers may explicitly opt into a deterministic first-signal fallback when
+ * a provider omits the reference.
  */
-export function createJobStructuredOutput(source: {
-  kind: JobSnapshot["source"]["kind"];
-  name: string;
-  externalId?: string;
-  url?: string;
-  retrievedAt: string;
-}): StructuredOutputContract<JobProviderOutput, JobSnapshot> {
+export function createJobStructuredOutput(
+  source: {
+    kind: JobSnapshot["source"]["kind"];
+    name: string;
+    externalId?: string;
+    url?: string;
+    retrievedAt: string;
+  },
+  options: JobStructuredOutputOptions = {},
+): StructuredOutputContract<JobProviderOutput, JobSnapshot> {
   const prefixes: Readonly<Record<JobSignalSection, string>> = {
     cultureValues: "job:value:",
     desiredSkills: "job:skill:",
@@ -224,8 +236,17 @@ export function createJobStructuredOutput(source: {
         evidenceRefs.push(id);
       }
 
+      if (evidenceRefs.length === 0 && options.ensureDifficultyEvidence) {
+        const firstSignal =
+          requirements[0] ?? desiredSkills[0] ?? cultureValues[0];
+        if (firstSignal !== undefined) evidenceRefs.push(firstSignal.id);
+      }
+
+      const company =
+        value.company.trim() || options.fallbackCompany?.trim() || "";
+
       return {
-        company: value.company,
+        company,
         role: value.role,
         employmentType: value.employmentType,
         description: value.description,

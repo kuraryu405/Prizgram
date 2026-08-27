@@ -1,9 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+type DiscoverOptions = { onLlmUse?: () => void };
+type DiscoverResult = {
+  query: { keywords: string };
+  promptVersion: string;
+  hits: number;
+  jobs: never[];
+};
+
 const mocks = vi.hoisted(() => ({
   enforce: vi.fn<(userId: string) => void>(),
-  discover: vi.fn(() =>
+  discover: vi.fn<
+    (
+      user: unknown,
+      input: unknown,
+      context: unknown,
+      options?: DiscoverOptions,
+    ) => Promise<DiscoverResult>
+  >(() =>
     Promise.resolve({
       query: { keywords: "k" },
       promptVersion: "test",
@@ -56,7 +71,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/jobs/discover", () => {
-  it("does not consume the LLM rate limit for manual searches", async () => {
+  it("keeps manual searches free until optional enrichment actually uses the LLM", async () => {
     const response = await POST(
       discoveryRequest({ keywords: "TypeScript", location: "東京" }),
     );
@@ -67,7 +82,15 @@ describe("POST /api/jobs/discover", () => {
       expect.objectContaining({ id: "user-1" }),
       { keywords: "TypeScript", location: "東京" },
       expect.any(Object),
+      expect.any(Object),
     );
+
+    const options = mocks.discover.mock.calls[0]?.[3];
+    expect(options?.onLlmUse).toBeTypeOf("function");
+    options?.onLlmUse?.();
+    options?.onLlmUse?.();
+    expect(mocks.enforce).toHaveBeenCalledTimes(1);
+    expect(mocks.enforce).toHaveBeenCalledWith("user-1");
   });
 
   it("keeps the LLM rate limit for persona-assisted searches", async () => {
@@ -75,5 +98,11 @@ describe("POST /api/jobs/discover", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.enforce).toHaveBeenCalledWith("user-1");
+    expect(mocks.discover).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      {},
+      expect.any(Object),
+      {},
+    );
   });
 });

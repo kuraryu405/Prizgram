@@ -24,7 +24,8 @@ import {
 import { AppError } from "../api";
 import { JOB_IMPORT_MAX_BODY_CHARS } from "./request-limits";
 
-export const JOB_IMPORT_PROMPT_VERSION = "job-import-v1";
+export const JOB_IMPORT_PROMPT_VERSION = "job-import-v2";
+const UNKNOWN_COMPANY_NAME = "企業名非公開";
 
 export const jobImportRequestSchema = z
   .object({
@@ -120,10 +121,16 @@ export function buildJobImportMessages(
         "求人票から company / role / employmentType / description /",
         "requirements / desiredSkills / cultureValues / difficulty を抽出し、",
         "指定されたスキーマに一致するJSONのみを出力してください。",
+        "会社名は本文に明示された正式名称を優先し、入力補助情報があれば",
+        "それを補助として使ってください。本文にも補助情報にもない場合は",
+        `会社名を推測せず「${UNKNOWN_COMPANY_NAME}」を出力してください。`,
         "descriptionは求人票の本文を要約せず、重要な条件を保ったまま整理してください。",
         "difficultyEvidenceは、その難易度判断の根拠となる要素を",
         "section（requirements/desiredSkills/cultureValues）と0始まりのindexで参照します。",
-        "根拠が無い項目は空配列にしてください。推測で埋めないでください。",
+        "requirements / desiredSkills / cultureValues のいずれかを抽出した場合、",
+        "difficultyEvidenceにはその中の要素を最低1件、正しいsection/indexで指定してください。",
+        "3つの項目すべてに根拠がない場合のみ、difficultyEvidenceを空配列にしてください。",
+        "根拠のないシグナルは空配列にし、推測で埋めないでください。",
       ].join("\n"),
     },
     {
@@ -237,15 +244,24 @@ export class JobService {
 
     const generation = {
       messages: buildJobImportMessages(input),
-      output: createJobStructuredOutput({
-        kind: input.sourceKind ?? "user_provided",
-        name: input.sourceName ?? "ユーザー提供の求人票",
-        ...(input.sourceUrl === undefined ? {} : { url: input.sourceUrl }),
-        ...(input.sourceExternalId === undefined
-          ? {}
-          : { externalId: input.sourceExternalId }),
-        retrievedAt,
-      }),
+      output: createJobStructuredOutput(
+        {
+          kind: input.sourceKind ?? "user_provided",
+          name: input.sourceName ?? "ユーザー提供の求人票",
+          ...(input.sourceUrl === undefined ? {} : { url: input.sourceUrl }),
+          ...(input.sourceExternalId === undefined
+            ? {}
+            : { externalId: input.sourceExternalId }),
+          retrievedAt,
+        },
+        {
+          // Provider cards can omit the employer even when the full posting
+          // normally contains it. The model gets a chance to extract a name
+          // from the body first; this label is the deterministic last resort.
+          fallbackCompany: input.companyName ?? UNKNOWN_COMPANY_NAME,
+          ensureDifficultyEvidence: true,
+        },
+      ),
       schemaName: "job_snapshot",
     };
 

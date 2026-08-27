@@ -97,6 +97,13 @@ describe("AppShell", () => {
     expect(
       screen.getByRole("link", { name: "ホーム" }).getAttribute("aria-current"),
     ).toBeNull();
+    // The landing page's scroll state enables a backdrop filter, which makes
+    // the fixed mobile tab bar position relative to this header on WebKit.
+    expect(
+      document
+        .querySelector("header.app-header")
+        ?.classList.contains("is-scrolled"),
+    ).toBe(false);
     navigationMocks.pathname = "/app";
   });
 

@@ -21,6 +21,8 @@ const employmentTypeOptions = [
   { value: "contract", label: "契約社員" },
 ] as const;
 
+const providerDisplayOrder = ["Careerjet", "Himalayas", "Jobicy"] as const;
+
 type Candidate = {
   externalId: string;
   title: string;
@@ -50,6 +52,7 @@ type DiscoverResult = {
   hits: number;
   jobs: readonly DiscoveredJob[];
   providerStatuses?: Readonly<Record<string, string>>;
+  providerCounts?: Readonly<Record<string, number>>;
 };
 
 type ImportResult = {
@@ -133,6 +136,44 @@ function buildQueryChips(query: DiscoverResult["query"]): string[] {
     chips.push(`雇用形態: ${label}`);
   }
   return chips;
+}
+
+function providerStatusText(status: string, count: number): string {
+  switch (status) {
+    case "ok":
+      return `${count.toLocaleString("ja-JP")}件`;
+    case "timeout":
+      return "タイムアウト";
+    case "rate_limited":
+      return "利用制限中";
+    case "skipped":
+      return "未設定";
+    default:
+      return "取得失敗";
+  }
+}
+
+function buildProviderChips(result: DiscoverResult): string[] {
+  if (result.providerStatuses === undefined) return [];
+  const entries = Object.entries(result.providerStatuses).sort(([a], [b]) => {
+    const ai = providerDisplayOrder.indexOf(
+      a as (typeof providerDisplayOrder)[number],
+    );
+    const bi = providerDisplayOrder.indexOf(
+      b as (typeof providerDisplayOrder)[number],
+    );
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+  return entries.map(([name, status]) => {
+    const fallbackCount = result.jobs.filter(
+      (job) => job.sourceName === name,
+    ).length;
+    const count = result.providerCounts?.[name] ?? fallbackCount;
+    return `${name}: ${providerStatusText(status, count)}`;
+  });
 }
 
 export function JobDiscovery() {
@@ -331,7 +372,6 @@ export function JobDiscovery() {
         }
       }
     }
-    // Keep only failed selected for retry
     setSelectedIds(new Set(failedIds));
     if (succeeded > 0 && failed === 0) {
       addToast(`${succeeded}件を取り込みました`, "success");
@@ -405,19 +445,20 @@ export function JobDiscovery() {
     }
   };
 
+  const providerChips = result === null ? [] : buildProviderChips(result);
+
   return (
     <section aria-labelledby="job-discovery" className="card discovery-card">
       <div className="discovery-header">
         <h2 id="job-discovery">求人を探す</h2>
         <p className="hint-text">
-          承認済みペルソナから検索条件を生成し、外部求人検索API（
-          {result?.jobs[0]?.sourceName ?? "Careerjet / Himalayas / Jobicy"}
-          ）から候補を取得します。
+          承認済みペルソナから検索条件を生成し、外部求人検索API（Careerjet /
+          Himalayas / Jobicy）から候補を取得します。
         </p>
         <details className="discovery-help">
           <summary>検索の仕組み</summary>
           <p className="discovery-help-body">
-            条件を空のまま実行すると、ペルソナのみから条件が組み立てられます。外部求人検索API経由で候補を取得し、気になる求人はそのまま取り込めます。
+            条件を空のまま実行すると、ペルソナのみから条件が組み立てられます。海外求人ソースには検索語と勤務地を各API向けに変換し、企業名が欠けている求人は本文に明示された企業名だけを補完します。
           </p>
         </details>
       </div>
@@ -522,6 +563,15 @@ export function JobDiscovery() {
                   ? `（全${result.hits.toLocaleString("ja-JP")}件中）`
                   : ""}
               </p>
+              {providerChips.length > 0 && (
+                <ul className="discovery-chips" aria-label="求人取得元">
+                  {providerChips.map((chip) => (
+                    <li key={chip} className="discovery-chip">
+                      {chip}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {buildQueryChips(result.query).length > 0 && (
                 <ul className="discovery-chips" aria-label="適用中の検索条件">
                   {buildQueryChips(result.query).map((chip) => (
@@ -535,14 +585,10 @@ export function JobDiscovery() {
           </div>
           {result.providerStatuses !== undefined &&
             Object.entries(result.providerStatuses).some(
-              ([, s]) => s !== "ok",
+              ([, status]) => status !== "ok",
             ) && (
               <p className="hint-text" role="status">
-                一部プロバイダが一時的に取得できませんでしたが、取得できた候補を表示しています（
-                {Object.entries(result.providerStatuses)
-                  .map(([name, status]) => `${name}: ${status}`)
-                  .join(", ")}
-                ）。
+                一部の取得元でエラーがありました。取得できた候補だけを表示しています。
               </p>
             )}
           {result.jobs.length === 0 ? (
@@ -639,6 +685,7 @@ export function JobDiscovery() {
                           className="job-candidate-meta"
                           aria-label="求人メタ情報"
                         >
+                          <li>{job.sourceName}</li>
                           {candidate.location !== undefined && (
                             <li>{formatLocation(candidate.location)}</li>
                           )}

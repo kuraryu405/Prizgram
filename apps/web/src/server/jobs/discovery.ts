@@ -18,6 +18,11 @@ import { AppError } from "../api";
 import type { ChatMessage, StructuredLlmClient } from "../llm/client";
 import { LlmClientError, createLlmClientFromEnvironment } from "../llm";
 import {
+  adaptQueryForProvider,
+  enrichMissingCompanies,
+  needsCompanyEnrichment,
+} from "./discovery-enrichment";
+import {
   CAREERJET_PROVIDER_NAME,
   CAREERJET_SOURCE_KIND,
   CareerjetProvider,
@@ -119,13 +124,6 @@ export function employmentTypeToFilters(
  * Builds the chat messages for one search-query generation. The approved
  * persona travels as delimited data; the model may only recombine what is
  * present, never invent employers or locations.
- *
- * The persona is JSON-stringified inside <persona> tags. JSON escaping
- * guarantees that a literal `</persona>` inside the data is encoded as
- * `\u003C/persona\u003E` or similar and cannot break the delimiter, so no
- * additional escaping is needed. The system prompt explicitly instructs the
- * model to treat the delimited block as data, not instructions, preventing
- * prompt injection from persona text.
  */
 export function buildJobSearchMessages(
   persona: PersonaSnapshot,
@@ -151,7 +149,6 @@ export function buildJobSearchMessages(
       content: [
         "次のペルソナから求人検索条件を組み立ててください。",
         "<persona>",
-        // JSON.stringify escapes `</persona>` sequences, keeping delimiter safe.
         JSON.stringify(persona),
         "</persona>",
       ].join("\n"),
@@ -212,6 +209,8 @@ export type DiscoveryResult = Readonly<{
   hits: number;
   jobs: readonly DiscoveredJob[];
   providerStatuses: Readonly<Record<string, ProviderStatus>>;
+  /** Number of normalized candidates returned by each provider before dedupe. */
+  providerCounts: Readonly<Record<string, number>>;
 }>;
 
 type DiscoverOptions = Readonly<{
@@ -220,6 +219,8 @@ type DiscoverOptions = Readonly<{
   provider?: CareerjetProvider | ProviderAdapter;
   providers?: readonly ProviderAdapter[];
   now?: () => Date;
+  /** Called once immediately before best-effort manual-search LLM enrichment. */
+  onLlmUse?: () => void;
 }>;
 
 let environmentClient: StructuredLlmClient | undefined;
@@ -276,12 +277,12 @@ function defaultProviders(): ProviderAdapter[] {
       error instanceof JobSearchProviderError &&
       error.code === "PROVIDER_NOT_CONFIGURED"
     ) {
-      // Careerjet not configured: skip rather than failing entire search
+      // Careerjet not configured: skip rather than failing entire search.
     } else {
       throw error;
     }
   }
-  // Himalayas is public (no API key) and always available
+
   try {
     const himalayas = HimalayasProvider.fromEnvironment();
     providers.push({
@@ -295,12 +296,12 @@ function defaultProviders(): ProviderAdapter[] {
       error instanceof JobSearchProviderError &&
       error.code === "PROVIDER_NOT_CONFIGURED"
     ) {
-      // Invalid custom timeout config etc.; treat as skipped
+      // Invalid optional config: skip this public provider only.
     } else {
       throw error;
     }
   }
-  // Jobicy is public (no API key) and always available
+
   try {
     const jobicy = JobicyProvider.fromEnvironment();
     providers.push({
@@ -314,7 +315,7 @@ function defaultProviders(): ProviderAdapter[] {
       error instanceof JobSearchProviderError &&
       error.code === "PROVIDER_NOT_CONFIGURED"
     ) {
-      // Invalid custom timeout config etc.; treat as skipped
+      // Invalid optional config: skip this public provider only.
     } else {
       throw error;
     }
@@ -377,8 +378,6 @@ function providerError(error: unknown): AppError {
           { cause: error },
         );
       case "PROVIDER_HTTP_ERROR":
-        // Non-retryable HTTP statuses (bad key, unsupported locale) are
-        // deployment faults rather than transient outages.
         if (!error.retryable) {
           return new AppError(
             "SERVER_MISCONFIGURED",
@@ -416,14 +415,11 @@ function normalizeForDedupe(value: string): string {
 }
 
 function candidateDedupeKey(candidate: JobCandidate): string | undefined {
-  // Strong evidence required: company + title must both be present after normalization.
-  // If either is missing, do not dedupe to avoid false merges.
   if (candidate.company === undefined || candidate.company.trim() === "")
     return undefined;
   const company = normalizeForDedupe(candidate.company);
   const title = normalizeForDedupe(candidate.title);
   if (company === "" || title === "") return undefined;
-  // Location is optional but strengthens key when present.
   if (candidate.location !== undefined && candidate.location.trim() !== "") {
     const location = normalizeForDedupe(candidate.location);
     if (location !== "") return `${company}|${title}|${location}`;
@@ -438,11 +434,9 @@ export function dedupeDiscoveredJobs(
   const result: DiscoveredJob[] = [];
   for (const job of jobs) {
     const key = candidateDedupeKey(job.candidate);
-    // Also deduplicate on normalized canonical URL host+path when available
     const urlKey = (() => {
       try {
         const u = new URL(job.candidate.url);
-        // normalize host lowercased + pathname without trailing slash, ignore query for dedupe strength
         return `${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, "").toLowerCase()}`;
       } catch {
         return undefined;
@@ -451,9 +445,7 @@ export function dedupeDiscoveredJobs(
 
     let duplicate = false;
     if (key !== undefined && seen.has(key)) duplicate = true;
-    // URL-based duplicate is strong evidence even without company/title
     if (!duplicate && urlKey !== undefined) {
-      // Check if any previous job has same urlKey
       for (const prev of result) {
         try {
           const prevUrl = new URL(prev.candidate.url);
@@ -463,7 +455,7 @@ export function dedupeDiscoveredJobs(
             break;
           }
         } catch {
-          // ignore
+          // Ignore malformed previous URLs; provider normalization normally drops them.
         }
       }
     }
@@ -479,15 +471,7 @@ function selectProviders(
   query: JobSearchQuery,
   available: readonly ProviderAdapter[],
 ): readonly ProviderAdapter[] {
-  // Simple selection policy for PR1:
-  // - Always include Himalayas (public, remote-friendly) for any query
-  // - Include Careerjet for any query (licensed_source covers Japan)
-  // Future: query/location/remote/company could filter, but fan-out to both for now.
-  // Respect explicit result limits and concurrency via caller.
-  // Avoid unbounded fan-out: cap to available length (max 2 for PR1).
   if (available.length === 0) return [];
-  // If query is empty (should not happen after validation), still return all
-  // to maximize coverage. Provider dedupe handles overlap.
   void query;
   return available;
 }
@@ -510,8 +494,7 @@ async function withProviderTimeout<T>(
     }, timeoutMs);
   });
   try {
-    const result = await Promise.race([promise, timeoutPromise]);
-    return result;
+    return await Promise.race([promise, timeoutPromise]);
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
@@ -526,6 +509,7 @@ async function searchWithProviders(
   jobs: DiscoveredJob[];
   hits: number;
   providerStatuses: Record<string, ProviderStatus>;
+  providerCounts: Record<string, number>;
 }> {
   if (providers.length === 0) {
     throw new AppError(
@@ -537,18 +521,17 @@ async function searchWithProviders(
 
   const selected = selectProviders(query, providers);
   const limited = selected.slice(0, PROVIDER_CONCURRENCY);
-
   const fetchedAt = now().toISOString();
 
   const results = await Promise.all(
     limited.map(async (provider) => {
       try {
+        const providerQuery = adaptQueryForProvider(provider.name, query);
         const res = await withProviderTimeout(
-          provider.search(query, context),
+          provider.search(providerQuery, context),
           PROVIDER_TIMEOUT_MS,
           provider.name,
         );
-        // Enforce per-provider result limit (defense in depth)
         const candidates = res.candidates.slice(0, MAX_CANDIDATES_PER_PROVIDER);
         const jobs: DiscoveredJob[] = candidates.map((candidate) => ({
           candidate,
@@ -589,24 +572,24 @@ async function searchWithProviders(
   );
 
   const providerStatuses: Record<string, ProviderStatus> = {};
+  const providerCounts: Record<string, number> = {};
   const allJobs: DiscoveredJob[] = [];
   let totalHits = 0;
 
-  for (const r of results) {
-    providerStatuses[r.provider] = r.status;
-    if (r.status === "ok") {
-      totalHits += r.hits;
-      for (const job of r.jobs) {
+  for (const result of results) {
+    providerStatuses[result.provider] = result.status;
+    providerCounts[result.provider] = result.jobs.length;
+    if (result.status === "ok") {
+      totalHits += result.hits;
+      for (const job of result.jobs) {
         if (allJobs.length >= MAX_TOTAL_CANDIDATES) break;
         allJobs.push(job);
       }
     }
   }
 
-  // If all providers failed, surface the most relevant error.
-  const hasOk = results.some((r) => r.status === "ok");
+  const hasOk = results.some((result) => result.status === "ok");
   if (!hasOk) {
-    // Prefer rate_limited / timeout over generic error for UX
     const priority: Record<ProviderStatus, number> = {
       rate_limited: 0,
       timeout: 1,
@@ -626,10 +609,27 @@ async function searchWithProviders(
     );
   }
 
-  const deduped = dedupeDiscoveredJobs(allJobs);
-  const sliced = deduped.slice(0, MAX_TOTAL_CANDIDATES);
+  const jobs = dedupeDiscoveredJobs(allJobs).slice(0, MAX_TOTAL_CANDIDATES);
+  return { jobs: [...jobs], hits: totalHits, providerStatuses, providerCounts };
+}
 
-  return { jobs: sliced, hits: totalHits, providerStatuses };
+async function enrichCompaniesBestEffort(
+  jobs: readonly DiscoveredJob[],
+  client: StructuredLlmClient | undefined,
+  onLlmUse: (() => void) | undefined,
+): Promise<readonly DiscoveredJob[]> {
+  if (!needsCompanyEnrichment(jobs)) return jobs;
+  try {
+    onLlmUse?.();
+    const enriched = await enrichMissingCompanies(
+      jobs,
+      client ?? defaultClient(),
+    );
+    return dedupeDiscoveredJobs(enriched).slice(0, MAX_TOTAL_CANDIDATES);
+  } catch {
+    // Search results are still useful if optional entity extraction fails.
+    return jobs;
+  }
 }
 
 /**
@@ -675,7 +675,7 @@ export class DiscoveryService {
     );
   }
 
-  /** Explicit keywords allow searching without a persona or LLM. */
+  /** Explicit keywords allow searching without a persona or query-generation LLM. */
   static isManualSearch(overrides: JobDiscoveryInput): boolean {
     return (
       overrides.keywords !== undefined && overrides.keywords.trim().length > 0
@@ -690,10 +690,9 @@ export class DiscoveryService {
   ): Promise<DiscoveryResult> {
     const now = options.now ?? (() => new Date());
 
-    // Legacy single-provider path for tests that inject a fake provider
+    // Legacy single-provider path for tests that inject a fake provider.
     if (options.provider !== undefined) {
       const legacyProvider = options.provider as ProviderAdapter;
-      // Normalize to adapter shape if Careerjet instance was passed
       const adapter: ProviderAdapter =
         "name" in legacyProvider &&
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
@@ -722,7 +721,7 @@ export class DiscoveryService {
         let result;
         try {
           result = await withProviderTimeout(
-            adapter.search(query, context),
+            adapter.search(adaptQueryForProvider(adapter.name, query), context),
             PROVIDER_TIMEOUT_MS,
             adapter.name,
           );
@@ -730,19 +729,26 @@ export class DiscoveryService {
           throw providerError(error);
         }
         const fetchedAt = now().toISOString();
+        const rawJobs: DiscoveredJob[] = result.candidates
+          .slice(0, MAX_CANDIDATES_PER_PROVIDER)
+          .map((candidate) => ({
+            candidate,
+            sourceName: adapter.sourceName,
+            sourceKind: adapter.sourceKind,
+            fetchedAt,
+          }));
+        const jobs = await enrichCompaniesBestEffort(
+          rawJobs,
+          options.client,
+          options.onLlmUse,
+        );
         return {
           query,
           promptVersion: `${JOB_SEARCH_PROMPT_VERSION}-manual`,
           hits: result.hits,
-          jobs: result.candidates
-            .slice(0, MAX_CANDIDATES_PER_PROVIDER)
-            .map((candidate) => ({
-              candidate,
-              sourceName: adapter.sourceName,
-              sourceKind: adapter.sourceKind,
-              fetchedAt,
-            })),
+          jobs,
           providerStatuses: { [adapter.name]: "ok" },
+          providerCounts: { [adapter.name]: rawJobs.length },
         };
       }
 
@@ -769,7 +775,7 @@ export class DiscoveryService {
       let result;
       try {
         result = await withProviderTimeout(
-          adapter.search(query, context),
+          adapter.search(adaptQueryForProvider(adapter.name, query), context),
           PROVIDER_TIMEOUT_MS,
           adapter.name,
         );
@@ -777,23 +783,25 @@ export class DiscoveryService {
         throw providerError(error);
       }
       const fetchedAt = now().toISOString();
+      const rawJobs: DiscoveredJob[] = result.candidates
+        .slice(0, MAX_CANDIDATES_PER_PROVIDER)
+        .map((candidate) => ({
+          candidate,
+          sourceName: adapter.sourceName,
+          sourceKind: adapter.sourceKind,
+          fetchedAt,
+        }));
+      const jobs = await enrichCompaniesBestEffort(rawJobs, client, undefined);
       return {
         query,
         promptVersion: JOB_SEARCH_PROMPT_VERSION,
         hits: result.hits,
-        jobs: result.candidates
-          .slice(0, MAX_CANDIDATES_PER_PROVIDER)
-          .map((candidate) => ({
-            candidate,
-            sourceName: adapter.sourceName,
-            sourceKind: adapter.sourceKind,
-            fetchedAt,
-          })),
+        jobs,
         providerStatuses: { [adapter.name]: "ok" },
+        providerCounts: { [adapter.name]: rawJobs.length },
       };
     }
 
-    // Multi-provider path (PR1: Careerjet + Himalayas)
     const providers = options.providers ?? defaultProviders();
 
     if (DiscoveryService.isManualSearch(overrides)) {
@@ -807,12 +815,18 @@ export class DiscoveryService {
           : employmentTypeToFilters(overrides.employmentType)),
       };
       const multi = await searchWithProviders(query, context, providers, now);
+      const jobs = await enrichCompaniesBestEffort(
+        multi.jobs,
+        options.client,
+        options.onLlmUse,
+      );
       return {
         query,
         promptVersion: `${JOB_SEARCH_PROMPT_VERSION}-manual`,
         hits: multi.hits,
-        jobs: multi.jobs,
+        jobs,
         providerStatuses: multi.providerStatuses,
+        providerCounts: multi.providerCounts,
       };
     }
 
@@ -840,13 +854,15 @@ export class DiscoveryService {
     }
 
     const multi = await searchWithProviders(query, context, providers, now);
+    const jobs = await enrichCompaniesBestEffort(multi.jobs, client, undefined);
 
     return {
       query,
       promptVersion: JOB_SEARCH_PROMPT_VERSION,
       hits: multi.hits,
-      jobs: multi.jobs,
+      jobs,
       providerStatuses: multi.providerStatuses,
+      providerCounts: multi.providerCounts,
     };
   }
 }

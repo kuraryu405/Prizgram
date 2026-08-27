@@ -1,11 +1,14 @@
-import { apiResult, readJsonBody, withApiHandler } from "@/server/api";
+import {
+  AppError,
+  apiResult,
+  readJsonBody,
+  withApiHandler,
+} from "@/server/api";
 import { requireSessionUser } from "@/server/auth";
 import { withNoStore } from "@/server/auth/http";
 import { getDatabase } from "@/server/database";
-import {
-  InterviewAiService,
-  interviewReflectionCreateSchema,
-} from "@/server/interview-ai/service";
+import { InterviewReflectionService } from "@/server/interview-ai/reflections";
+import { interviewReflectionCreateSchema } from "@/server/interview-ai/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,18 +20,15 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await context.params;
-  if (!idPattern.test(id)) {
-    const { AppError } = await import("@/server/api");
-    throw new AppError("NOT_FOUND", "Application not found", 404);
-  }
   return withNoStore(
     withApiHandler((innerRequest) => {
       const user = requireSessionUser(innerRequest);
-      const list = new InterviewAiService(getDatabase()).listReflections(
-        user.id,
-        id,
+      if (!idPattern.test(id)) {
+        throw new AppError("NOT_FOUND", "Application not found", 404);
+      }
+      return apiResult(
+        new InterviewReflectionService(getDatabase()).list(user.id, id),
       );
-      return apiResult(list);
     }),
   )(request);
 }
@@ -38,18 +38,17 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const { id } = await context.params;
-  if (!idPattern.test(id)) {
-    const { AppError } = await import("@/server/api");
-    throw new AppError("NOT_FOUND", "Application not found", 404);
-  }
   return withNoStore(
     withApiHandler(async (innerRequest) => {
       const user = requireSessionUser(innerRequest);
+      if (!idPattern.test(id)) {
+        throw new AppError("NOT_FOUND", "Application not found", 404);
+      }
       const input = await readJsonBody(
         innerRequest,
         interviewReflectionCreateSchema,
       );
-      const created = new InterviewAiService(getDatabase()).createReflection(
+      const created = new InterviewReflectionService(getDatabase()).create(
         user.id,
         id,
         input,

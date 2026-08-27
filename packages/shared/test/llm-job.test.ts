@@ -87,6 +87,30 @@ describe("createJobStructuredOutput", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("can apply import-only fallbacks for omitted company and evidence", () => {
+    const contract = createJobStructuredOutput(source, {
+      fallbackCompany: "企業名非公開",
+      ensureDifficultyEvidence: true,
+    });
+    const provider = jobProviderOutputSchema.parse(
+      providerPayload({
+        company: "",
+        requirements: [],
+        cultureValues: [],
+        desiredSkills: [{ text: "AWSの実務経験" }],
+        difficultyEvidence: [],
+      }),
+    );
+    const parsed = contract.domainSchema.safeParse(
+      contract.normalize(provider),
+    );
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.company).toBe("企業名非公開");
+    expect(parsed.data.difficulty.evidenceRefs).toEqual(["job:skill:1"]);
+  });
+
   it("keeps identical texts in different sections as distinct signals", () => {
     const contract = createJobStructuredOutput(source);
     const provider = jobProviderOutputSchema.parse(

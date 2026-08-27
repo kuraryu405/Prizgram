@@ -240,7 +240,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           本文へスキップ
         </a>
         <div className="app-layout">
-          <header className="app-header lp-nav is-scrolled">
+          <header className="app-header lp-nav">
             <Link
               aria-label="Prizgram ホーム"
               className="app-brand lp-nav-left"
