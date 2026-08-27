@@ -247,6 +247,29 @@ describe("DeadlineService", () => {
     expect(service.list(userA.id)[0]?.dueAt).toBe(created.dueAt);
   });
 
+  it("edits all browser-editable deadline fields in one update", () => {
+    const created = service.create(userA, {
+      applicationId,
+      kind: "document",
+      title: "ES提出",
+      dueLocal: "2026-09-01T09:00",
+      timeZone: "Asia/Tokyo",
+    });
+    const updated = service.update(userA, created.deadlineId, {
+      kind: "interview",
+      title: "一次面接",
+      dueLocal: "2026-09-02T14:30",
+      timeZone: "America/Los_Angeles",
+    });
+
+    expect(updated).toMatchObject({
+      kind: "interview",
+      title: "一次面接",
+      timeZone: "America/Los_Angeles",
+      dueAt: "2026-09-02T21:30:00.000Z",
+    });
+  });
+
   it("deletes only owned deadlines", () => {
     const created = service.create(userA, {
       applicationId,
@@ -287,7 +310,10 @@ describe("DeadlineService", () => {
     expect(service.list(userB.id)).toHaveLength(0);
     expect(
       syncErrorCode(() =>
-        service.update(userB, created.deadlineId, { title: "乗っ取り" }),
+        service.update(userB, created.deadlineId, {
+          kind: "interview",
+          title: "乗っ取り",
+        }),
       ),
     ).toBe("NOT_FOUND");
   });
