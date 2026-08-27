@@ -868,6 +868,14 @@ a {
   line-height: 1.7;
 }
 
+.job-candidate-description {
+  -webkit-box-orient: vertical;
+  display: -webkit-box;
+  line-clamp: 4;
+  overflow: hidden;
+  -webkit-line-clamp: 4;
+}
+
 /* Scoring panel */
 
 .score-panel {

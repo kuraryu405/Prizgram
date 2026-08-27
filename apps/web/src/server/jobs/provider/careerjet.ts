@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 
+import { convert, type HtmlToTextOptions } from "html-to-text";
 import { z } from "zod";
 
 import type { LogSafeCause } from "../../api";
@@ -34,6 +35,7 @@ export type JobCandidate = Readonly<{
   externalId: string;
   title: string;
   company?: string;
+  /** Provider description normalized to safe plain text for UI and import use. */
   description?: string;
   location?: string;
   url: string;
@@ -141,10 +143,26 @@ function cleanText(raw: string | null | undefined): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-function cleanDescription(raw: string | null | undefined): string | undefined {
+const providerDescriptionTextOptions: HtmlToTextOptions = {
+  wordwrap: false,
+  selectors: [
+    { selector: "a", options: { ignoreHref: true } },
+    { selector: "img", format: "skip" },
+  ],
+};
+
+/**
+ * Converts untrusted provider presentation HTML into the display text stored
+ * on a candidate. The provider markup is never passed through to the client.
+ */
+function normalizeProviderDescription(
+  raw: string | null | undefined,
+): string | undefined {
   if (raw === null || raw === undefined) return undefined;
-  if (!/<\/?b>/i.test(raw)) return cleanText(raw);
-  return cleanText(raw.replace(/<\/?b>/gi, "").replace(/\s+/g, " "));
+  const text = convert(raw, providerDescriptionTextOptions)
+    .replace(/\s+/g, " ")
+    .trim();
+  return text === "" ? undefined : text;
 }
 
 /**
@@ -173,7 +191,7 @@ export function normalizeCareerjetJob(raw: unknown): JobCandidate | undefined {
   // structured, or revisited; dropping it beats persisting garbage.
   if (title === undefined) return undefined;
   const company = cleanText(job.company);
-  const description = cleanDescription(job.description);
+  const description = normalizeProviderDescription(job.description);
   const location = cleanText(job.locations);
   const salaryText = cleanText(job.salary);
   const postedAt = parseIsoDate(job.date);
