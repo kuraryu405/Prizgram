@@ -233,9 +233,8 @@ export class PersonaUpdateService {
             );
             const isAllowedReflection =
               evidence.sourceId === allowedReflectionSourceId;
-            const isAnyReflection = evidence.sourceId.startsWith(
-              REFLECTION_PREFIX,
-            );
+            const isAnyReflection =
+              evidence.sourceId.startsWith(REFLECTION_PREFIX);
             if (isAnyReflection && !isAllowedReflection) {
               throw new AppError(
                 "UPSTREAM_INVALID_RESPONSE",

@@ -180,9 +180,7 @@ export default async function PersonaPage() {
             <li key={evidence.id}>
               [{sourceTypeLabel[evidence.sourceType] ?? evidence.sourceType}]{" "}
               {evidence.summary}
-              {evidence.sourceId !== undefined
-                ? ` (${evidence.sourceId})`
-                : ""}
+              {evidence.sourceId !== undefined ? ` (${evidence.sourceId})` : ""}
             </li>
           ))}
         </ul>
