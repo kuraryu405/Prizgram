@@ -206,6 +206,22 @@ describe("PersonaService intake", () => {
     expect(updatedRow.id).toBe(firstRow.id);
     expect(updatedRow.answer).toBe("更新後のスキル回答です。");
   });
+
+  it("rejects unknown question ids without persisting an answer", () => {
+    const started = service.startIntake(userA.id);
+
+    expect(() =>
+      service.saveAnswer(userA, started.intakeId, {
+        questionId: "q9_hacked",
+        answer: "想定外の回答",
+      }),
+    ).toThrowError(new AppError("VALIDATION_ERROR", "Invalid question", 400));
+
+    const rows = connection.sqlite
+      .prepare("select count(*) as count from persona_intake_answers")
+      .get() as { count: number };
+    expect(rows.count).toBe(0);
+  });
 });
 
 describe("PersonaService.generatePersona", () => {
