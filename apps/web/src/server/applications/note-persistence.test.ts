@@ -88,7 +88,7 @@ describe("Application note persistence", () => {
     expect(detail.events[0]?.note).toBe("初回メモ");
   });
 
-  it("updates and clears the current note without creating stage events", () => {
+  it("updates and clears note without stage events", () => {
     const created = service.createFromJob(user, {
       jobId: "job-note",
       note: "before",
@@ -107,7 +107,7 @@ describe("Application note persistence", () => {
     expect(cleared.events).toHaveLength(1);
   });
 
-  it("stores status+note in current state and history, then preserves note on status-only updates", () => {
+  it("preserves note across status-only updates", () => {
     const created = service.createFromJob(user, {
       jobId: "job-note",
       note: "keep me",
