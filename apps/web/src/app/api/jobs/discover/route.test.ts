@@ -56,7 +56,7 @@ beforeEach(() => {
 });
 
 describe("POST /api/jobs/discover", () => {
-  it("does not consume the LLM rate limit for manual searches", async () => {
+  it("keeps manual searches free until optional enrichment actually uses the LLM", async () => {
     const response = await POST(
       discoveryRequest({ keywords: "TypeScript", location: "東京" }),
     );
@@ -67,7 +67,16 @@ describe("POST /api/jobs/discover", () => {
       expect.objectContaining({ id: "user-1" }),
       { keywords: "TypeScript", location: "東京" },
       expect.any(Object),
+      expect.objectContaining({ onLlmUse: expect.any(Function) }),
     );
+
+    const options = mocks.discover.mock.calls[0]?.[3] as
+      | { onLlmUse?: () => void }
+      | undefined;
+    options?.onLlmUse?.();
+    options?.onLlmUse?.();
+    expect(mocks.enforce).toHaveBeenCalledTimes(1);
+    expect(mocks.enforce).toHaveBeenCalledWith("user-1");
   });
 
   it("keeps the LLM rate limit for persona-assisted searches", async () => {
@@ -75,5 +84,11 @@ describe("POST /api/jobs/discover", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.enforce).toHaveBeenCalledWith("user-1");
+    expect(mocks.discover).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "user-1" }),
+      {},
+      expect.any(Object),
+      {},
+    );
   });
 });
