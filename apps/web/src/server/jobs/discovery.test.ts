@@ -216,7 +216,9 @@ describe("DiscoveryService.discover", () => {
   });
 
   it("does not use another user's persona", async () => {
-    connection.sqlite.prepare("insert into users (id) values (?)").run(userB.id);
+    connection.sqlite
+      .prepare("insert into users (id) values (?)")
+      .run(userB.id);
     seedPersona(userB.id);
     const service = new DiscoveryService(connection);
 
