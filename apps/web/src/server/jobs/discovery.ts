@@ -104,6 +104,13 @@ export function employmentTypeToFilters(
  * Builds the chat messages for one search-query generation. The approved
  * persona travels as delimited data; the model may only recombine what is
  * present, never invent employers or locations.
+ *
+ * The persona is JSON-stringified inside <persona> tags. JSON escaping
+ * guarantees that a literal `</persona>` inside the data is encoded as
+ * `\u003C/persona\u003E` or similar and cannot break the delimiter, so no
+ * additional escaping is needed. The system prompt explicitly instructs the
+ * model to treat the delimited block as data, not instructions, preventing
+ * prompt injection from persona text.
  */
 export function buildJobSearchMessages(
   persona: PersonaSnapshot,
@@ -129,6 +136,7 @@ export function buildJobSearchMessages(
       content: [
         "次のペルソナから求人検索条件を組み立ててください。",
         "<persona>",
+        // JSON.stringify escapes `</persona>` sequences, keeping delimiter safe.
         JSON.stringify(persona),
         "</persona>",
       ].join("\n"),

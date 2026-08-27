@@ -168,6 +168,45 @@ describe("applyDiscoveryOverrides", () => {
     });
   });
 
+  it("keeps partial generated filters (contractType only)", () => {
+    const partial = {
+      keywords: "生成キーワード",
+      location: "大阪",
+      contractType: "p" as const,
+    };
+    const query = applyDiscoveryOverrides(partial, {});
+    expect(query).toEqual({
+      keywords: "生成キーワード",
+      location: "大阪",
+      contractType: "p",
+    });
+    expect(query.workHours).toBeUndefined();
+  });
+
+  it("keeps partial generated filters (workHours only)", () => {
+    const partial = {
+      keywords: "生成キーワード",
+      location: "大阪",
+      workHours: "f" as const,
+    };
+    const query = applyDiscoveryOverrides(partial, {});
+    expect(query).toEqual({
+      keywords: "生成キーワード",
+      location: "大阪",
+      workHours: "f",
+    });
+    expect(query.contractType).toBeUndefined();
+  });
+
+  it("keeps no generated filters when both are undefined", () => {
+    const noFilters = { keywords: "生成キーワード", location: "大阪" };
+    const query = applyDiscoveryOverrides(noFilters, {});
+    expect(query).toEqual({
+      keywords: "生成キーワード",
+      location: "大阪",
+    });
+  });
+
   it("lets explicit user conditions win over generated ones", () => {
     const query = applyDiscoveryOverrides(generated, {
       keywords: "手動キーワード",
@@ -179,6 +218,27 @@ describe("applyDiscoveryOverrides", () => {
     expect(query.contractType).toBe("i");
     expect(query.workHours).toBeUndefined();
   });
+
+  it.each([
+    ["internship", { contractType: "i" }],
+    ["full_time", { contractType: "p", workHours: "f" }],
+    ["part_time", { workHours: "p" }],
+    ["contract", { contractType: "c" }],
+  ] as const)(
+    "overrides generated filters with employmentType=%s",
+    (employmentType, expected) => {
+      const query = applyDiscoveryOverrides(generated, { employmentType });
+      expect(query.contractType).toBe(
+        (expected as { contractType?: string }).contractType,
+      );
+      expect(query.workHours).toBe(
+        (expected as { workHours?: string }).workHours,
+      );
+      // Keywords/location from generated should be preserved
+      expect(query.keywords).toBe("生成キーワード");
+      expect(query.location).toBe("大阪");
+    },
+  );
 
   it("maps employment types onto provider filters", () => {
     expect(employmentTypeToFilters("internship")).toEqual({
@@ -216,6 +276,8 @@ describe("DiscoveryService.discover", () => {
   });
 
   it("does not use another user's persona", async () => {
+    // Only userB has a persona; userA should still get PERSONA_REQUIRED.
+    // This exercises the first query's user_id filter.
     connection.sqlite
       .prepare("insert into users (id) values (?)")
       .run(userB.id);
@@ -230,6 +292,40 @@ describe("DiscoveryService.discover", () => {
         }),
       ),
     ).resolves.toBe("PERSONA_REQUIRED");
+  });
+
+  it("isolates personas per user even when both have personas", async () => {
+    // Both users have personas; each should only see their own.
+    connection.sqlite
+      .prepare("insert into users (id) values (?)")
+      .run(userB.id);
+    seedPersona(userA.id);
+    seedPersona(userB.id);
+    const service = new DiscoveryService(connection);
+    const provider = providerReturning([]);
+
+    // userA discover should succeed using userA's persona
+    const resultA = await service.discover(userA, {}, context, {
+      client: clientReturning(generatedQueryPayload),
+      provider: provider as never,
+    });
+    expect(resultA.query).toEqual({ keywords: "フロントエンド エンジニア" });
+
+    // Directly verify second query's user_id filter: snapshot lookup
+    // for a foreign id must not return data even if first query were spoofed.
+    const foreignId = `pv-${userB.id}`;
+    const rawForeign = connection.sqlite
+      .prepare(
+        "select snapshot from persona_versions where id = ? and user_id = ?",
+      )
+      .get(foreignId, userA.id) as { snapshot: string } | undefined;
+    expect(rawForeign).toBeUndefined();
+    const rawOwn = connection.sqlite
+      .prepare(
+        "select snapshot from persona_versions where id = ? and user_id = ?",
+      )
+      .get(foreignId, userB.id) as { snapshot: string } | undefined;
+    expect(rawOwn).toBeDefined();
   });
 
   it("generates a query from the latest persona and returns normalized candidates", async () => {
