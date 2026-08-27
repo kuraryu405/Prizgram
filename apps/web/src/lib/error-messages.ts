@@ -30,6 +30,8 @@ const codeMessages: Readonly<Record<string, string>> = {
     "指定された勤務地を求人検索APIが解決できませんでした。勤務地の指定を変えて再度お試しください。",
   SEARCH_QUERY_REQUIRED:
     "検索条件を生成できませんでした。キーワードを入力して再度お試しください。",
+  APPLICATION_TERMINAL:
+    "終了した応募には新しい締切を追加できません。別の応募を選択するか、応募ステータスを確認してください。",
   INTERNAL_ERROR:
     "サーバーで問題が発生しました。しばらくしてから再度お試しください。",
   NETWORK_ERROR:

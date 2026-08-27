@@ -5,6 +5,8 @@ import {
   DeadlineToggle,
 } from "@/components/deadlines/deadline-components";
 import { deadlineKindLabels as kindLabels } from "@/lib/labels";
+import { terminalApplicationStatuses } from "@prizgram/shared";
+
 import { getDatabase } from "@/server/database";
 import { ApplicationService } from "@/server/applications/service";
 import { DeadlineService, type DeadlineView } from "@/server/deadlines/service";
@@ -12,11 +14,9 @@ import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
 
-const terminalApplicationStatuses = new Set([
-  "accepted",
-  "rejected",
-  "withdrawn",
-]);
+const terminalApplicationStatusSet = new Set<string>(
+  terminalApplicationStatuses as readonly string[],
+);
 
 function formatInZone(view: DeadlineView): string {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -41,7 +41,7 @@ export default async function DeadlinesPage() {
   );
   const completed = deadlines.filter((deadline) => deadline.completed);
   const applicationsAcceptingDeadlines = applications.filter(
-    (application) => !terminalApplicationStatuses.has(application.status),
+    (application) => !terminalApplicationStatusSet.has(application.status),
   );
 
   return (

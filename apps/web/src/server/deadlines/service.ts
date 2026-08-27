@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { deadlineKinds, type AuthenticatedUser } from "@prizgram/shared";
+import {
+  deadlineKinds,
+  terminalApplicationStatuses,
+  type AuthenticatedUser,
+} from "@prizgram/shared";
 import {
   applications,
   applicationDeadlines,
@@ -15,11 +19,9 @@ import {
 import { AppError } from "../api";
 
 const TIMEZONE_PATTERN = /^[A-Za-z_]+\/[A-Za-z_+-]+(\/[A-Za-z_+-]+)?$|^UTC$/;
-const TERMINAL_APPLICATION_STATUSES = new Set([
-  "accepted",
-  "rejected",
-  "withdrawn",
-]);
+const TERMINAL_APPLICATION_STATUSES = new Set<string>(
+  terminalApplicationStatuses as readonly string[],
+);
 
 function isValidTimeZone(timeZone: string): boolean {
   try {
