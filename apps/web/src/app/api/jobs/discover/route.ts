@@ -24,10 +24,20 @@ export const POST = withNoStore(
       jobDiscoveryRequestSchema,
       JOB_DISCOVERY_MAX_REQUEST_BYTES,
     );
-    // Manual search (keywords provided) must not consume LLM budget (#132).
-    if (input.keywords === undefined || input.keywords.trim().length === 0) {
+    const manualSearch =
+      input.keywords !== undefined && input.keywords.trim().length > 0;
+
+    // Persona-assisted search always needs the LLM to build the base query.
+    // Manual search stays free unless the returned postings need optional
+    // company-name extraction; the service calls onLlmUse only in that case.
+    if (!manualSearch) enforceLlmRateLimit(user.id);
+    let manualLlmBudgetConsumed = false;
+    const consumeManualLlmBudget = () => {
+      if (!manualSearch || manualLlmBudgetConsumed) return;
       enforceLlmRateLimit(user.id);
-    }
+      manualLlmBudgetConsumed = true;
+    };
+
     const result = await new DiscoveryService(getDatabase()).discover(
       user,
       input,
@@ -38,6 +48,7 @@ export const POST = withNoStore(
         userIp: requestSourceKey(request),
         userAgent: request.headers.get("user-agent") ?? "unknown",
       },
+      manualSearch ? { onLlmUse: consumeManualLlmBudget } : {},
     );
     return apiResult(result, { status: 200 });
   }),
