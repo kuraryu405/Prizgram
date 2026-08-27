@@ -138,6 +138,40 @@ describe("apiFetch", () => {
       window.removeEventListener(UNAUTHORIZED_EVENT, listener);
     }
   });
+
+  test("waits for an in-flight entry PATCH before submitting a document", async () => {
+    let resolveEntrySave: ((response: Response) => void) | undefined;
+    const entrySaveResponse = new Promise<Response>((resolve) => {
+      resolveEntrySave = resolve;
+    });
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => entrySaveResponse)
+      .mockResolvedValueOnce(okEnvelope({ status: "submitted" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const entrySave = apiFetch(
+      "/api/entries/entry-1",
+      jsonRequestInit("PATCH", { answer: "latest answer" }),
+    );
+    const submit = apiFetch(
+      "/api/documents/document-1/submit",
+      jsonRequestInit("POST", {}),
+    );
+
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/entries/entry-1");
+
+    resolveEntrySave?.(okEnvelope({ answer: "latest answer" }));
+    await entrySave;
+    await submit;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/documents/document-1/submit",
+    );
+  });
 });
 
 describe("jsonRequestInit", () => {
