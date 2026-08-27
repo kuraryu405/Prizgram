@@ -71,9 +71,11 @@ if [[ -d "$release_directory/apps/web/public" ]]; then
 fi
 
 # Enter maintenance window: stop old app before touching DB (#197)
+service_was_active=false
 if systemctl --user is-active --quiet prizgram-web.service 2>/dev/null; then
   echo "Stopping prizgram-web.service for maintenance window..."
   systemctl --user stop prizgram-web.service || true
+  service_was_active=true
 fi
 
 # Consistent pre-deploy backup using SQLite snapshot API (#178, #216)
@@ -87,12 +89,24 @@ if [[ -f "$database_file" ]]; then
   echo "Creating pre-deploy snapshot: $backup_file"
   if ! sqlite3 "$database_file" ".backup '$backup_file'"; then
     echo "Backup failed; aborting deploy before migration" >&2
+    rm -f "$backup_file" || true
+    if [[ "$service_was_active" == "true" ]]; then
+      echo "Restarting previous service after backup failure..." >&2
+      systemctl --user daemon-reload || true
+      systemctl --user restart prizgram-web.service || true
+    fi
     exit 1
   fi
   # No WAL/SHM sidecar copy — .backup already produces a consistent snapshot (#178)
   integrity="$(sqlite3 "$backup_file" "PRAGMA integrity_check;" 2>&1 || true)"
   if [[ "$integrity" != "ok" ]]; then
     echo "Backup integrity_check failed: $integrity" >&2
+    rm -f "$backup_file" || true
+    if [[ "$service_was_active" == "true" ]]; then
+      echo "Restarting previous service after integrity failure..." >&2
+      systemctl --user daemon-reload || true
+      systemctl --user restart prizgram-web.service || true
+    fi
     exit 1
   fi
   echo "Backup verified: $backup_file"
@@ -101,7 +115,14 @@ else
 fi
 
 # Migration must run while service is stopped, after backup (#197)
-"$pnpm_binary" db:migrate
+if ! "$pnpm_binary" db:migrate; then
+  echo "Migration failed; restoring service..." >&2
+  if [[ "$service_was_active" == "true" ]]; then
+    systemctl --user daemon-reload || true
+    systemctl --user restart prizgram-web.service || true
+  fi
+  exit 1
+fi
 
 install -m 0644 "$release_directory/deploy/prizgram-web.service" "$service_file"
 ln -sfn "$release_directory" "$current_link"
@@ -138,6 +159,9 @@ fi
 if [[ -n "$previous_release" && "$previous_release" != "$release_directory" && -d "$previous_release" ]]; then
   echo "Health check failed; rolling back to previous release: $previous_release" >&2
   ln -sfn "$previous_release" "$current_link"
+  if [[ -f "$previous_release/deploy/prizgram-web.service" ]]; then
+    install -m 0644 "$previous_release/deploy/prizgram-web.service" "$service_file"
+  fi
   systemctl --user daemon-reload
   systemctl --user restart prizgram-web.service
   echo "Waiting for rollback health check..."
