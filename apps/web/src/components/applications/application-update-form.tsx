@@ -40,14 +40,12 @@ export function ApplicationUpdateForm({
     const nextValue = initialNextAction ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
     setNextAction(nextValue);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing dirty baseline from server props
     setSavedNextAction(nextValue.trim());
   }, [initialNextAction]);
   useEffect(() => {
     const nextValue = initialNote ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
     setNote(nextValue);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing dirty baseline from server props
     setSavedNote(nextValue.trim());
   }, [initialNote]);
 
