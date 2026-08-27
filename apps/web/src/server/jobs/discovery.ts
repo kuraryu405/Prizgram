@@ -361,12 +361,51 @@ export class DiscoveryService {
     );
   }
 
+  /** Explicit keywords allow searching without a persona or LLM. */
+  static isManualSearch(overrides: JobDiscoveryInput): boolean {
+    return (
+      overrides.keywords !== undefined && overrides.keywords.trim().length > 0
+    );
+  }
+
   async discover(
     user: AuthenticatedUser,
     overrides: JobDiscoveryInput,
     context: { userIp: string; userAgent: string },
     options: DiscoverOptions = {},
   ): Promise<DiscoveryResult> {
+    // Explicit keywords are sufficient for provider search. This path must
+    // not require a persona or spend an LLM request (#132).
+    if (DiscoveryService.isManualSearch(overrides)) {
+      const provider = options.provider ?? defaultProvider();
+      const query = {
+        keywords: overrides.keywords!.trim(),
+        ...(overrides.location === undefined
+          ? {}
+          : { location: overrides.location }),
+        ...(overrides.employmentType === undefined
+          ? {}
+          : employmentTypeToFilters(overrides.employmentType)),
+      };
+
+      let result;
+      try {
+        result = await provider.search(query, context);
+      } catch (error) {
+        throw providerError(error);
+      }
+      return {
+        query,
+        promptVersion: `${JOB_SEARCH_PROMPT_VERSION}-manual`,
+        hits: result.hits,
+        jobs: result.candidates.map((candidate) => ({
+          candidate,
+          sourceName: CAREERJET_PROVIDER_NAME,
+          sourceKind: CAREERJET_SOURCE_KIND,
+        })),
+      };
+    }
+
     const persona = this.loadLatestApprovedPersona(user.id);
     const client = options.client ?? defaultClient();
     const provider = options.provider ?? defaultProvider();

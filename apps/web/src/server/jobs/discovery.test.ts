@@ -16,6 +16,7 @@ import { AppError } from "../api";
 import type { ChatMessage, StructuredLlmClient } from "../llm/client";
 import {
   DiscoveryService,
+  JOB_SEARCH_PROMPT_VERSION,
   applyDiscoveryOverrides,
   buildJobSearchMessages,
   employmentTypeToFilters,
@@ -267,6 +268,37 @@ describe("DiscoveryService.discover", () => {
         JSON.stringify(provenance),
       );
   }
+
+  it("uses explicit conditions without requiring a persona or LLM", async () => {
+    const service = new DiscoveryService(connection);
+    const provider = providerReturning([]);
+
+    const result = await service.discover(
+      userA,
+      {
+        keywords: "  TypeScript エンジニア  ",
+        location: "東京",
+        employmentType: "full_time",
+      },
+      context,
+      { provider: provider as never },
+    );
+
+    expect(result.query).toEqual({
+      keywords: "TypeScript エンジニア",
+      location: "東京",
+      contractType: "p",
+      workHours: "f",
+    });
+    expect(result.promptVersion).toBe(`${JOB_SEARCH_PROMPT_VERSION}-manual`);
+    expect(provider.search).toHaveBeenCalledWith(result.query, context);
+  });
+
+  it("only treats non-empty keywords as a manual search", () => {
+    expect(DiscoveryService.isManualSearch({ keywords: "職種" })).toBe(true);
+    expect(DiscoveryService.isManualSearch({ keywords: "  " })).toBe(false);
+    expect(DiscoveryService.isManualSearch({})).toBe(false);
+  });
 
   it("requires an approved persona before searching", async () => {
     const service = new DiscoveryService(connection);
