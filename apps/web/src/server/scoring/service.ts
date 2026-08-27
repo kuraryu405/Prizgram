@@ -23,6 +23,10 @@ import { LlmClientError, createLlmClientFromEnvironment } from "../llm";
 
 export const SCORING_PROMPT_VERSION = "scoring-v1";
 
+export function currentScoringModel(): string {
+  return process.env.OPENAI_MODEL ?? "unknown-model";
+}
+
 export const SCORING_AXES = [
   "skillFit",
   "cultureValueFit",
@@ -509,8 +513,9 @@ export class ScoringService {
 
   /**
    * Returns the fresh evaluation pinned to the user's latest persona version
-   * and the job's latest version. Stale scores (different versions) are not
-   * considered current and return undefined; they remain accessible via
+   * and the job's latest version plus current scoring policy (model +
+   * promptVersion). Stale scores (different versions, model or prompt) are
+   * not considered current and return undefined; they remain accessible via
    * listScores history.
    */
   getCurrentScore(userId: string, jobId: string): ScoreDetail | undefined {
@@ -526,6 +531,8 @@ export class ScoringService {
           eq(matchScores.userId, userId),
           eq(matchScores.personaVersionId, latestPersona),
           eq(matchScores.jobVersionId, latestJob),
+          eq(matchScores.model, currentScoringModel()),
+          eq(matchScores.promptVersion, SCORING_PROMPT_VERSION),
         ),
       )
       .orderBy(desc(matchScores.createdAt))
@@ -537,6 +544,8 @@ export class ScoringService {
   /**
    * Batch variant of getCurrentScore: one persona lookup + one job_versions
    * lookup + one match_scores lookup regardless of N. Returns only fresh scores.
+   * Freshness includes current scoring model and promptVersion, so stale policy
+   * rows are excluded.
    */
   getCurrentScores(
     userId: string,
@@ -580,10 +589,12 @@ export class ScoringService {
           eq(matchScores.userId, userId),
           eq(matchScores.personaVersionId, latestPersona),
           inArray(matchScores.jobVersionId, latestVersionIds),
+          eq(matchScores.model, currentScoringModel()),
+          eq(matchScores.promptVersion, SCORING_PROMPT_VERSION),
         ),
       )
       .all();
-    // If multiple models exist for same version pair, keep newest per job
+    // If multiple policies exist for same version pair, keep newest per job
     const newestByJob = new Map<string, MatchScoreRow>();
     for (const row of scoreRows) {
       const jobId = reverse.get(row.jobVersionId);
@@ -669,8 +680,9 @@ export class ScoringService {
   }
 
   /**
-   * Describes staleness of the latest stored score relative to current versions.
-   * Useful for UI to show "stale" badges without extra queries.
+   * Describes staleness of the latest stored score relative to current versions
+   * and current scoring policy. Useful for UI to show "stale" badges without
+   * extra queries. History remains accessible via listScores.
    */
   describeFreshness(
     userId: string,
@@ -687,7 +699,9 @@ export class ScoringService {
     const latestJob = this.loadLatestJobVersionId(userId, jobId);
     const isFresh =
       latest.personaVersionId === latestPersona &&
-      latest.jobVersionId === latestJob;
+      latest.jobVersionId === latestJob &&
+      latest.model === currentScoringModel() &&
+      latest.promptVersion === SCORING_PROMPT_VERSION;
     return {
       status: isFresh ? "fresh" : "stale",
       detail: latest,
