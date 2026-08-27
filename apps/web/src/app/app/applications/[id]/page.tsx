@@ -21,9 +21,7 @@ function formatDateTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-function historyEventLabel(
-  event: ApplicationDetail["events"][number],
-): string {
+function historyEventLabel(event: ApplicationDetail["events"][number]): string {
   const toStatus = statusLabels[event.toStatus] ?? event.toStatus;
   const stage = event.stageLabel === undefined ? "" : ` / ${event.stageLabel}`;
   if (event.fromStatus === undefined) return `作成: ${toStatus}${stage}`;
