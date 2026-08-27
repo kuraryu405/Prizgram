@@ -142,6 +142,9 @@ cron例（毎日03:20）:
 ```
 
 月1回のrestore drill:
+- 本番のcanonical edgeはCloudflare Tunnelとし、Cloudflareが上書きする `CF-Connecting-IP` をauth rate limitのsource keyに使う。
+- LXCの `127.0.0.1:3000` は外部へ直接公開しない。Cloudflare Tunnel以外から任意のforwarded headerを送れる経路を作らない。
+- 証明書更新: certbot timer有効化
 
 ```bash
 "$HOME/prizgram/current/scripts/restore-drill.sh" \
