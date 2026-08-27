@@ -165,12 +165,13 @@ describe("ReminderService.generateDueReminders", () => {
     expect(service.listActive(userA, inside24h)).toHaveLength(1);
     expect(service.listActive(userA, inside24h)[0]?.priority).toBe("urgent");
 
-    // Superseded history is kept as dismissed, only latest is active.
+    // System-stale superseded reminders are deleted so they don't block regeneration (#174)
     const all = connection.sqlite
       .prepare("select status from reminders")
       .all() as Array<{ status: string }>;
-    expect(all.filter((r) => r.status === "dismissed")).toHaveLength(2);
+    expect(all.filter((r) => r.status === "dismissed")).toHaveLength(0);
     expect(all.filter((r) => r.status !== "dismissed")).toHaveLength(1);
+    expect(all).toHaveLength(1);
   });
 
   it("replaces a 24h reminder with overdue and does not keep both", () => {
@@ -299,11 +300,11 @@ describe("ReminderService.generateDueReminders", () => {
     service.generateDueReminders({ now: later });
     const after = service.listActive(userA, later);
     expect(after).toHaveLength(1);
-    // Dedupe changes, so old is dismissed – total rows 2 but only 1 active
+    // System stale is deleted, not kept as dismissed (#174) – total rows 1 but only 1 active
     const all = connection.sqlite
       .prepare("select count(*) as c from reminders")
       .get() as { c: number };
-    expect(all.c).toBe(2);
+    expect(all.c).toBe(1);
   });
 });
 
@@ -335,9 +336,8 @@ describe("ReminderService.listActive stale sweep", () => {
 
     markDeadlineCompleted("dl-open-row");
     expect(service.listActive(userA, now)).toHaveLength(0);
-    for (const row of storedReminderStatuses()) {
-      expect(row.status).toBe("dismissed");
-    }
+    // System stale is deleted, not kept as dismissed (#174)
+    expect(storedReminderStatuses()).toHaveLength(0);
   });
 
   it("dismisses and hides reminders once their application terminates", () => {
@@ -349,9 +349,8 @@ describe("ReminderService.listActive stale sweep", () => {
 
     markApplicationStatus("app-a", "withdrawn");
     expect(service.listActive(userA, now)).toHaveLength(0);
-    for (const row of storedReminderStatuses()) {
-      expect(row.status).toBe("dismissed");
-    }
+    // System stale is deleted, not kept as dismissed (#174)
+    expect(storedReminderStatuses()).toHaveLength(0);
   });
 
   it("keeps active reminders for open deadlines pending when only read", () => {
