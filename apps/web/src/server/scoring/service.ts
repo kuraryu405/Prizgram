@@ -135,7 +135,8 @@ export function buildScoringMessages(
         "- difficultyGap: ペルソナの現在の実力と選考難易度の準備ギャップ（0=ギャップなし、100=非常に大きい）",
         "ルール:",
         "- 各軸は0〜100の整数、理由1件以上、参照根拠(evidenceRefs)1件以上を必ず含める。",
-        "- evidenceRefsは入力データに存在するIDのみ引用できる。架空のIDは禁止。",
+        "- evidenceRefsは persona:xxx または job:xxx の形式で、入力データに存在するIDのみ引用できる。架空のIDは禁止。",
+        "- 例: persona:ev-123, job:job:req:1",
         "- difficultyGapの意味は「0=ギャップなし、100=非常に大きい準備ギャップ」である。",
         "- 求人票に文化・価値観の記述が不足する場合はcultureValueFitで推測せず、",
         "  理由に根拠不足である旨を明示し、ペルソナ側の価値観evidenceを引用する。",
@@ -159,19 +160,21 @@ export function buildScoringMessages(
   ];
 }
 
-/** Collects every evidence ID the evaluation is allowed to cite. */
+/** Collects every evidence ID the evaluation is allowed to cite with namespace prefix to avoid collisions (#190). Only qualified refs are allowed for new scores. */
 export function allowedEvidenceRefSet(
   persona: PersonaSnapshot,
   job: JobSnapshot,
 ): Set<string> {
   const refs = new Set<string>();
-  for (const evidence of persona.evidence) refs.add(evidence.id);
+  for (const evidence of persona.evidence) {
+    refs.add(`persona:${evidence.id}`);
+  }
   for (const signal of [
     ...job.requirements,
     ...job.desiredSkills,
     ...job.cultureValues,
   ]) {
-    refs.add(signal.id);
+    refs.add(`job:${signal.id}`);
   }
   return refs;
 }

@@ -149,7 +149,7 @@ function scoringPayload(overrides?: {
       evidenceRefs:
         overrides?.fabricatedRef !== undefined
           ? [overrides.fabricatedRef]
-          : ["ev:ts", "job:req:1"],
+          : ["persona:ev:ts", "job:job:req:1"],
     },
     cultureValueFit: {
       score: overrides?.cultureValueFitScore ?? 60,
@@ -157,12 +157,12 @@ function scoringPayload(overrides?: {
       evidenceRefs:
         overrides?.fabricatedRef !== undefined
           ? [overrides.fabricatedRef]
-          : ["ev:ts", "job:culture:1"],
+          : ["persona:ev:ts", "job:job:culture:1"],
     },
     difficultyGap: {
       score: overrides?.difficultyGapScore ?? 30,
       reasons: ["実装経験から大きなギャップはない"],
-      evidenceRefs: ["job:req:1", "ev:web"],
+      evidenceRefs: ["job:job:req:1", "persona:ev:web"],
     },
   };
 }
@@ -567,11 +567,37 @@ describe("ScoringService freshness (#129)", () => {
 describe("scoring helpers", () => {
   it("collects persona evidence and job signal ids as the citation universe", () => {
     const refs = allowedEvidenceRefSet(personaSnapshot, jobSnapshot);
-    expect(refs.has("ev:ts")).toBe(true);
-    expect(refs.has("ev:web")).toBe(true);
-    expect(refs.has("job:req:1")).toBe(true);
-    expect(refs.has("job:culture:1")).toBe(true);
+    expect(refs.has("persona:ev:ts")).toBe(true);
+    expect(refs.has("persona:ev:web")).toBe(true);
+    expect(refs.has("job:job:req:1")).toBe(true);
+    expect(refs.has("job:job:culture:1")).toBe(true);
+    // Raw ids are not allowed for new scores – only qualified refs
+    expect(refs.has("ev:ts")).toBe(false);
+    expect(refs.has("job:req:1")).toBe(false);
     expect(refs.size).toBe(4);
+  });
+
+  it("rejects collision of raw persona/job ids and requires qualified refs", () => {
+    // Same raw id in both persona and job must be distinguishable
+    const collisionPersona: PersonaSnapshot = {
+      ...personaSnapshot,
+      skills: [],
+      experiences: [],
+      evidence: [{ id: "collision", sourceType: "user_input", summary: "test" }],
+    };
+    const collisionJob: JobSnapshot = {
+      ...jobSnapshot,
+      requirements: [{ id: "collision", text: "something" }],
+      desiredSkills: [],
+      cultureValues: [],
+      difficulty: { level: "competitive", evidenceRefs: ["collision"] },
+    };
+    const refs = allowedEvidenceRefSet(collisionPersona, collisionJob);
+    expect(refs.has("persona:collision")).toBe(true);
+    expect(refs.has("job:collision")).toBe(true);
+    expect(refs.size).toBe(2);
+    // Raw collision id alone must not be accepted
+    expect(refs.has("collision")).toBe(false);
   });
 
   it("delimits external data inside the prompt", () => {

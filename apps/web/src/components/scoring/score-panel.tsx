@@ -133,12 +133,21 @@ export function ScoreEvaluateButton({
                   </ul>
                   <p className="hint-text">根拠:</p>
                   <ul>
-                    {dimension.evidenceRefs.map((reference) => (
-                      <li key={reference}>
-                        <span className="signal-id">{reference}</span>{" "}
-                        {evidenceTextById[reference] ?? ""}
-                      </li>
-                    ))}
+                    {dimension.evidenceRefs.map((reference) => {
+                      const text =
+                        evidenceTextById[reference] ??
+                        (reference.includes(":")
+                          ? evidenceTextById[reference.split(":").slice(1).join(":")]
+                          : evidenceTextById[`persona:${reference}`] ??
+                            evidenceTextById[`job:${reference}`]) ??
+                        "";
+                      return (
+                        <li key={reference}>
+                          <span className="signal-id">{reference}</span>{" "}
+                          {text}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </li>
               );
