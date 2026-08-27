@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { describeApiError } from "@/lib/error-messages";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { ToastProvider } from "@/components/ui/toast";
 
 function HomeIcon() {
   return (
@@ -232,126 +233,130 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   );
 
   return (
-    <div className="app-shell">
-      <a className="skip-link" href="#main-content">
-        本文へスキップ
-      </a>
-      <div className="app-layout">
-        <header className="app-header">
-          <Link aria-label="PRIZGRAM" className="app-brand" href="/app">
-            PRIZGRAM
-          </Link>
-          <nav aria-label="メインナビゲーション" className="app-nav">
-            <ul>
-              {primaryNavigationItems.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    aria-label={item.label}
-                    aria-current={
-                      isActive(pathname, item.href) ? "page" : undefined
-                    }
-                    data-tooltip={item.label}
-                    href={item.href}
-                    title={item.label}
-                  >
-                    <item.Icon />
-                    <span className="app-nav-label">{item.label}</span>
-                  </Link>
-                </li>
-              ))}
-              {/* Mobile-only: More sheet containing secondary items + profile */}
-              <li className="app-nav-item--more">
-                <details className="app-nav-more">
-                  <summary
-                    aria-label="その他"
-                    aria-current={isMoreActive ? "page" : undefined}
-                    className={
-                      isMoreActive
-                        ? "app-nav-more-trigger is-active"
-                        : "app-nav-more-trigger"
-                    }
-                    data-tooltip="その他"
-                    title="その他"
-                  >
-                    <MoreIcon />
-                    <span className="app-nav-label">その他</span>
-                  </summary>
-                  <div className="app-nav-more-panel">
-                    {secondaryNavigationItems.map((item) => (
+    <ToastProvider>
+      <div className="app-shell">
+        <a className="skip-link" href="#main-content">
+          本文へスキップ
+        </a>
+        <div className="app-layout">
+          <header className="app-header">
+            <Link aria-label="PRIZGRAM" className="app-brand" href="/app">
+              PRIZGRAM
+            </Link>
+            <nav aria-label="メインナビゲーション" className="app-nav">
+              <ul>
+                {primaryNavigationItems.map((item) => (
+                  <li key={item.href}>
+                    <Link
+                      aria-label={item.label}
+                      aria-current={
+                        isActive(pathname, item.href) ? "page" : undefined
+                      }
+                      data-tooltip={item.label}
+                      href={item.href}
+                      title={item.label}
+                    >
+                      <item.Icon />
+                      <span className="app-nav-label">{item.label}</span>
+                    </Link>
+                  </li>
+                ))}
+                {/* Mobile-only: More sheet containing secondary items + profile */}
+                <li className="app-nav-item--more">
+                  <details className="app-nav-more">
+                    <summary
+                      aria-label="その他"
+                      aria-current={isMoreActive ? "page" : undefined}
+                      className={
+                        isMoreActive
+                          ? "app-nav-more-trigger is-active"
+                          : "app-nav-more-trigger"
+                      }
+                      data-tooltip="その他"
+                      title="その他"
+                    >
+                      <MoreIcon />
+                      <span className="app-nav-label">その他</span>
+                    </summary>
+                    <div className="app-nav-more-panel">
+                      {secondaryNavigationItems.map((item) => (
+                        <Link
+                          key={item.href}
+                          aria-current={
+                            isActive(pathname, item.href) ? "page" : undefined
+                          }
+                          className="app-nav-more-link"
+                          href={item.href}
+                        >
+                          <item.Icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      ))}
                       <Link
-                        key={item.href}
                         aria-current={
-                          isActive(pathname, item.href) ? "page" : undefined
+                          isActive(pathname, "/app/profile")
+                            ? "page"
+                            : undefined
                         }
                         className="app-nav-more-link"
-                        href={item.href}
+                        href="/app/profile"
                       >
-                        <item.Icon />
-                        <span>{item.label}</span>
+                        <PersonaIcon />
+                        <span>プロフィール</span>
                       </Link>
-                    ))}
-                    <Link
-                      aria-current={
-                        isActive(pathname, "/app/profile") ? "page" : undefined
-                      }
-                      className="app-nav-more-link"
-                      href="/app/profile"
-                    >
-                      <PersonaIcon />
-                      <span>プロフィール</span>
-                    </Link>
-                  </div>
-                </details>
-              </li>
-            </ul>
-          </nav>
-          <div className="app-header-account">
-            <Link
-              aria-label="通知"
-              className="app-header-bell"
-              href="/app/reminders"
-              title="通知"
-            >
-              <RemindersIcon />
-            </Link>
-            <details className="app-account-menu">
-              <summary
-                aria-label={`アカウント ${user.loginId}`}
-                className="app-account-trigger"
-                title={`アカウント ${user.loginId}`}
+                    </div>
+                  </details>
+                </li>
+              </ul>
+            </nav>
+            <div className="app-header-account">
+              <Link
+                aria-label="通知"
+                className="app-header-bell"
+                href="/app/reminders"
+                title="通知"
               >
-                <span aria-hidden="true" className="app-account-avatar">
-                  {getAccountInitials(user.loginId)}
-                </span>
-                <span className="app-account-copy">
-                  <span className="app-login-id">{user.loginId}</span>
-                </span>
-              </summary>
-              <div className="app-account-popover">
-                <Link className="button button-secondary" href="/app/profile">
-                  プロフィール
-                </Link>
-                <button
-                  className="button button-secondary"
-                  disabled={loggingOut}
-                  onClick={() => void handleLogout()}
-                  type="button"
+                <RemindersIcon />
+              </Link>
+              <details className="app-account-menu">
+                <summary
+                  aria-label={`アカウント ${user.loginId}`}
+                  className="app-account-trigger"
+                  title={`アカウント ${user.loginId}`}
                 >
-                  ログアウト
-                </button>
-              </div>
-            </details>
-          </div>
-        </header>
-        {logoutError !== null && (
-          <p className="form-alert app-shell-alert" role="alert">
-            {logoutError}
-          </p>
-        )}
-        <main className="app-main" id="main-content">
-          {children}
-        </main>
+                  <span aria-hidden="true" className="app-account-avatar">
+                    {getAccountInitials(user.loginId)}
+                  </span>
+                  <span className="app-account-copy">
+                    <span className="app-login-id">{user.loginId}</span>
+                  </span>
+                </summary>
+                <div className="app-account-popover">
+                  <Link className="button button-secondary" href="/app/profile">
+                    プロフィール
+                  </Link>
+                  <button
+                    className="button button-secondary"
+                    disabled={loggingOut}
+                    onClick={() => void handleLogout()}
+                    type="button"
+                  >
+                    ログアウト
+                  </button>
+                </div>
+              </details>
+            </div>
+          </header>
+          {logoutError !== null && (
+            <p className="form-alert app-shell-alert" role="alert">
+              {logoutError}
+            </p>
+          )}
+          <main className="app-main" id="main-content">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }
