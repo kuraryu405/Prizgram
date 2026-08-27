@@ -83,6 +83,7 @@ export default async function AppHome() {
     urgentReminderCount: reminders.filter((r) => r.priority === "urgent")
       .length,
     overdueDeadlines: overdue.map((d) => ({
+      applicationId: d.applicationId,
       title: d.title,
       dueAt: d.dueAt,
     })),
