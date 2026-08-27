@@ -81,17 +81,17 @@ const scoring = {
   skillFit: {
     score: 72,
     reasons: ["要件のTypeScript実装経験がペルソナのスキルと一致"],
-    evidenceRefs: ["ev:e1", "job:req:1"],
+    evidenceRefs: ["persona:ev:e1", "job:job:req:1"],
   },
   cultureValueFit: {
     score: 55,
     reasons: ["自律的な文化はペルソナの価値観と整合する"],
-    evidenceRefs: ["ev:e1", "job:value:1"],
+    evidenceRefs: ["persona:ev:e1", "job:job:value:1"],
   },
   difficultyGap: {
     score: 35,
     reasons: ["実装経験から大きな準備ギャップはない"],
-    evidenceRefs: ["job:req:1", "ev:e2"],
+    evidenceRefs: ["job:job:req:1", "persona:ev:e2"],
   },
 };
 
