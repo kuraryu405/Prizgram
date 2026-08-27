@@ -108,6 +108,21 @@ describe("zonedDateTimeToIso", () => {
     expect(wall).toBe("2026-11-01T01:30");
   });
 
+  it("selects the earlier Berlin fall-back occurrence", () => {
+    expect(zonedDateTimeToIso("2026-10-25T02:30", "Europe/Berlin")).toBe(
+      "2026-10-25T00:30:00.000Z",
+    );
+    expect(zonedDateTimeToIso("2026-10-25T02:30", "Europe/Berlin")).not.toBe(
+      "2026-10-25T01:30:00.000Z",
+    );
+  });
+
+  it("selects the earlier New York fall-back occurrence", () => {
+    expect(zonedDateTimeToIso("2026-11-01T01:30", "America/New_York")).toBe(
+      "2026-11-01T05:30:00.000Z",
+    );
+  });
+
   it("round-trips normal times through the selected timezone", () => {
     const cases: Array<[string, string]> = [
       ["2026-08-26T18:00", "Asia/Tokyo"],

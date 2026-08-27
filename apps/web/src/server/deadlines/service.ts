@@ -152,29 +152,40 @@ export function zonedDateTimeToIso(local: string, timeZone: string): string {
     Number(h),
     Number(mi),
   );
-  let timestamp = utcBase;
-  for (let iteration = 0; iteration < 3; iteration += 1) {
-    const offsetMinutes = zoneOffsetMinutes(timestamp, timeZone);
-    const adjusted = utcBase - offsetMinutes * 60_000;
-    if (adjusted === timestamp) break;
-    timestamp = adjusted;
+  // Sample nearby offsets so that both sides of a fall-back transition are
+  // considered. A wall time can then be validated against every candidate
+  // instead of relying on an iterative correction to choose an occurrence.
+  const offsetMinutes = new Set<number>();
+  const sampleRadiusMs = 36 * 60 * 60 * 1_000;
+  const sampleIntervalMs = 6 * 60 * 60 * 1_000;
+  for (
+    let deltaMs = -sampleRadiusMs;
+    deltaMs <= sampleRadiusMs;
+    deltaMs += sampleIntervalMs
+  ) {
+    offsetMinutes.add(zoneOffsetMinutes(utcBase + deltaMs, timeZone));
   }
-  // DST gap detection: if the wall time does not exist, the round-trip
-  // will land on a different wall-clock time. Reject instead of silently
-  // normalizing to a neighboring valid instant.
-  const roundTripped = wallTimeInZone(timestamp, timeZone);
-  if (roundTripped !== local) {
+
+  const candidates = [...offsetMinutes]
+    .map((offset) => utcBase - offset * 60_000)
+    .filter((candidate) => wallTimeInZone(candidate, timeZone) === local)
+    .sort((left, right) => left - right);
+
+  if (candidates.length === 0) {
+    // DST gaps and other nonexistent wall times have no valid candidate.
     throw new AppError(
       "VALIDATION_ERROR",
       "This local time does not exist in the selected timezone (DST gap)",
       400,
     );
   }
-  // Ambiguous fall-back times (e.g. 01:30 occurring twice) intentionally
-  // resolve to the earlier occurrence. The round-trip check passes for
-  // either occurrence, so we keep the deterministic result from the
-  // iteration above.
-  return new Date(timestamp).toISOString();
+  const earliestCandidate = candidates[0];
+  if (earliestCandidate === undefined) {
+    throw new AppError("VALIDATION_ERROR", "Invalid local datetime", 400);
+  }
+  // For an ambiguous fall-back wall time, the earliest valid UTC instant is
+  // the explicitly defined earlier occurrence.
+  return new Date(earliestCandidate).toISOString();
 }
 
 function zoneOffsetMinutes(timestamp: number, timeZone: string): number {
