@@ -14,6 +14,8 @@ const contentSecurityPolicy = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
+  // Keep unsafe-inline until a request nonce is propagated to every
+  // Next.js-generated script. Removing it statically breaks hydration.
   `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
