@@ -26,7 +26,7 @@ import {
 } from "@/server/llm";
 
 import { AppError } from "../api";
-import { PERSONA_INTAKE_QUESTION_IDS } from "./questions";
+import { isKnownQuestionId, PERSONA_INTAKE_QUESTION_IDS } from "./questions";
 
 export const PERSONA_PROMPT_VERSION = "persona-v1";
 const INTAKE_SOURCE_PREFIX = "persona-intake:";
@@ -166,6 +166,9 @@ export class PersonaService {
     intakeId: string,
     input: PersonaAnswerInput,
   ): void {
+    if (!isKnownQuestionId(input.questionId)) {
+      throw new AppError("VALIDATION_ERROR", "Invalid question", 400);
+    }
     const intake = this.loadIntake(user.id, intakeId);
     if (intake.status !== "in_progress") {
       throw new AppError("CONFLICT", "This intake is already completed", 409);
