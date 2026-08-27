@@ -14,7 +14,7 @@ import {
 import { personaSnapshotSchema, type PersonaSnapshot } from "@prizgram/shared";
 
 import { AppError } from "../api";
-import { LlmClientError } from "@/server/llm";
+import { LlmClientError, type StructuredLlmClient } from "@/server/llm";
 import { MAX_REEVALUATE_JOBS, PersonaUpdateService } from "./service";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -461,7 +461,7 @@ describe("PersonaUpdateService.propose error contract", () => {
             evidence: [], // drop base evidence
           }),
         ),
-    };
+    } as unknown as StructuredLlmClient;
     await expect(
       service.propose(
         userA,
