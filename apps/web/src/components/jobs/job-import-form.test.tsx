@@ -5,6 +5,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { errorEnvelope, okEnvelope, stubFetch } from "@/test-support/http";
 
+import { ToastProvider } from "../ui/toast";
+
 import { JobImportForm } from "./job-import-form";
 
 const navigationMocks = vi.hoisted(() => ({
@@ -44,7 +46,11 @@ describe("JobImportForm", () => {
     });
 
     const user = userEvent.setup();
-    render(<JobImportForm />);
+    render(
+      <ToastProvider>
+        <JobImportForm />
+      </ToastProvider>,
+    );
     await fillValidBody(user);
 
     const companyInput = screen.getByLabelText("会社名（任意）");
@@ -68,7 +74,11 @@ describe("JobImportForm", () => {
     });
 
     const user = userEvent.setup();
-    render(<JobImportForm />);
+    render(
+      <ToastProvider>
+        <JobImportForm />
+      </ToastProvider>,
+    );
     await fillValidBody(user);
     await user.type(screen.getByLabelText("会社名（任意）"), "Sample Inc.");
     await user.click(screen.getByRole("button", { name: "求人票を取り込む" }));
@@ -96,7 +106,11 @@ describe("JobImportForm", () => {
     });
 
     const user = userEvent.setup();
-    render(<JobImportForm />);
+    render(
+      <ToastProvider>
+        <JobImportForm />
+      </ToastProvider>,
+    );
     await fillValidBody(user);
     await user.click(screen.getByRole("button", { name: "求人票を取り込む" }));
 

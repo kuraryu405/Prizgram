@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { ApiClientError, apiFetch } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/ui/toast";
 
 type AxesPayload = Record<
   string,
@@ -54,8 +55,8 @@ export function ScoreEvaluateButton({
   evidenceTextById: Readonly<Record<string, string>>;
 }>) {
   const router = useRouter();
+  const { addToast } = useToast();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [axes, setAxes] = useState<AxesPayload | null>(null);
   const [meta, setMeta] = useState<{
     model: string;
@@ -67,7 +68,6 @@ export function ScoreEvaluateButton({
 
   const onEvaluate = async () => {
     if (pending) return;
-    setError(null);
     setPending(true);
     try {
       const result = await apiFetch<EvaluationResponse>(
@@ -82,13 +82,17 @@ export function ScoreEvaluateButton({
         personaVersionId: result.detail.personaVersionId,
         jobVersionId: result.detail.jobVersionId,
       });
+      addToast(
+        result.duplicate ? "既存の評価を表示しています" : "求人を評価しました",
+        "success",
+      );
       router.refresh();
     } catch (caught) {
-      if (caught instanceof ApiClientError) {
-        setError(describeApiError(caught));
-      } else {
-        setError("評価中に予期しないエラーが発生しました。");
-      }
+      const message =
+        caught instanceof ApiClientError
+          ? describeApiError(caught)
+          : "評価中に予期しないエラーが発生しました。";
+      addToast(message, "error");
     } finally {
       setPending(false);
     }
@@ -107,11 +111,6 @@ export function ScoreEvaluateButton({
       >
         {pending ? "評価中…" : "この求人を評価する"}
       </button>
-      {error !== null && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
-      )}
       {axes !== null && (
         <>
           <ul className="axis-list">
