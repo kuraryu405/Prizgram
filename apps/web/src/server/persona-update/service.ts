@@ -215,11 +215,12 @@ export class PersonaUpdateService {
         }
         case "user_input": {
           // New user_input must be a reflection (reflection:...) or a
-          // carry-forward of base evidence/sourceId. Event ids must be
-          // cited as application_event, not as user_input (#201).
+          // carry-forward of the original intake answer id. Event ids must
+          // be cited as application_event, not as user_input (#201).
+          // Do not check baseEvidenceIds (evidence.id namespace) here to
+          // avoid colliding with eventId UUIDs.
           if (
             evidence.sourceId !== undefined &&
-            !baseEvidenceIds.has(evidence.sourceId) &&
             !baseUserInputSourceIds.has(evidence.sourceId) &&
             !evidence.sourceId.startsWith(REFLECTION_PREFIX)
           ) {
