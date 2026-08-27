@@ -50,6 +50,13 @@
       "when": 1787762675015,
       "tag": "0006_overjoyed_emma_frost",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787800455554,
+      "tag": "0007_common_stingray",
+      "breakpoints": true
     }
   ]
 }

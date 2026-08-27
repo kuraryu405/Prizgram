@@ -64,6 +64,7 @@ export type StageEventView = Readonly<{
 type ApplicationCore = Readonly<{
   applicationId: string;
   jobId: string;
+  jobVersionId?: string;
   status: ApplicationStatus;
   nextAction?: string;
   note?: string;
@@ -78,6 +79,9 @@ export type ApplicationDetail = ApplicationCore &
   Readonly<{
     company: string;
     role: string;
+    /** Pinned snapshot company/role vs current latest for UI comparison. */
+    appliedCompany?: string;
+    appliedRole?: string;
     allowedNextStatuses: readonly ApplicationStatus[];
     events: readonly StageEventView[];
   }>;
@@ -119,15 +123,35 @@ export class ApplicationService {
 
       const now = new Date();
       const applicationId = randomUUID();
+      // Pin the latest job version at creation time (#184)
+      const latestVersion = tx
+        .select({ id: jobVersions.id })
+        .from(jobVersions)
+        .where(
+          and(
+            eq(jobVersions.userId, user.id),
+            eq(jobVersions.jobId, input.jobId),
+          ),
+        )
+        .orderBy(sql`${jobVersions.version} desc`)
+        .limit(1)
+        .get();
+      if (latestVersion === undefined) {
+        throw new AppError("NOT_FOUND", "Job version not found", 404);
+      }
+      // Ensure the pinned version belongs to the same user/job (ownership already checked)
+      // and store it alongside current note (#159)
       tx.insert(applications)
         .values({
           id: applicationId,
           userId: user.id,
           jobId: input.jobId,
+          jobVersionId: latestVersion.id,
           status: "saved",
           ...(input.nextAction === undefined
             ? {}
             : { nextAction: input.nextAction }),
+          ...(input.note === undefined ? {} : { note: input.note }),
         })
         .run();
       this.insertEvent(tx, {
@@ -148,9 +172,16 @@ export class ApplicationService {
       if (created === undefined) {
         throw new AppError("INTERNAL_ERROR", "Application missing", 500);
       }
+      // Prefer pinned snapshot for company/role; fallback to latest for legacy rows
+      const pinned = this.companyRoleForApplications(user.id, [
+        { jobId: created.jobId, jobVersionId: created.jobVersionId },
+      ]);
+      const fallback = this.companyRole(user.id, input.jobId);
+      const resolved = pinned.get(created.jobId) ?? fallback;
       return {
         ...this.coreFromDrizzle(created),
-        ...this.companyRole(user.id, input.jobId),
+        company: resolved.company,
+        role: resolved.role,
       };
     });
   }
@@ -178,15 +209,29 @@ export class ApplicationService {
             .all();
     rows.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
-    const companyRoleByJob = this.latestJobVersions(
+    // Prefer pinned jobVersion for company/role; fallback to latest for legacy nulls (#184)
+    const pinnedMap = this.companyRoleForApplications(
       userId,
-      rows.map((row) => row.jobId),
+      rows.map((r) => ({ jobId: r.jobId, jobVersionId: r.jobVersionId })),
     );
-    return rows.map((row) => ({
-      ...this.coreFromDrizzle(row),
-      company: companyRoleByJob.get(row.jobId)?.company ?? "(不明)",
-      role: companyRoleByJob.get(row.jobId)?.role ?? "(不明)",
-    }));
+    const missingJobIds = rows
+      .filter((r) => !pinnedMap.has(r.jobId))
+      .map((r) => r.jobId);
+    const latestFallback =
+      missingJobIds.length > 0
+        ? this.latestJobVersions(userId, missingJobIds)
+        : new Map<string, { company: string; role: string }>();
+    return rows.map((row) => {
+      const pinned = pinnedMap.get(row.jobId);
+      const fallback = latestFallback.get(row.jobId);
+      const resolved = pinned ??
+        fallback ?? { company: "(不明)", role: "(不明)" };
+      return {
+        ...this.coreFromDrizzle(row),
+        company: resolved.company,
+        role: resolved.role,
+      };
+    });
   }
 
   getApplicationDetail(
@@ -200,9 +245,22 @@ export class ApplicationService {
       .where(eq(applicationStageEvents.applicationId, applicationId))
       .all();
     eventRows.sort((a, b) => a.sequence - b.sequence);
+    // Resolve pinned version if present; keep latest as applied vs current distinction
+    const pinned =
+      row.jobVersionId === null || row.jobVersionId === undefined
+        ? undefined
+        : this.companyRoleForApplications(userId, [
+            { jobId: row.jobId, jobVersionId: row.jobVersionId },
+          ]).get(row.jobId);
+    const latest = this.companyRole(userId, row.jobId);
+    const resolved = pinned ?? latest;
+    const applied = pinned ?? latest;
     return {
       ...this.coreFromDrizzle(row),
-      ...this.companyRole(userId, row.jobId),
+      company: resolved.company,
+      role: resolved.role,
+      appliedCompany: applied.company,
+      appliedRole: applied.role,
       allowedNextStatuses: [...applicationTransitions[row.status]],
       events: eventRows.map((event) => ({
         id: event.id,
@@ -353,10 +411,12 @@ export class ApplicationService {
     createdAt: Date;
     updatedAt: Date;
     jobId: string;
+    jobVersionId?: string | null;
   }): ApplicationCore {
     return {
       applicationId: row.id,
       jobId: row.jobId,
+      ...(row.jobVersionId == null ? {} : { jobVersionId: row.jobVersionId }),
       status: row.status,
       ...(row.nextAction === null ? {} : { nextAction: row.nextAction }),
       ...(row.note === undefined || row.note === null
@@ -370,6 +430,42 @@ export class ApplicationService {
   private companyRole(userId: string, jobId: string) {
     const versions = this.latestJobVersions(userId, [jobId]);
     return versions.get(jobId) ?? { company: "(不明)", role: "(不明)" };
+  }
+
+  private companyRoleForApplications(
+    userId: string,
+    pairs: ReadonlyArray<{ jobId: string; jobVersionId?: string | null }>,
+  ): ReadonlyMap<string, { company: string; role: string }> {
+    const result = new Map<string, { company: string; role: string }>();
+    const pinnedIds = pairs
+      .filter((p) => p.jobVersionId != null)
+      .map((p) => p.jobVersionId as string);
+    if (pinnedIds.length === 0) return result;
+    const rows = this.connection.db
+      .select({
+        jobId: jobVersions.jobId,
+        id: jobVersions.id,
+        snapshot: jobVersions.snapshot,
+      })
+      .from(jobVersions)
+      .where(
+        and(eq(jobVersions.userId, userId), inArray(jobVersions.id, pinnedIds)),
+      )
+      .all();
+    const byId = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) byId.set(r.id, r);
+    for (const { jobId, jobVersionId } of pairs) {
+      if (jobVersionId == null) continue;
+      const row = byId.get(jobVersionId);
+      if (row === undefined) continue;
+      // Ensure the pinned version's jobId matches the application's jobId (ownership already validated at creation)
+      if (row.jobId !== jobId) continue;
+      result.set(jobId, {
+        company: row.snapshot.company,
+        role: row.snapshot.role,
+      });
+    }
+    return result;
   }
 
   private latestJobVersions(userId: string, jobIds: string[]) {
