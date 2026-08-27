@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 import type { RouteErrorProps } from "@/components/app/error-recovery";
 
-export default function GlobalError({ error, retry }: RouteErrorProps) {
+export default function GlobalError({ error, reset }: RouteErrorProps) {
   useEffect(() => {
     console.error("Unexpected root layout error", error);
   }, [error]);
@@ -47,7 +47,7 @@ export default function GlobalError({ error, retry }: RouteErrorProps) {
               一時的な問題が発生した可能性があります。しばらく待ってから再試行してください。
             </p>
             <button
-              onClick={retry}
+              onClick={reset}
               style={{
                 background: "#087a55",
                 border: 0,
