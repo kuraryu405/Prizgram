@@ -129,10 +129,15 @@ test.describe("Prizgram MVP core loop", () => {
       .click();
     await expect(page.getByRole("heading", { name: "3軸評価" })).toBeVisible();
     await page.getByRole("button", { name: /この求人を評価する/ }).click();
-    await expect(page.getByText(/スキル適合/)).toBeVisible({
-      timeout: 20_000,
-    });
-    await expect(page.getByText(/72 \/ 100/)).toBeVisible();
+    await expect(
+      page
+        .locator(".score-panel")
+        .getByRole("listitem")
+        .filter({
+          has: page.getByRole("heading", { name: "スキル適合" }),
+        })
+        .getByText(/72 \/ 100/),
+    ).toBeVisible({ timeout: 20_000 });
 
     // --- Register an application for the scored job via its page flow.
     await page.goto("/app/applications");
