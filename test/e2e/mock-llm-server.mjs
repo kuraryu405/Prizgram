@@ -42,6 +42,12 @@ const personaSnapshot = {
       sourceId: "q2_experiences",
       summary: "Webアプリ開発経験",
     },
+    {
+      id: "ev:e3",
+      sourceType: "user_input",
+      sourceId: "q3_values",
+      summary: "自律的に課題へ向き合う価値観",
+    },
   ],
   confidence: 0.6,
 };
@@ -86,7 +92,7 @@ const scoring = {
   cultureValueFit: {
     score: 55,
     reasons: ["自律的な文化はペルソナの価値観と整合する"],
-    evidenceRefs: ["ev:e1", "job:value:1"],
+    evidenceRefs: ["ev:e3", "job:value:1"],
   },
   difficultyGap: {
     score: 35,
