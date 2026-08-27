@@ -214,12 +214,14 @@ export class PersonaUpdateService {
           break;
         }
         case "user_input": {
+          // New user_input must be a reflection (reflection:...) or a
+          // carry-forward of base evidence/sourceId. Event ids must be
+          // cited as application_event, not as user_input (#201).
           if (
             evidence.sourceId !== undefined &&
             !baseEvidenceIds.has(evidence.sourceId) &&
             !baseUserInputSourceIds.has(evidence.sourceId) &&
-            !evidence.sourceId.startsWith(REFLECTION_PREFIX) &&
-            !eventIds.has(evidence.sourceId)
+            !evidence.sourceId.startsWith(REFLECTION_PREFIX)
           ) {
             throw new AppError(
               "UPSTREAM_INVALID_RESPONSE",
