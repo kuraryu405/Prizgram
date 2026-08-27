@@ -32,6 +32,13 @@ const codeMessages: Readonly<Record<string, string>> = {
     "検索条件を生成できませんでした。キーワードを入力して再度お試しください。",
   APPLICATION_TERMINAL:
     "終了した応募には新しい締切を追加できません。別の応募を選択するか、応募ステータスを確認してください。",
+  MISSING_JOB_VERSION:
+    "応募時に紐づけた求人情報が見つかりません。求人を再確認してください。",
+  DOCUMENT_SUBMITTED:
+    "提出済みの内容は変更できません。新しい下書きを作成してください。",
+  DOCUMENT_ALREADY_SUBMITTED: "既に提出済みです。",
+  INSUFFICIENT_CONTEXT:
+    "ペルソナの情報が不足しています。ペルソナを充実させてください。",
   INTERNAL_ERROR:
     "サーバーで問題が発生しました。しばらくしてから再度お試しください。",
   NETWORK_ERROR:
