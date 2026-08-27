@@ -4,7 +4,6 @@ import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import {
   isTerminalApplicationStatus,
   terminalApplicationStatuses,
-  type ApplicationStatus,
 } from "@prizgram/shared";
 
 import { applicationDeadlines, applications, reminders } from "./schema";
@@ -444,7 +443,7 @@ export class ReminderService {
       if (
         state === undefined ||
         state.completedAt !== null ||
-        isTerminalApplicationStatus(state.status as ApplicationStatus)
+        isTerminalApplicationStatus(state.status)
       ) {
         stale.push(row.id);
         continue;
