@@ -26,12 +26,25 @@ const closedApplicationStatuses: ReadonlySet<string> = new Set([
   "withdrawn",
 ]);
 
-function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("ja-JP", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Tokyo",
-  }).format(new Date(iso));
+function formatDateTime(iso: string, timeZone?: string): string {
+  const zone = timeZone ?? "Asia/Tokyo";
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: zone,
+    }).format(new Date(iso));
+  } catch {
+    return new Intl.DateTimeFormat("ja-JP", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Tokyo",
+    }).format(new Date(iso));
+  }
+}
+
+function formatDeadline(view: DeadlineView): string {
+  return formatDateTime(view.dueAt, view.timeZone);
 }
 
 function byDueAt(a: DeadlineView, b: DeadlineView): number {
@@ -237,8 +250,11 @@ export default async function AppHome() {
                           {deadlineKindLabels[deadline.kind] ?? deadline.kind}
                           ）—{" "}
                           <time dateTime={deadline.dueAt}>
-                            {formatDateTime(deadline.dueAt)}
-                          </time>
+                            {formatDeadline(deadline)}
+                          </time>{" "}
+                          <span className="hint-text">
+                            ({deadline.timeZone})
+                          </span>
                         </li>
                       ))}
                     </ul>
