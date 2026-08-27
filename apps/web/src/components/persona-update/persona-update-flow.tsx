@@ -11,12 +11,7 @@ type Proposed = {
   basePersonaVersionId: string;
   proposed: Record<string, unknown>;
   requestId: string;
-  applicationId: string;
-};
-
-type ProposeResponse = {
-  basePersonaVersionId: string;
-  proposed: Record<string, unknown>;
+  applicationId: string | null;
 };
 type AuditEntry = {
   jobId: string;
@@ -34,7 +29,9 @@ export function PersonaUpdateFlow({
   const [proposed, setProposed] = useState<Proposed | null>(null);
   const [audit, setAudit] = useState<AuditEntry[] | null>(null);
   const [remainingJobs, setRemainingJobs] = useState<number | null>(null);
-  const [, setNewPersonaVersionId] = useState<string | null>(null);
+  const [newPersonaVersionId, setNewPersonaVersionId] = useState<string | null>(
+    null,
+  );
   const [pending, setPending] = useState<
     "propose" | "approve" | "reeval" | null
   >(null);
@@ -49,18 +46,28 @@ export function PersonaUpdateFlow({
     }
     setPending("propose");
     setError(null);
+    // Capture proposal context and generate fixed requestId for idempotent approve (#198, #161)
+    const capturedApplicationId = applicationId;
+    const requestId = newRequestId();
     try {
-      const result = await apiFetch<ProposeResponse>(
+      const result = await apiFetch<{
+        basePersonaVersionId: string;
+        proposed: Record<string, unknown>;
+      }>(
         "/api/persona/update/propose",
         jsonRequestInit("POST", {
-          ...(applicationId !== "" ? { applicationId } : {}),
+          ...(capturedApplicationId !== ""
+            ? { applicationId: capturedApplicationId }
+            : {}),
           reflection: reflection.trim(),
         }),
       );
       setProposed({
-        ...result,
-        requestId: newRequestId(),
-        applicationId,
+        basePersonaVersionId: result.basePersonaVersionId,
+        proposed: result.proposed,
+        requestId,
+        applicationId:
+          capturedApplicationId === "" ? null : capturedApplicationId,
       });
     } catch (e) {
       setError(describeApiError(e));
@@ -80,7 +87,7 @@ export function PersonaUpdateFlow({
           basePersonaVersionId: proposed.basePersonaVersionId,
           snapshot: proposed.proposed,
           requestId: proposed.requestId,
-          ...(proposed.applicationId !== ""
+          ...(proposed.applicationId !== null
             ? { applicationId: proposed.applicationId }
             : {}),
         }),
@@ -131,7 +138,16 @@ export function PersonaUpdateFlow({
           <label htmlFor="update-application">対象応募（任意）</label>
           <select
             id="update-application"
-            onChange={(event) => setApplicationId(event.target.value)}
+            disabled={proposed !== null}
+            onChange={(event) => {
+              if (proposed !== null) {
+                setProposed(null);
+                setAudit(null);
+                setRemainingJobs(null);
+                setNewPersonaVersionId(null);
+              }
+              setApplicationId(event.target.value);
+            }}
             value={applicationId}
           >
             <option value="">選択しない</option>
@@ -141,17 +157,36 @@ export function PersonaUpdateFlow({
               </option>
             ))}
           </select>
+          {proposed !== null && (
+            <p className="hint-text">
+              提案中は対象応募を変更できません。破棄して再作成してください。
+            </p>
+          )}
         </div>
         <div className="field">
           <label htmlFor="update-reflection">振り返りメモ</label>
           <textarea
             id="update-reflection"
+            disabled={proposed !== null}
             maxLength={4000}
-            onChange={(event) => setReflection(event.target.value)}
+            onChange={(event) => {
+              if (proposed !== null) {
+                setProposed(null);
+                setAudit(null);
+                setRemainingJobs(null);
+                setNewPersonaVersionId(null);
+              }
+              setReflection(event.target.value);
+            }}
             placeholder="例: 面接でデータ基盤への興味を評価された。Next.jsの実務経験を伸ばしたい。"
             rows={5}
             value={reflection}
           />
+          {proposed !== null && (
+            <p className="hint-text">
+              提案中は振り返りを変更できません。破棄して再作成してください。
+            </p>
+          )}
         </div>
         <button
           aria-busy={pending === "propose"}
@@ -169,21 +204,42 @@ export function PersonaUpdateFlow({
       {proposed !== null && (
         <section className="card form-stack" aria-labelledby="proposal-title">
           <h2 id="proposal-title">更新案の確認</h2>
+          {proposed.applicationId !== null && (
+            <p className="hint-text">
+              対象応募: {proposed.applicationId}（承認まで固定されます）
+            </p>
+          )}
           <details>
             <summary>提案JSONを確認</summary>
             <pre className="prewrap">
               {JSON.stringify(proposed.proposed, null, 2)}
             </pre>
           </details>
-          <button
-            aria-busy={pending === "approve"}
-            className="button button-primary"
-            disabled={pending !== null}
-            onClick={() => void approve()}
-            type="button"
-          >
-            {pending === "approve" ? "承認中…" : "承認して新バージョンを作成"}
-          </button>
+          <div className="button-row">
+            <button
+              aria-busy={pending === "approve"}
+              className="button button-primary"
+              disabled={pending !== null}
+              onClick={() => void approve()}
+              type="button"
+            >
+              {pending === "approve" ? "承認中…" : "承認して新バージョンを作成"}
+            </button>
+            <button
+              className="button"
+              disabled={pending !== null}
+              onClick={() => {
+                setProposed(null);
+                setAudit(null);
+                setRemainingJobs(null);
+                setNewPersonaVersionId(null);
+                setError(null);
+              }}
+              type="button"
+            >
+              提案を破棄
+            </button>
+          </div>
         </section>
       )}
 
@@ -200,10 +256,38 @@ export function PersonaUpdateFlow({
               </li>
             ))}
           </ul>
-          {remainingJobs !== null && remainingJobs > 0 && (
+          {remainingJobs !== null &&
+            remainingJobs > 0 &&
+            newPersonaVersionId !== null && (
+              <div className="form-stack">
+                <p className="hint-text" role="status">
+                  残り {remainingJobs}{" "}
+                  件が未処理です。同じバージョンで続きを実行できます。
+                </p>
+                <button
+                  aria-busy={pending === "reeval"}
+                  className="button button-primary"
+                  disabled={pending !== null}
+                  onClick={() => void reEvaluate(newPersonaVersionId)}
+                  type="button"
+                >
+                  {pending === "reeval"
+                    ? "再評価中…"
+                    : `残り${remainingJobs}件を再評価`}
+                </button>
+              </div>
+            )}
+          {remainingJobs !== null &&
+            remainingJobs > 0 &&
+            newPersonaVersionId === null && (
+              <p className="hint-text" role="status">
+                残り {remainingJobs}{" "}
+                件が未処理です。ページを再読み込みしても最新ペルソナで再評価できます。
+              </p>
+            )}
+          {remainingJobs === 0 && (
             <p className="hint-text" role="status">
-              保存求人が多いため、今回で{remainingJobs}
-              件が未処理です。このページを再読み込みして再度承認・再評価を実行してください。
+              全ての求人の再評価が完了しました。
             </p>
           )}
         </section>
