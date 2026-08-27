@@ -13,6 +13,7 @@
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "prepare": "simple-git-hooks",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -20,7 +21,14 @@
     "test:e2e:ui": "playwright test --ui",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "tsx packages/db/src/cli.ts",
-    "reminders:cron": "pnpm --filter @prizgram/web reminders:cron"
+    "reminders:cron": "pnpm --filter @prizgram/web reminders:cron",
+    "verify:commit": "pnpm format:check && pnpm lint",
+    "verify:push": "pnpm typecheck && pnpm test && pnpm build",
+    "verify:pr": "pnpm verify:commit && pnpm verify:push"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm verify:commit",
+    "pre-push": "pnpm verify:push"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -38,6 +46,7 @@
     "eslint-config-prettier": "10.1.8",
     "jsdom": "30.0.1",
     "prettier": "3.9.6",
+    "simple-git-hooks": "^2.13.1",
     "tsx": "4.23.12",
     "typescript": "5.9.3",
     "typescript-eslint": "8.67.0",
