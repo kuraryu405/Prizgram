@@ -302,6 +302,12 @@ export class DeadlineService {
       dueLocal !== undefined
         ? new Date(safeZonedToIso(dueLocal, timeZone))
         : row.dueAt;
+    const completedAt =
+      input.completed === undefined
+        ? undefined
+        : input.completed
+          ? (row.completedAt ?? new Date())
+          : null;
 
     this.connection.db
       .update(applicationDeadlines)
@@ -310,9 +316,7 @@ export class DeadlineService {
         ...(input.title !== undefined ? { title: input.title } : {}),
         dueAt,
         timezone: timeZone,
-        ...(input.completed === undefined
-          ? {}
-          : { completedAt: input.completed ? new Date() : null }),
+        ...(completedAt === undefined ? {} : { completedAt }),
         updatedAt: new Date(),
       })
       .where(eq(applicationDeadlines.id, deadlineId))
