@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { StructuredLlmClient } from "../llm/client";
 import {
@@ -23,9 +23,9 @@ const baseJob = {
 describe("provider query localization", () => {
   it("translates common Japanese role terms for international providers", () => {
     expect(internationalizeJobKeywords("Web エンジニア")).toBe("web engineer");
-    expect(internationalizeJobKeywords("TypeScript フロントエンド エンジニア")).toBe(
-      "TypeScript frontend engineer",
-    );
+    expect(
+      internationalizeJobKeywords("TypeScript フロントエンド エンジニア"),
+    ).toBe("TypeScript frontend engineer");
   });
 
   it("keeps Careerjet domestic query semantics unchanged", () => {
@@ -64,28 +64,30 @@ describe("company-name enrichment", () => {
   });
 
   it("fills a missing company from one structured batch response", async () => {
+    let calls = 0;
     const client: StructuredLlmClient = {
-      generateStructured: vi.fn(async (input) => {
+      generateStructured(input) {
+        calls++;
         const normalized = input.output.normalize({
           companies: [{ key: "0", company: "株式会社サンプル" }],
         } as never);
-        return input.output.domainSchema.parse(normalized);
-      }),
+        return Promise.resolve(input.output.domainSchema.parse(normalized));
+      },
     };
 
     const enriched = await enrichMissingCompanies([baseJob], client);
     expect(enriched[0]?.candidate.company).toBe("株式会社サンプル");
-    expect(client.generateStructured).toHaveBeenCalledTimes(1);
+    expect(calls).toBe(1);
   });
 
   it("rejects a provider name returned as the employer", async () => {
     const client: StructuredLlmClient = {
-      generateStructured: vi.fn(async (input) => {
+      generateStructured(input) {
         const normalized = input.output.normalize({
           companies: [{ key: "0", company: "Careerjet" }],
         } as never);
-        return input.output.domainSchema.parse(normalized);
-      }),
+        return Promise.resolve(input.output.domainSchema.parse(normalized));
+      },
     };
 
     const enriched = await enrichMissingCompanies([baseJob], client);
