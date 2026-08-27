@@ -5,7 +5,10 @@ import { ApplicationUpdateForm } from "@/components/applications/application-upd
 import { applicationStatusLabels as statusLabels } from "@/lib/labels";
 import { AppError } from "@/server/api";
 import { getDatabase } from "@/server/database";
-import { ApplicationService } from "@/server/applications/service";
+import {
+  ApplicationService,
+  type ApplicationDetail,
+} from "@/server/applications/service";
 import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +19,17 @@ function formatDateTime(iso: string): string {
     timeStyle: "short",
     timeZone: "Asia/Tokyo",
   }).format(new Date(iso));
+}
+
+function historyEventLabel(event: ApplicationDetail["events"][number]): string {
+  const toStatus = statusLabels[event.toStatus] ?? event.toStatus;
+  const stage = event.stageLabel === undefined ? "" : ` / ${event.stageLabel}`;
+  if (event.fromStatus === undefined) return `作成: ${toStatus}${stage}`;
+  if (event.fromStatus === event.toStatus) {
+    return `段階を更新: ${event.stageLabel ?? "未設定"}`;
+  }
+  const fromStatus = statusLabels[event.fromStatus] ?? event.fromStatus;
+  return `${fromStatus} → ${toStatus}${stage}`;
 }
 
 export default async function ApplicationDetailPage({
@@ -42,8 +56,8 @@ export default async function ApplicationDetailPage({
       </p>
       <h1>{detail.company}</h1>
       <p className="page-lead">
-        {detail.role} / 現在のステータス:{" "}
-        {statusLabels[detail.status] ?? detail.status}
+        {detail.role} / {statusLabels[detail.status] ?? detail.status}
+        {detail.stageLabel !== undefined && ` / ${detail.stageLabel}`}
       </p>
       {detail.nextAction !== undefined && (
         <p>
@@ -55,22 +69,19 @@ export default async function ApplicationDetailPage({
         allowedNextStatuses={detail.allowedNextStatuses}
         applicationId={detail.applicationId}
         currentStatus={statusLabels[detail.status] ?? detail.status}
+        initialStageLabel={detail.stageLabel}
         initialNextAction={detail.nextAction}
         initialNote={detail.note}
         statusLabels={statusLabels}
       />
 
       <section aria-labelledby="timeline-title" className="card">
-        <h2 id="timeline-title">ステータス履歴</h2>
+        <h2 id="timeline-title">選考履歴</h2>
         <ol className="timeline">
           {detail.events.map((event) => (
             <li key={event.id}>
               <span className="signal-id">#{event.sequence}</span>{" "}
-              {event.fromStatus === undefined
-                ? "作成"
-                : `${statusLabels[event.fromStatus] ?? event.fromStatus} → `}
-              {statusLabels[event.toStatus] ?? event.toStatus}（
-              {formatDateTime(event.occurredAt)}）
+              {historyEventLabel(event)} （{formatDateTime(event.occurredAt)}）
               {event.note !== undefined && (
                 <span className="hint-text"> — {event.note}</span>
               )}

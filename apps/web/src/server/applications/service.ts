@@ -8,7 +8,8 @@ import { z } from "zod";
 import {
   applicationStatuses,
   applicationTransitions,
-  canTransitionApplication,
+  stageLabelSchema,
+  terminalApplicationStatuses,
   type ApplicationStatus,
   type AuthenticatedUser,
 } from "@prizgram/shared";
@@ -25,6 +26,8 @@ import { AppError } from "../api";
 export const applicationCreateRequestSchema = z
   .object({
     jobId: z.string().trim().min(1).max(128),
+    status: z.enum(applicationStatuses).optional(),
+    stageLabel: stageLabelSchema.optional(),
     nextAction: z.string().trim().min(1).max(500).optional(),
     note: z.string().trim().min(1).max(2_000).optional(),
   })
@@ -33,6 +36,7 @@ export const applicationCreateRequestSchema = z
 export const applicationUpdateRequestSchema = z
   .object({
     status: z.enum(applicationStatuses).optional(),
+    stageLabel: stageLabelSchema.nullable().optional(),
     nextAction: z.string().trim().max(500).nullable().optional(),
     note: z.string().trim().max(2_000).nullable().optional(),
   })
@@ -40,6 +44,7 @@ export const applicationUpdateRequestSchema = z
   .refine(
     (input) =>
       input.status !== undefined ||
+      input.stageLabel !== undefined ||
       input.nextAction !== undefined ||
       input.note !== undefined,
     { message: "at least one field must be provided" },
@@ -57,6 +62,7 @@ export type StageEventView = Readonly<{
   sequence: number;
   fromStatus?: ApplicationStatus;
   toStatus: ApplicationStatus;
+  stageLabel?: string;
   note?: string;
   occurredAt: string;
 }>;
@@ -66,6 +72,7 @@ type ApplicationCore = Readonly<{
   jobId: string;
   jobVersionId?: string;
   status: ApplicationStatus;
+  stageLabel?: string;
   nextAction?: string;
   note?: string;
   createdAt: string;
@@ -85,6 +92,28 @@ export type ApplicationDetail = ApplicationCore &
     allowedNextStatuses: readonly ApplicationStatus[];
     events: readonly StageEventView[];
   }>;
+
+const terminalApplicationStatusSet = new Set<ApplicationStatus>(
+  terminalApplicationStatuses,
+);
+
+function allowedNextStatusesFor(
+  status: ApplicationStatus,
+): readonly ApplicationStatus[] {
+  if (terminalApplicationStatusSet.has(status)) return [];
+
+  // A non-terminal broad status is deliberately editable in both directions.
+  // This keeps the broad status useful for aggregation while allowing users to
+  // correct an imported/current stage without building a workflow engine.
+  const corrections = applicationStatuses.filter(
+    (candidate) =>
+      candidate !== status && !terminalApplicationStatusSet.has(candidate),
+  );
+  const terminalTransitions = applicationTransitions[status].filter(
+    (candidate) => terminalApplicationStatusSet.has(candidate),
+  );
+  return [...new Set([...corrections, ...terminalTransitions])];
+}
 
 export class ApplicationService {
   constructor(private readonly connection: DatabaseConnection) {}
@@ -148,7 +177,10 @@ export class ApplicationService {
           userId: user.id,
           jobId: input.jobId,
           jobVersionId: latestVersion.id,
-          status: "saved",
+          status: input.status ?? "saved",
+          ...(input.stageLabel === undefined
+            ? {}
+            : { stageLabel: input.stageLabel }),
           ...(input.nextAction === undefined
             ? {}
             : { nextAction: input.nextAction }),
@@ -160,7 +192,10 @@ export class ApplicationService {
         userId: user.id,
         sequence: 1,
         fromStatus: null,
-        toStatus: "saved",
+        toStatus: input.status ?? "saved",
+        ...(input.stageLabel === undefined
+          ? {}
+          : { stageLabel: input.stageLabel }),
         ...(input.note === undefined ? {} : { note: input.note }),
         occurredAt: now,
       });
@@ -267,12 +302,13 @@ export class ApplicationService {
       role: resolved.role,
       appliedCompany: applied.company,
       appliedRole: applied.role,
-      allowedNextStatuses: [...applicationTransitions[row.status]],
+      allowedNextStatuses: allowedNextStatusesFor(row.status),
       events: eventRows.map((event) => ({
         id: event.id,
         sequence: event.sequence,
         ...(event.fromStatus === null ? {} : { fromStatus: event.fromStatus }),
         toStatus: event.toStatus,
+        ...(event.stageLabel === null ? {} : { stageLabel: event.stageLabel }),
         ...(event.note === null ? {} : { note: event.note }),
         occurredAt: event.occurredAt.toISOString(),
       })),
@@ -280,9 +316,9 @@ export class ApplicationService {
   }
 
   /**
-   * Status transitions append exactly one stage event inside the same
-   * transaction as the update. Sequences are recomputed as max+1 and guarded
-   * by the unique (application_id, sequence) index.
+   * Broad-status or stage-label changes append exactly one history event inside
+   * the same transaction as the update. Sequences are recomputed as max+1 and
+   * guarded by the unique (application_id, sequence) index.
    */
   updateApplication(
     user: AuthenticatedUser,
@@ -306,21 +342,36 @@ export class ApplicationService {
 
       const statusChanged =
         input.status !== undefined && input.status !== found.status;
-      if (input.status !== undefined && statusChanged) {
-        if (!canTransitionApplication(found.status, input.status)) {
-          throw new AppError(
-            "INVALID_STATUS_TRANSITION",
-            `Cannot move from ${found.status} to ${input.status}`,
-            409,
-          );
-        }
+      const stageLabelChanged =
+        input.stageLabel !== undefined &&
+        input.stageLabel !== (found.stageLabel ?? null);
+      if (
+        input.status !== undefined &&
+        statusChanged &&
+        !allowedNextStatusesFor(found.status).includes(input.status)
+      ) {
+        throw new AppError(
+          "INVALID_STATUS_TRANSITION",
+          `Cannot move from ${found.status} to ${input.status}`,
+          409,
+        );
       }
+
+      const resultingStageLabel =
+        input.stageLabel !== undefined
+          ? input.stageLabel
+          : (found.stageLabel ?? null);
 
       tx.update(applications)
         .set({
           ...(statusChanged && input.status !== undefined
             ? { status: input.status }
             : {}),
+          ...(input.stageLabel === undefined
+            ? {}
+            : input.stageLabel === null
+              ? { stageLabel: null }
+              : { stageLabel: input.stageLabel }),
           ...(input.nextAction === undefined
             ? {}
             : input.nextAction === null
@@ -336,7 +387,7 @@ export class ApplicationService {
         .where(eq(applications.id, applicationId))
         .run();
 
-      if (statusChanged && input.status !== undefined) {
+      if (statusChanged || stageLabelChanged) {
         const maxSequence = tx
           .select({
             value: sql<number>`coalesce(max(${applicationStageEvents.sequence}), 0)`,
@@ -349,7 +400,13 @@ export class ApplicationService {
           userId: user.id,
           sequence: Number(maxSequence?.value ?? 0) + 1,
           fromStatus: found.status,
-          toStatus: input.status,
+          toStatus:
+            statusChanged && input.status !== undefined
+              ? input.status
+              : found.status,
+          ...(resultingStageLabel === null
+            ? {}
+            : { stageLabel: resultingStageLabel }),
           ...(input.note !== undefined && input.note !== null
             ? { note: input.note }
             : {}),
@@ -372,6 +429,7 @@ export class ApplicationService {
       sequence: number;
       fromStatus: ApplicationStatus | null;
       toStatus: ApplicationStatus;
+      stageLabel?: string | null;
       note?: string;
       occurredAt: Date;
     },
@@ -386,6 +444,9 @@ export class ApplicationService {
           ? {}
           : { fromStatus: values.fromStatus }),
         toStatus: values.toStatus,
+        ...(values.stageLabel === undefined || values.stageLabel === null
+          ? {}
+          : { stageLabel: values.stageLabel }),
         ...(values.note === undefined ? {} : { note: values.note }),
         occurredAt: values.occurredAt,
       })
@@ -412,6 +473,7 @@ export class ApplicationService {
   private coreFromDrizzle(row: {
     id: string;
     status: ApplicationStatus;
+    stageLabel?: string | null;
     nextAction: string | null;
     note?: string | null;
     createdAt: Date;
@@ -424,6 +486,7 @@ export class ApplicationService {
       jobId: row.jobId,
       ...(row.jobVersionId == null ? {} : { jobVersionId: row.jobVersionId }),
       status: row.status,
+      ...(row.stageLabel == null ? {} : { stageLabel: row.stageLabel }),
       ...(row.nextAction === null ? {} : { nextAction: row.nextAction }),
       ...(row.note === undefined || row.note === null
         ? {}

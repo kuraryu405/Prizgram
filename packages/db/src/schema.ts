@@ -384,6 +384,7 @@ export const applications = sqliteTable(
     status: text("status", { enum: applicationStatuses })
       .notNull()
       .default("saved"),
+    stageLabel: text("stage_label"),
     nextAction: text("next_action"),
     note: text("note"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -426,6 +427,7 @@ export const applicationStageEvents = sqliteTable(
     sequence: integer("sequence").notNull(),
     fromStatus: text("from_status", { enum: applicationStatuses }),
     toStatus: text("to_status", { enum: applicationStatuses }).notNull(),
+    stageLabel: text("stage_label"),
     note: text("note"),
     occurredAt: integer("occurred_at", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })

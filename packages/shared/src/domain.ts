@@ -287,6 +287,11 @@ export function canTransitionApplication(
 }
 
 export const applicationStatusSchema = z.enum(applicationStatuses);
+
+export const stageLabelSchema = z.string().trim().min(1).max(100);
+
+export type StageLabel = z.infer<typeof stageLabelSchema>;
+
 export const deadlineKinds = [
   "application",
   "document",
