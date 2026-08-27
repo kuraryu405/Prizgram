@@ -31,6 +31,21 @@ import { isKnownQuestionId, PERSONA_INTAKE_QUESTION_IDS } from "./questions";
 export const PERSONA_PROMPT_VERSION = "persona-v1";
 const INTAKE_SOURCE_PREFIX = "persona-intake:";
 
+/**
+ * Stale threshold for a completed intake without a persona version.
+ * Uses the LLM timeout plus a conservative margin so a live generation
+ * is not reclaimed while a recently crashed one becomes retriable.
+ */
+export function personaGenerationStaleMs(): number {
+  const raw = process.env.OPENAI_TIMEOUT_MS ?? "30000";
+  const parsed = Number(raw);
+  const timeoutMs =
+    Number.isInteger(parsed) && parsed >= 100 && parsed <= 120_000
+      ? parsed
+      : 30000;
+  return timeoutMs + 30_000;
+}
+
 export const personaGenerateRequestSchema = z
   .object({
     intakeId: z.string().trim().min(1).max(128),
@@ -239,23 +254,66 @@ export class PersonaService {
       );
     }
 
-    // Atomically claim the intake so parallel generations cannot both write.
-    const claimed = this.connection.db
-      .update(personaIntakes)
-      .set({ status: "completed", updatedAt: now() })
-      .where(
-        and(
-          eq(personaIntakes.id, intake.id),
-          eq(personaIntakes.status, "in_progress"),
-        ),
-      )
-      .run();
-    if (claimed.changes !== 1) {
-      throw new AppError(
-        "CONFLICT",
-        "Generation already completed or in progress for this intake",
-        409,
+    // Completed without a persona version means a prior claim never
+    // produced a version (e.g. process crash). A fresh claim must not be
+    // reclaimed immediately while the original LLM request may still be
+    // running; only stale claims become retriable (#202).
+    const claimAt = now();
+    if (intake.status === "completed") {
+      const ageMs = claimAt.getTime() - new Date(intake.updatedAt).getTime();
+      const staleMs = personaGenerationStaleMs();
+      if (ageMs < staleMs) {
+        throw new AppError(
+          "CONFLICT",
+          "Generation already completed or in progress for this intake",
+          409,
+        );
+      }
+      // Stale claim: bump updatedAt atomically so only one retrier wins.
+      const reclaimed = this.connection.db
+        .update(personaIntakes)
+        .set({ updatedAt: claimAt })
+        .where(
+          and(
+            eq(personaIntakes.id, intake.id),
+            eq(personaIntakes.status, "completed"),
+            eq(personaIntakes.updatedAt, intake.updatedAt),
+          ),
+        )
+        .run();
+      if (reclaimed.changes !== 1) {
+        throw new AppError(
+          "CONFLICT",
+          "Generation already completed or in progress for this intake",
+          409,
+        );
+      }
+      const duplicateAfterReclaim = this.findVersionByIntake(
+        user.id,
+        intakeSourceId,
       );
+      if (duplicateAfterReclaim !== undefined) {
+        return { ...duplicateAfterReclaim, duplicate: true };
+      }
+    } else {
+      // Atomically claim the intake so parallel generations cannot both write.
+      const claimed = this.connection.db
+        .update(personaIntakes)
+        .set({ status: "completed", updatedAt: claimAt })
+        .where(
+          and(
+            eq(personaIntakes.id, intake.id),
+            eq(personaIntakes.status, "in_progress"),
+          ),
+        )
+        .run();
+      if (claimed.changes !== 1) {
+        throw new AppError(
+          "CONFLICT",
+          "Generation already completed or in progress for this intake",
+          409,
+        );
+      }
     }
 
     try {
@@ -336,6 +394,8 @@ export class PersonaService {
       };
     } catch (error) {
       // Release the claim so the user can retry after a transient failure.
+      // Guard with updatedAt = claimAt so a concurrent stale winner that
+      // already bumped updatedAt is not reset by this loser.
       this.connection.db
         .update(personaIntakes)
         .set({ status: "in_progress", updatedAt: now() })
@@ -343,6 +403,7 @@ export class PersonaService {
           and(
             eq(personaIntakes.id, intake.id),
             eq(personaIntakes.status, "completed"),
+            eq(personaIntakes.updatedAt, claimAt),
           ),
         )
         .run();

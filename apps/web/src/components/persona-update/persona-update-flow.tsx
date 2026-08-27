@@ -10,6 +10,13 @@ import { newRequestId } from "@/lib/request-id";
 type Proposed = {
   basePersonaVersionId: string;
   proposed: Record<string, unknown>;
+  requestId: string;
+  applicationId: string;
+};
+
+type ProposeResponse = {
+  basePersonaVersionId: string;
+  proposed: Record<string, unknown>;
 };
 type AuditEntry = {
   jobId: string;
@@ -43,14 +50,18 @@ export function PersonaUpdateFlow({
     setPending("propose");
     setError(null);
     try {
-      const result = await apiFetch<Proposed>(
+      const result = await apiFetch<ProposeResponse>(
         "/api/persona/update/propose",
         jsonRequestInit("POST", {
           ...(applicationId !== "" ? { applicationId } : {}),
           reflection: reflection.trim(),
         }),
       );
-      setProposed(result);
+      setProposed({
+        ...result,
+        requestId: newRequestId(),
+        applicationId,
+      });
     } catch (e) {
       setError(describeApiError(e));
     } finally {
@@ -68,8 +79,10 @@ export function PersonaUpdateFlow({
         jsonRequestInit("POST", {
           basePersonaVersionId: proposed.basePersonaVersionId,
           snapshot: proposed.proposed,
-          requestId: newRequestId(),
-          ...(applicationId !== "" ? { applicationId } : {}),
+          requestId: proposed.requestId,
+          ...(proposed.applicationId !== ""
+            ? { applicationId: proposed.applicationId }
+            : {}),
         }),
       );
       setNewPersonaVersionId(approved.personaVersionId);

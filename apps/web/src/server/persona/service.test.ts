@@ -392,6 +392,59 @@ describe("PersonaService.generatePersona", () => {
     ).resolves.toBe("NOT_FOUND");
     expect(service.listVersions(userB.id)).toHaveLength(0);
   });
+
+  it("rejects a fresh completed intake without persona as in-progress (409)", async () => {
+    const { intakeId } = startAndAnswer(userA.id);
+    // Simulate a completed intake that crashed before version was written:
+    // mark completed now, but no version exists. A retry within stale window must be rejected.
+    const freshClaimAt = new Date();
+    connection.sqlite
+      .prepare(
+        "update persona_intakes set status='completed', updated_at=? where id=?",
+      )
+      .run(freshClaimAt.getTime(), intakeId);
+
+    await expect(
+      errorCode(
+        service.generatePersona(
+          userA,
+          { intakeId },
+          {
+            client: clientReturning(personaProviderPayload()),
+            model: "m",
+            now: () => new Date(freshClaimAt.getTime() + 1000), // 1s later, still fresh
+          },
+        ),
+      ),
+    ).resolves.toBe("CONFLICT");
+    expect(service.listVersions(userA.id)).toHaveLength(0);
+    // intake should remain completed (claim not reclaimed)
+    expect(service.getIntake(userA.id, intakeId).status).toBe("completed");
+  });
+
+  it("allows retry of a stale completed intake after timeout", async () => {
+    const { intakeId } = startAndAnswer(userA.id);
+    const staleMs = 60_000;
+    const completedAt = new Date(Date.now() - staleMs - 5_000); // 5s beyond stale
+    connection.sqlite
+      .prepare(
+        "update persona_intakes set status='completed', updated_at=? where id=?",
+      )
+      .run(completedAt.getTime(), intakeId);
+
+    const result = await service.generatePersona(
+      userA,
+      { intakeId },
+      {
+        client: clientReturning(personaProviderPayload()),
+        model: "m",
+        now: () => new Date(),
+      },
+    );
+    expect(result.version).toBe(1);
+    expect(result.duplicate).toBe(false);
+    expect(service.listVersions(userA.id)).toHaveLength(1);
+  });
 });
 
 describe("buildPersonaMessages", () => {
