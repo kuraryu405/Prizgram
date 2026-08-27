@@ -29,6 +29,7 @@ const migrationsFolder = path.resolve(
 );
 
 const userA = { id: "user-a", loginId: "student.one" };
+const userB = { id: "user-b", loginId: "student.two" };
 const context = { userIp: "203.0.113.9", userAgent: "vitest-agent" };
 
 const approvedPersona: PersonaSnapshot = personaSnapshotSchema.parse({
@@ -150,12 +151,21 @@ describe("buildJobSearchMessages", () => {
 });
 
 describe("applyDiscoveryOverrides", () => {
-  const generated = { keywords: "生成キーワード", location: "大阪" };
+  const generated = {
+    keywords: "生成キーワード",
+    location: "大阪",
+    contractType: "p" as const,
+    workHours: "f" as const,
+  };
 
   it("keeps generated values when no explicit conditions are given", () => {
     const query = applyDiscoveryOverrides(generated, {});
-    expect(query.keywords).toBe("生成キーワード");
-    expect(query.location).toBe("大阪");
+    expect(query).toEqual({
+      keywords: "生成キーワード",
+      location: "大阪",
+      contractType: "p",
+      workHours: "f",
+    });
   });
 
   it("lets explicit user conditions win over generated ones", () => {
@@ -167,6 +177,7 @@ describe("applyDiscoveryOverrides", () => {
     expect(query.keywords).toBe("手動キーワード");
     expect(query.location).toBe("福岡");
     expect(query.contractType).toBe("i");
+    expect(query.workHours).toBeUndefined();
   });
 
   it("maps employment types onto provider filters", () => {
@@ -204,6 +215,21 @@ describe("DiscoveryService.discover", () => {
     );
   });
 
+  it("does not use another user's persona", async () => {
+    connection.sqlite.prepare("insert into users (id) values (?)").run(userB.id);
+    seedPersona(userB.id);
+    const service = new DiscoveryService(connection);
+
+    await expect(
+      errorCode(
+        service.discover(userA, {}, context, {
+          client: clientReturning(generatedQueryPayload),
+          provider: providerReturning([]) as never,
+        }),
+      ),
+    ).resolves.toBe("PERSONA_REQUIRED");
+  });
+
   it("generates a query from the latest persona and returns normalized candidates", async () => {
     seedPersona(userA.id);
     const service = new DiscoveryService(connection);
@@ -232,6 +258,30 @@ describe("DiscoveryService.discover", () => {
     expect(provider.search).toHaveBeenCalledWith(result.query, context);
   });
 
+  it("preserves generated employment filters when the user does not override them", async () => {
+    seedPersona(userA.id);
+    const service = new DiscoveryService(connection);
+    const provider = providerReturning([]);
+
+    const result = await service.discover(userA, {}, context, {
+      client: clientReturning({
+        keywords: "TypeScript",
+        location: "東京",
+        contractType: "p",
+        workHours: "f",
+      }),
+      provider: provider as never,
+    });
+
+    expect(result.query).toEqual({
+      keywords: "TypeScript",
+      location: "東京",
+      contractType: "p",
+      workHours: "f",
+    });
+    expect(provider.search).toHaveBeenCalledWith(result.query, context);
+  });
+
   it("applies explicit user conditions on top of the generated query", async () => {
     seedPersona(userA.id);
     const service = new DiscoveryService(connection);
@@ -257,7 +307,6 @@ describe("DiscoveryService.discover", () => {
   it("refuses to search without usable keywords even after overrides", async () => {
     seedPersona(userA.id);
     const service = new DiscoveryService(connection);
-
     await expect(
       errorCode(
         service.discover(userA, { keywords: "　" }, context, {
