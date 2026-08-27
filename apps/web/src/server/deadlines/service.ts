@@ -44,6 +44,7 @@ export const deadlineCreateRequestSchema = z
 
 export const deadlineUpdateRequestSchema = z
   .object({
+    kind: z.enum(deadlineKinds).optional(),
     title: z.string().trim().min(1).max(200).optional(),
     dueLocal: z
       .string()
@@ -60,6 +61,7 @@ export const deadlineUpdateRequestSchema = z
   .strict()
   .refine(
     (input) =>
+      input.kind !== undefined ||
       input.title !== undefined ||
       input.dueLocal !== undefined ||
       input.timeZone !== undefined ||
@@ -278,6 +280,7 @@ export class DeadlineService {
     this.connection.db
       .update(applicationDeadlines)
       .set({
+        ...(input.kind !== undefined ? { kind: input.kind } : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
         dueAt,
         timezone: timeZone,
