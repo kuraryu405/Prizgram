@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { PublicHeader } from "@/components/landing-v2/public-header";
 import { AuthService, sessionCookieName } from "@/server/auth";
 import { getDatabase } from "@/server/database";
 
@@ -16,17 +17,21 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="auth-page">
-      <section aria-labelledby="login-title" className="card auth-card">
-        <h1 id="login-title">ログイン</h1>
-        <LoginForm />
-        <p className="auth-switch">
-          <Link href="/password-change">パスワードを変更する</Link>
-        </p>
-        <p className="auth-switch">
-          アカウントをお持ちでない方は <Link href="/register">新規登録</Link>へ
-        </p>
-      </section>
-    </main>
+    <>
+      <PublicHeader actionHref="/register" actionLabel="新規登録" />
+      <main className="auth-page">
+        <section aria-labelledby="login-title" className="card auth-card">
+          <h1 id="login-title">ログイン</h1>
+          <LoginForm />
+          <p className="auth-switch">
+            <Link href="/password-change">パスワードを変更する</Link>
+          </p>
+          <p className="auth-switch">
+            アカウントをお持ちでない方は <Link href="/register">新規登録</Link>
+            へ
+          </p>
+        </section>
+      </main>
+    </>
   );
 }

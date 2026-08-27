@@ -101,6 +101,34 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("user").textContent).toContain("user");
   });
 
+  test("does not let a delayed session probe undo a successful login", async () => {
+    let resolveProbe: ((response: Response) => void) | undefined;
+    stubFetch((url, init) => {
+      if (url === "/api/auth/me") {
+        return new Promise<Response>((resolve) => {
+          resolveProbe = resolve;
+        });
+      }
+      if (url === "/api/auth/login" && init?.method === "POST") {
+        return okEnvelope({ user: { id: "u1", loginId: "user" } });
+      }
+      return errorEnvelope(404, "NOT_FOUND");
+    });
+    const user = userEvent.setup();
+    renderProvider();
+    await user.click(screen.getByRole("button", { name: "login" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("status").textContent).toContain(
+        "authenticated",
+      ),
+    );
+
+    resolveProbe?.(errorEnvelope(401, "AUTHENTICATION_REQUIRED"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByTestId("status").textContent).toContain("authenticated");
+    expect(screen.getByTestId("user").textContent).toContain("user");
+  });
+
   test("register stores the authenticated user", async () => {
     stubFetch((url, init) => {
       if (url === "/api/auth/register" && init?.method === "POST") {

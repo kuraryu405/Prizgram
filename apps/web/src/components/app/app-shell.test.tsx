@@ -87,8 +87,10 @@ describe("AppShell", () => {
     expect(bell).not.toBeNull();
     expect(bell?.getAttribute("href")).toBe("/app/reminders");
     expect(
-      screen.getByRole("link", { name: "PRIZGRAM" }).getAttribute("aria-label"),
-    ).toBe("PRIZGRAM");
+      screen
+        .getByRole("link", { name: "Prizgram ホーム" })
+        .getAttribute("aria-label"),
+    ).toBe("Prizgram ホーム");
     expect(
       screen.getByRole("link", { name: "求人" }).getAttribute("aria-current"),
     ).toBe("page");

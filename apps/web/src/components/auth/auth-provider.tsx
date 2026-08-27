@@ -71,7 +71,9 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     }
   }, []);
 
-  const restoreRef = useRef<(attempt?: number) => void>(() => undefined);
+  // Every session probe gets a generation. Authentication actions invalidate
+  // older probes so a delayed 401 cannot overwrite a successful login.
+  const restoreGenerationRef = useRef(0);
 
   /**
    * Resolves the session from /api/auth/me. Only an explicit 401 marks the
@@ -80,10 +82,13 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
    * so a transient blip never kicks a signed-in user to the login page.
    */
   const restore = useCallback(
-    (attempt = 0) => {
+    function restoreFn(attempt = 0, generation = restoreGenerationRef.current) {
       clearRetryTimer();
-      apiFetch<{ user: unknown }>("/api/auth/me")
+      apiFetch<{ user: unknown }>("/api/auth/me", undefined, {
+        notifyUnauthorized: false,
+      })
         .then((data) => {
+          if (generation !== restoreGenerationRef.current) return;
           const parsed = authenticatedUserSchema.safeParse(data.user);
           if (!parsed.success) {
             // Malformed payloads must not be trusted as a session.
@@ -95,6 +100,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
           setStatus("authenticated");
         })
         .catch((error: unknown) => {
+          if (generation !== restoreGenerationRef.current) return;
           if (isAuthRequiredError(error)) {
             setUser(null);
             setStatus("unauthenticated");
@@ -102,7 +108,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
           }
           if (attempt < RESTORE_MAX_RETRIES) {
             retryTimerRef.current = window.setTimeout(
-              () => restoreRef.current(attempt + 1),
+              () => restoreFn(attempt + 1, generation),
               500 * (attempt + 1),
             );
             return;
@@ -113,65 +119,85 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     [clearRetryTimer],
   );
 
-  useEffect(() => {
-    restoreRef.current = restore;
+  const beginRestore = useCallback(() => {
+    const generation = restoreGenerationRef.current + 1;
+    restoreGenerationRef.current = generation;
+    restore(0, generation);
   }, [restore]);
 
+  const invalidateRestore = useCallback(() => {
+    restoreGenerationRef.current += 1;
+    clearRetryTimer();
+  }, [clearRetryTimer]);
+
   useEffect(() => {
-    restore();
+    beginRestore();
     return clearRetryTimer;
-  }, [restore, clearRetryTimer]);
+  }, [beginRestore, clearRetryTimer]);
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      invalidateRestore();
       setUser(null);
       setStatus("unauthenticated");
     };
     window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
     return () =>
       window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
-  }, []);
+  }, [invalidateRestore]);
 
   const refresh = useCallback(async () => {
+    const generation = restoreGenerationRef.current + 1;
+    restoreGenerationRef.current = generation;
+    clearRetryTimer();
     try {
-      const data = await apiFetch<{ user: unknown }>("/api/auth/me");
+      const data = await apiFetch<{ user: unknown }>(
+        "/api/auth/me",
+        undefined,
+        { notifyUnauthorized: false },
+      );
+      if (generation !== restoreGenerationRef.current) return;
       setUser(authenticatedUserSchema.parse(data.user));
       setStatus("authenticated");
     } catch (error) {
+      if (generation !== restoreGenerationRef.current) return;
       // A failed probe must not log the user out; only an explicit 401 does.
       if (isAuthRequiredError(error)) {
         setUser(null);
         setStatus("unauthenticated");
       }
     }
-  }, []);
+  }, [clearRetryTimer]);
 
   const reloadSession = useCallback(() => {
     setStatus("loading");
-    restore();
-  }, [restore]);
+    beginRestore();
+  }, [beginRestore]);
 
   const login = useCallback(
     async (credentials: { loginId: string; password: string }) => {
+      invalidateRestore();
       setUser(await requestSession("/api/auth/login", credentials));
       setStatus("authenticated");
     },
-    [],
+    [invalidateRestore],
   );
 
   const register = useCallback(
     async (credentials: { loginId: string; password: string }) => {
+      invalidateRestore();
       setUser(await requestSession("/api/auth/register", credentials));
       setStatus("authenticated");
     },
-    [],
+    [invalidateRestore],
   );
 
   const logout = useCallback(async () => {
+    invalidateRestore();
     await apiFetch<undefined>("/api/auth/logout", { method: "POST" });
     setUser(null);
     setStatus("unauthenticated");
-  }, []);
+  }, [invalidateRestore]);
 
   const value = useMemo(
     () => ({
