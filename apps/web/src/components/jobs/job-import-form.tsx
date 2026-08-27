@@ -12,6 +12,7 @@ import {
 import { describeApiError } from "@/lib/error-messages";
 
 const MAX_BODY_LENGTH = 20_000;
+const MAX_COMPANY_NAME_LENGTH = 200;
 
 type ImportResult = {
   jobId: string;
@@ -22,9 +23,16 @@ type ImportResult = {
 
 const fieldLabels: Readonly<Record<string, string>> = {
   body: "求人票本文",
+  companyName: "会社名",
   sourceName: "出典名",
   sourceUrl: "出典URL",
 };
+
+function hasUnrenderedFieldError(errors: ApiFieldErrors): boolean {
+  return Object.keys(errors).some(
+    (field) => !Object.prototype.hasOwnProperty.call(fieldLabels, field),
+  );
+}
 
 export function JobImportForm() {
   const router = useRouter();
@@ -80,7 +88,10 @@ export function JobImportForm() {
       if (error instanceof ApiClientError) {
         const errors = error.fieldErrors ?? {};
         setFieldErrors(errors);
-        if (Object.keys(errors).length === 0) {
+        if (
+          Object.keys(errors).length === 0 ||
+          hasUnrenderedFieldError(errors)
+        ) {
           setFormError(describeApiError(error));
         }
       } else {
@@ -138,11 +149,23 @@ export function JobImportForm() {
         <div className="field">
           <label htmlFor="job-company-name">会社名（任意）</label>
           <input
+            aria-describedby={
+              renderFieldError("companyName")
+                ? "job-company-name-error"
+                : undefined
+            }
+            aria-invalid={renderFieldError("companyName") ? true : undefined}
             id="job-company-name"
+            maxLength={MAX_COMPANY_NAME_LENGTH}
             onChange={(event) => setCompanyName(event.target.value)}
             type="text"
             value={companyName}
           />
+          {renderFieldError("companyName") && (
+            <p className="error-text" id="job-company-name-error">
+              {fieldLabels.companyName}: {fieldErrors.companyName?.[0]}
+            </p>
+          )}
         </div>
         <div className="field">
           <label htmlFor="job-source-name">出典名（任意）</label>
@@ -152,6 +175,7 @@ export function JobImportForm() {
                 ? "job-source-name-error"
                 : undefined
             }
+            aria-invalid={renderFieldError("sourceName") ? true : undefined}
             id="job-source-name"
             onChange={(event) => setSourceName(event.target.value)}
             type="text"
