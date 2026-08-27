@@ -256,6 +256,18 @@ export class DeadlineService {
       throw new AppError("NOT_FOUND", "Deadline not found", 404);
     }
 
+    if (
+      input.timeZone !== undefined &&
+      input.timeZone !== row.timezone &&
+      input.dueLocal === undefined
+    ) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "dueLocal is required when changing time zone",
+        400,
+      );
+    }
+
     const timeZone = input.timeZone ?? row.timezone;
     const dueLocal = input.dueLocal;
     const dueAt =

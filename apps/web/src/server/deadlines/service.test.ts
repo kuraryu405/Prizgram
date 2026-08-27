@@ -228,6 +228,25 @@ describe("DeadlineService", () => {
     expect(moved.dueAt).toBe("2026-09-01T16:00:00.000Z");
   });
 
+  it("rejects a time zone-only update", () => {
+    const created = service.create(userA, {
+      applicationId,
+      kind: "interview",
+      title: "面接",
+      dueLocal: "2026-09-01T09:00",
+      timeZone: "Asia/Tokyo",
+    });
+
+    expect(
+      syncErrorCode(() =>
+        service.update(userA, created.deadlineId, {
+          timeZone: "America/Los_Angeles",
+        }),
+      ),
+    ).toBe("VALIDATION_ERROR");
+    expect(service.list(userA.id)[0]?.dueAt).toBe(created.dueAt);
+  });
+
   it("deletes only owned deadlines", () => {
     const created = service.create(userA, {
       applicationId,
