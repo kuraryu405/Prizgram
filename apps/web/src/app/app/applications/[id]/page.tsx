@@ -182,7 +182,8 @@ export default async function ApplicationDetailPage({
             {detail.events.map((event) => (
               <li key={event.id}>
                 <span className="signal-id">#{event.sequence}</span>{" "}
-                {historyEventLabel(event)} （{formatDateTime(event.occurredAt)}）
+                {historyEventLabel(event)} （{formatDateTime(event.occurredAt)}
+                ）
                 {event.note !== undefined && (
                   <span className="hint-text"> — {event.note}</span>
                 )}
