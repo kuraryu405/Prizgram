@@ -33,9 +33,6 @@ export default async function JobsPage() {
   return (
     <div className="page page-jobs">
       <h1>求人</h1>
-      <p className="page-lead">
-        ペルソナから候補を探索、または求人票を貼り付けて保存。保存後はスキル・文化・難易度の3軸で評価できます。
-      </p>
 
       <JobDiscovery />
       <JobImportForm />

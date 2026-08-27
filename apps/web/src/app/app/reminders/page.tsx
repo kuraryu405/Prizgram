@@ -35,7 +35,6 @@ export default async function RemindersPage() {
   return (
     <div className="page">
       <h1>リマインダー</h1>
-      <p className="page-lead">締切接近を優先度付きで通知します。</p>
 
       {reminders.length === 0 ? (
         <p className="hint-text">現在表示できるリマインダーはありません。</p>
