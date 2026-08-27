@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 
 import { deadlineKinds } from "@prizgram/shared";
 
 import { ApiClientError, apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
 import { deadlineKindLabels } from "@/lib/labels";
+import { newRequestId } from "@/lib/request-id";
 
 type DeadlineKind = (typeof deadlineKinds)[number];
 
@@ -386,6 +387,7 @@ export function DeadlineCreateForm({
   const [timeZone, setTimeZone] = useState("Asia/Tokyo");
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const requestIdRef = useRef<string | null>(null);
 
   if (applications.length === 0) {
     return (
@@ -400,6 +402,7 @@ export function DeadlineCreateForm({
     if (pending) return;
     setPending(true);
     setFormError(null);
+    const requestId = (requestIdRef.current ??= newRequestId());
     try {
       await apiFetch<unknown>(
         "/api/deadlines",
@@ -409,8 +412,10 @@ export function DeadlineCreateForm({
           title: title.trim(),
           dueLocal,
           timeZone,
+          requestId,
         }),
       );
+      requestIdRef.current = null;
       setTitle("");
       setDueLocal("");
       router.refresh();

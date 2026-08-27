@@ -46,6 +46,8 @@ export const deadlineCreateRequestSchema = z
       .refine(isValidTimeZone, {
         message: "unknown time zone",
       }),
+    /** Stable across retries of one logical submit. */
+    requestId: z.string().trim().min(8).max(128),
   })
   .strict();
 
@@ -204,6 +206,12 @@ export class DeadlineService {
   constructor(private readonly connection: DatabaseConnection) {}
 
   create(user: AuthenticatedUser, input: DeadlineCreateInput): DeadlineView {
+    // A response can be lost after the insert commits. Return the original
+    // row before validating the rest of the replayed payload so retries are
+    // true replays rather than new creates.
+    const replayed = this.findByRequestId(user.id, input.requestId);
+    if (replayed !== undefined) return this.getOne(user.id, replayed.id);
+
     const ownedApplication = this.connection.db
       .select({ id: applications.id, status: applications.status })
       .from(applications)
@@ -227,19 +235,48 @@ export class DeadlineService {
 
     const dueAt = safeZonedToIso(input.dueLocal, input.timeZone);
     const id = randomUUID();
-    this.connection.db
+    const result = this.connection.db
       .insert(applicationDeadlines)
       .values({
         id,
         userId: user.id,
+        requestId: input.requestId,
         applicationId: input.applicationId,
         kind: input.kind,
         title: input.title,
         dueAt: new Date(dueAt),
         timezone: input.timeZone,
       })
+      .onConflictDoNothing({
+        target: [applicationDeadlines.userId, applicationDeadlines.requestId],
+      })
       .run();
+
+    // Another request with the same client id may have won the race between
+    // the lookup above and this insert. The unique index makes that race
+    // deterministic and the winner is the canonical response.
+    if (result.changes === 0) {
+      const concurrent = this.findByRequestId(user.id, input.requestId);
+      if (concurrent !== undefined) return this.getOne(user.id, concurrent.id);
+    }
+
     return this.getOne(user.id, id);
+  }
+
+  private findByRequestId(
+    userId: string,
+    requestId: string,
+  ): { id: string } | undefined {
+    return this.connection.db
+      .select({ id: applicationDeadlines.id })
+      .from(applicationDeadlines)
+      .where(
+        and(
+          eq(applicationDeadlines.userId, userId),
+          eq(applicationDeadlines.requestId, requestId),
+        ),
+      )
+      .get();
   }
 
   list(userId: string): DeadlineView[] {

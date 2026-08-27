@@ -145,6 +145,7 @@ describe("DeadlineService", () => {
       title: "1次面接",
       dueLocal: "2026-09-01T10:00",
       timeZone: "Asia/Tokyo",
+      requestId: "request-later",
     });
     const sooner = service.create(userA, {
       applicationId,
@@ -152,6 +153,7 @@ describe("DeadlineService", () => {
       title: "ES提出",
       dueLocal: "2026-08-28T23:59",
       timeZone: "Asia/Tokyo",
+      requestId: "request-sooner",
     });
 
     const list = service.list(userA.id);
@@ -162,6 +164,60 @@ describe("DeadlineService", () => {
     expect(sooner.dueAt).toBe("2026-08-28T14:59:00.000Z");
     expect(later.timeZone).toBe("Asia/Tokyo");
     expect(sooner.completed).toBe(false);
+  });
+
+  it("returns the existing deadline when a create request is replayed", () => {
+    const first = service.create(userA, {
+      applicationId,
+      kind: "document",
+      title: "ES提出",
+      dueLocal: "2026-08-28T10:00",
+      timeZone: "Asia/Tokyo",
+      requestId: "request-replay",
+    });
+    const replayed = service.create(userA, {
+      applicationId,
+      kind: "interview",
+      title: "変更されない面接",
+      dueLocal: "2026-09-01T10:00",
+      timeZone: "UTC",
+      requestId: "request-replay",
+    });
+
+    expect(replayed).toEqual(first);
+    expect(service.list(userA.id)).toHaveLength(1);
+  });
+
+  it("scopes request ids to the authenticated user", () => {
+    connection.sqlite
+      .prepare("insert into jobs (id, user_id) values (?, ?)")
+      .run("job-b", userB.id);
+    connection.sqlite
+      .prepare(
+        "insert into applications (id, user_id, job_id) values (?, ?, ?)",
+      )
+      .run("app-b", userB.id, "job-b");
+
+    const first = service.create(userA, {
+      applicationId,
+      kind: "document",
+      title: "自分のES",
+      dueLocal: "2026-08-28T10:00",
+      timeZone: "UTC",
+      requestId: "request-shared",
+    });
+    const otherUser = service.create(userB, {
+      applicationId: "app-b",
+      kind: "document",
+      title: "他人のES",
+      dueLocal: "2026-08-28T10:00",
+      timeZone: "UTC",
+      requestId: "request-shared",
+    });
+
+    expect(otherUser.deadlineId).not.toBe(first.deadlineId);
+    expect(service.list(userA.id)).toHaveLength(1);
+    expect(service.list(userB.id)).toHaveLength(1);
   });
 
   it.each(["accepted", "rejected", "withdrawn"])(
@@ -179,6 +235,7 @@ describe("DeadlineService", () => {
             title: "作成されない締切",
             dueLocal: "2026-09-01T10:00",
             timeZone: "UTC",
+            requestId: "request-terminal",
           }),
         ),
       ).toBe("APPLICATION_TERMINAL");
@@ -196,6 +253,7 @@ describe("DeadlineService", () => {
         title: "過去の締切",
         dueLocal: "2026-08-25T23:00",
         timeZone: "UTC",
+        requestId: "request-overdue",
       });
       const soon = service.create(userA, {
         applicationId,
@@ -203,6 +261,7 @@ describe("DeadlineService", () => {
         title: "内定承諾",
         dueLocal: "2026-08-26T12:00",
         timeZone: "UTC",
+        requestId: "request-soon",
       });
       const list = service.list(userA.id);
       const byTitle = new Map(list.map((d) => [d.title, d]));
@@ -221,6 +280,7 @@ describe("DeadlineService", () => {
       title: "ES提出",
       dueLocal: "2026-08-30T12:00",
       timeZone: "UTC",
+      requestId: "request-complete",
     });
     const completed = service.update(userA, created.deadlineId, {
       completed: true,
@@ -242,6 +302,7 @@ describe("DeadlineService", () => {
       title: "面接",
       dueLocal: "2026-09-01T09:00",
       timeZone: "Asia/Tokyo",
+      requestId: "request-move",
     });
     const moved = service.update(userA, created.deadlineId, {
       dueLocal: "2026-09-01T09:00",
@@ -257,6 +318,7 @@ describe("DeadlineService", () => {
       title: "面接",
       dueLocal: "2026-09-01T09:00",
       timeZone: "Asia/Tokyo",
+      requestId: "request-zone-only",
     });
 
     expect(
@@ -276,6 +338,7 @@ describe("DeadlineService", () => {
       title: "ES提出",
       dueLocal: "2026-09-01T09:00",
       timeZone: "Asia/Tokyo",
+      requestId: "request-edit",
     });
     const updated = service.update(userA, created.deadlineId, {
       kind: "interview",
@@ -299,6 +362,7 @@ describe("DeadlineService", () => {
       title: "説明会",
       dueLocal: "2026-09-05T10:00",
       timeZone: "UTC",
+      requestId: "request-delete",
     });
     expect(() => service.remove(userB, created.deadlineId)).toThrow(AppError);
     service.remove(userA, created.deadlineId);
@@ -319,6 +383,7 @@ describe("DeadlineService", () => {
           title: "他人の締切",
           dueLocal: "2026-09-01T10:00",
           timeZone: "UTC",
+          requestId: "request-other-user",
         }),
       ),
     ).toBe("NOT_FOUND");
@@ -328,6 +393,7 @@ describe("DeadlineService", () => {
       title: "自分の締切",
       dueLocal: "2026-09-01T10:00",
       timeZone: "UTC",
+      requestId: "request-owned",
     });
     expect(service.list(userB.id)).toHaveLength(0);
     expect(
@@ -349,6 +415,7 @@ describe("DeadlineService", () => {
           title: "壊れたTZ",
           dueLocal: "2026-09-01T10:00",
           timeZone: "Mars/Olympus",
+          requestId: "request-invalid-tz",
         }),
       ),
     ).toBe("VALIDATION_ERROR");
@@ -360,6 +427,7 @@ describe("DeadlineService", () => {
           title: "壊れた日時",
           dueLocal: "2026-09-01 10:00",
           timeZone: "UTC",
+          requestId: "request-invalid-date",
         }),
       ),
     ).toBe("VALIDATION_ERROR");

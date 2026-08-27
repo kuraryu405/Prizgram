@@ -1,0 +1,2 @@
+ALTER TABLE `application_deadlines` ADD `request_id` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `application_deadlines_user_request_id_unique` ON `application_deadlines` (`user_id`,`request_id`);

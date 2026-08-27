@@ -460,6 +460,9 @@ export const applicationDeadlines = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // Client-generated id for replay-safe deadline creation. Nullable for
+    // deadlines created before this column was introduced.
+    requestId: text("request_id"),
     applicationId: text("application_id").notNull(),
     kind: text("kind", { enum: deadlineKinds }).notNull(),
     title: text("title").notNull(),
@@ -481,6 +484,10 @@ export const applicationDeadlines = sqliteTable(
     uniqueIndex("application_deadlines_user_id_unique").on(
       table.userId,
       table.id,
+    ),
+    uniqueIndex("application_deadlines_user_request_id_unique").on(
+      table.userId,
+      table.requestId,
     ),
     index("application_deadlines_application_due_idx").on(
       table.applicationId,

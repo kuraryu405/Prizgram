@@ -7,6 +7,7 @@ import { errorEnvelope, okEnvelope, stubFetch } from "@/test-support/http";
 
 import {
   DeadlineActions,
+  DeadlineCreateForm,
   formatDateTimeLocalInTimeZone,
 } from "./deadline-components";
 
@@ -124,5 +125,41 @@ describe("DeadlineActions", () => {
       "入力内容を確認してください。",
     );
     expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+});
+
+describe("DeadlineCreateForm", () => {
+  test("reuses the request id when the first response is lost", async () => {
+    const fetchMock = stubFetch(
+      vi
+        .fn()
+        .mockImplementationOnce(() => errorEnvelope(503, "NETWORK_ERROR"))
+        .mockImplementationOnce(() => okEnvelope({})),
+    );
+    const user = userEvent.setup();
+    render(
+      <DeadlineCreateForm
+        applications={[{ id: "application-1", label: "応募先" }]}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("タイトル"), "ES提出");
+    await user.type(
+      screen.getByLabelText(/期限（Asia\/Tokyoの現地時刻）/),
+      "2026-08-30T14:00",
+    );
+    await user.click(screen.getByRole("button", { name: "締切を登録" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "締切を登録" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const firstBody = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    ) as { requestId: string };
+    const secondBody = JSON.parse(
+      (fetchMock.mock.calls[1]?.[1] as RequestInit).body as string,
+    ) as { requestId: string };
+    expect(firstBody.requestId).toBeTruthy();
+    expect(secondBody.requestId).toBe(firstBody.requestId);
   });
 });
