@@ -11,6 +11,7 @@ import {
   DiscoveryService,
   jobDiscoveryRequestSchema,
 } from "@/server/jobs/discovery";
+import { JOB_DISCOVERY_MAX_REQUEST_BYTES } from "@/server/jobs/request-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +19,11 @@ export const dynamic = "force-dynamic";
 export const POST = withNoStore(
   withApiHandler(async (request) => {
     const user = requireSessionUser(request);
-    const input = await readJsonBody(request, jobDiscoveryRequestSchema);
+    const input = await readJsonBody(
+      request,
+      jobDiscoveryRequestSchema,
+      JOB_DISCOVERY_MAX_REQUEST_BYTES,
+    );
     enforceLlmRateLimit(user.id);
     const result = await new DiscoveryService(getDatabase()).discover(
       user,

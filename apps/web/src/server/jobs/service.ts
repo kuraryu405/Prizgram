@@ -22,14 +22,14 @@ import {
 } from "@/server/llm";
 
 import { AppError } from "../api";
+import { JOB_IMPORT_MAX_BODY_CHARS } from "./request-limits";
 
 export const JOB_IMPORT_PROMPT_VERSION = "job-import-v1";
-const MAX_BODY_CHARS = 20_000;
 
 export const jobImportRequestSchema = z
   .object({
     /** The raw job posting text supplied by the user. Treated as data. */
-    body: z.string().trim().min(40).max(MAX_BODY_CHARS),
+    body: z.string().trim().min(40).max(JOB_IMPORT_MAX_BODY_CHARS),
     /** Optional logical job to append a new immutable version to. */
     jobId: z.string().trim().min(1).max(128).optional(),
     companyName: z.string().trim().min(1).max(200).optional(),
