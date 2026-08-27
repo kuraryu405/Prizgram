@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 
 import {
   applicationStatuses,
@@ -21,6 +21,10 @@ type MinimalApplicationResponse = Readonly<{
 
 const terminalStatusSet = new Set<string>(terminalApplicationStatuses);
 
+function deadlineHref(applicationId: string): string {
+  return `/app/deadlines?applicationId=${encodeURIComponent(applicationId)}`;
+}
+
 export function MinimalApplicationForm() {
   const router = useRouter();
   const [company, setCompany] = useState("");
@@ -33,6 +37,10 @@ export function MinimalApplicationForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [createdApplication, setCreatedApplication] =
     useState<MinimalApplicationResponse | null>(null);
+
+  const onStatusChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setStatus(event.target.value as ApplicationStatus);
+  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -71,6 +79,10 @@ export function MinimalApplicationForm() {
     }
   };
 
+  const canAddDeadline =
+    createdApplication !== null &&
+    !terminalStatusSet.has(createdApplication.status);
+
   return (
     <form
       className="card form-stack"
@@ -89,12 +101,10 @@ export function MinimalApplicationForm() {
       {createdApplication !== null && (
         <p className="form-success" role="status">
           応募を追加しました。
-          {!terminalStatusSet.has(createdApplication.status) && (
+          {canAddDeadline && (
             <>
               {" "}
-              <Link
-                href={`/app/deadlines?applicationId=${encodeURIComponent(createdApplication.applicationId)}`}
-              >
+              <Link href={deadlineHref(createdApplication.applicationId)}>
                 締切を追加
               </Link>
             </>
@@ -126,7 +136,7 @@ export function MinimalApplicationForm() {
         <label htmlFor="minimal-status">現在のステータス</label>
         <select
           id="minimal-status"
-          onChange={(event) => setStatus(event.target.value as ApplicationStatus)}
+          onChange={onStatusChange}
           value={status}
         >
           {applicationStatuses.map((value) => (
