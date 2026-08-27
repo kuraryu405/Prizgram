@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AuthProvider } from "@/components/auth/auth-provider";
 
 import "./styles.css";
+import "./app-shell-responsive.css";
 
 export const metadata: Metadata = {
   title: "Prizgram",
