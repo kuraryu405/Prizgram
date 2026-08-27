@@ -310,8 +310,7 @@ export class ReminderService {
   }
 
   /**
-   * Lists active (pending + sent) reminders ordered by urgency. Pending rows
-   * returned here are flipped to `sent`: listing IS the in-app delivery.
+   * Lists active (pending + sent) reminders ordered by urgency.
    *
    * Reminders whose deadline has since been completed, moved to a terminal
    * application status, been deleted, rescheduled/renamed, changed timezone,
@@ -338,17 +337,6 @@ export class ReminderService {
     }
 
     const staleIdSet = new Set(staleIds);
-    const pendingIds = rows
-      .filter((row) => row.status === "pending" && !staleIdSet.has(row.id))
-      .map((row) => row.id);
-    if (pendingIds.length > 0) {
-      this.db
-        .update(reminders)
-        .set({ status: "sent", updatedAt: new Date() })
-        .where(inArray(reminders.id, pendingIds))
-        .run();
-    }
-
     const activeRows = rows.filter((row) => !staleIdSet.has(row.id));
     // Enrich remaining rows with deadline timezone/dueAt for correct UI formatting.
     const activeDeadlineIds = [...new Set(activeRows.map((r) => r.deadlineId))];

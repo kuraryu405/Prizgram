@@ -7,7 +7,7 @@ import { ReminderService } from "@prizgram/db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Lists active reminders. Listing pending ones marks them sent (in-app delivery). */
+/** Lists active reminders without changing their delivery status. */
 export const GET = withNoStore(
   withApiHandler((request) => {
     const user = requireSessionUser(request);
