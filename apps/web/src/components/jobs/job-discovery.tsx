@@ -36,6 +36,7 @@ type DiscoveredJob = {
   candidate: Candidate;
   sourceName: string;
   sourceKind: string;
+  fetchedAt?: string;
 };
 
 type DiscoverResult = {
@@ -48,6 +49,7 @@ type DiscoverResult = {
   promptVersion: string;
   hits: number;
   jobs: readonly DiscoveredJob[];
+  providerStatuses?: Readonly<Record<string, string>>;
 };
 
 type ImportResult = {
@@ -408,8 +410,9 @@ export function JobDiscovery() {
       <div className="discovery-header">
         <h2 id="job-discovery">求人を探す</h2>
         <p className="hint-text">
-          承認済みペルソナから条件を生成し、
-          {result?.jobs[0]?.sourceName ?? "Careerjet"}から候補を取得します。
+          承認済みペルソナから検索条件を生成し、外部求人検索API（
+          {result?.jobs[0]?.sourceName ?? "Careerjet / Himalayas"}
+          ）から候補を取得します。
         </p>
         <details className="discovery-help">
           <summary>検索の仕組み</summary>
@@ -530,6 +533,18 @@ export function JobDiscovery() {
               )}
             </div>
           </div>
+          {result.providerStatuses !== undefined &&
+            Object.entries(result.providerStatuses).some(
+              ([, s]) => s !== "ok",
+            ) && (
+              <p className="hint-text" role="status">
+                一部プロバイダが一時的に取得できませんでしたが、取得できた候補を表示しています（
+                {Object.entries(result.providerStatuses)
+                  .map(([name, status]) => `${name}: ${status}`)
+                  .join(", ")}
+                ）。
+              </p>
+            )}
           {result.jobs.length === 0 ? (
             <p className="hint-text">候補が見つかりませんでした。</p>
           ) : (

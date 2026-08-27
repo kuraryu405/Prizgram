@@ -29,8 +29,18 @@ import {
   type JobCandidate,
   type JobSearchQuery,
 } from "./provider/careerjet";
+import {
+  HIMALAYAS_PROVIDER_NAME,
+  HIMALAYAS_SOURCE_KIND,
+  HimalayasProvider,
+} from "./provider/himalayas";
 
 export const JOB_SEARCH_PROMPT_VERSION = "job-search-v1";
+
+const MAX_CANDIDATES_PER_PROVIDER = 20;
+const MAX_TOTAL_CANDIDATES = 40;
+const PROVIDER_TIMEOUT_MS = 10_000;
+const PROVIDER_CONCURRENCY = 3;
 
 /** User-supplied explicit conditions; they always win over generated ones. */
 export const jobDiscoveryRequestSchema = z
@@ -171,10 +181,24 @@ export function applyDiscoveryOverrides(
   };
 }
 
+export type ProviderStatus =
+  "ok" | "timeout" | "rate_limited" | "error" | "skipped";
+
+export type ProviderAdapter = Readonly<{
+  name: string;
+  sourceKind: JobSnapshot["source"]["kind"];
+  sourceName: string;
+  search: (
+    query: JobSearchQuery,
+    context: { userIp: string; userAgent: string },
+  ) => Promise<{ hits: number; candidates: readonly JobCandidate[] }>;
+}>;
+
 export type DiscoveredJob = Readonly<{
   candidate: JobCandidate;
   sourceName: string;
   sourceKind: JobSnapshot["source"]["kind"];
+  fetchedAt: string;
 }>;
 
 export type DiscoveryResult = Readonly<{
@@ -182,12 +206,14 @@ export type DiscoveryResult = Readonly<{
   promptVersion: string;
   hits: number;
   jobs: readonly DiscoveredJob[];
+  providerStatuses: Readonly<Record<string, ProviderStatus>>;
 }>;
 
 type DiscoverOptions = Readonly<{
   client?: StructuredLlmClient;
   model?: string;
-  provider?: CareerjetProvider;
+  provider?: CareerjetProvider | ProviderAdapter;
+  providers?: readonly ProviderAdapter[];
   now?: () => Date;
 }>;
 
@@ -211,6 +237,7 @@ function defaultClient(): StructuredLlmClient {
   return environmentClient;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function defaultProvider(): CareerjetProvider {
   try {
     return CareerjetProvider.fromEnvironment();
@@ -227,6 +254,48 @@ function defaultProvider(): CareerjetProvider {
     }
     throw error;
   }
+}
+
+function defaultProviders(): ProviderAdapter[] {
+  const providers: ProviderAdapter[] = [];
+  try {
+    const careerjet = CareerjetProvider.fromEnvironment();
+    providers.push({
+      name: CAREERJET_PROVIDER_NAME,
+      sourceKind: CAREERJET_SOURCE_KIND,
+      sourceName: CAREERJET_PROVIDER_NAME,
+      search: careerjet.search.bind(careerjet),
+    });
+  } catch (error) {
+    if (
+      error instanceof JobSearchProviderError &&
+      error.code === "PROVIDER_NOT_CONFIGURED"
+    ) {
+      // Careerjet not configured: skip rather than failing entire search
+    } else {
+      throw error;
+    }
+  }
+  // Himalayas is public (no API key) and always available
+  try {
+    const himalayas = HimalayasProvider.fromEnvironment();
+    providers.push({
+      name: HIMALAYAS_PROVIDER_NAME,
+      sourceKind: HIMALAYAS_SOURCE_KIND,
+      sourceName: HIMALAYAS_PROVIDER_NAME,
+      search: himalayas.search.bind(himalayas),
+    });
+  } catch (error) {
+    if (
+      error instanceof JobSearchProviderError &&
+      error.code === "PROVIDER_NOT_CONFIGURED"
+    ) {
+      // Invalid custom timeout config etc.; treat as skipped
+    } else {
+      throw error;
+    }
+  }
+  return providers;
 }
 
 function llmError(error: unknown): AppError {
@@ -318,6 +387,227 @@ function providerError(error: unknown): AppError {
   throw error;
 }
 
+function normalizeForDedupe(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function candidateDedupeKey(candidate: JobCandidate): string | undefined {
+  // Strong evidence required: company + title must both be present after normalization.
+  // If either is missing, do not dedupe to avoid false merges.
+  if (candidate.company === undefined || candidate.company.trim() === "")
+    return undefined;
+  const company = normalizeForDedupe(candidate.company);
+  const title = normalizeForDedupe(candidate.title);
+  if (company === "" || title === "") return undefined;
+  // Location is optional but strengthens key when present.
+  if (candidate.location !== undefined && candidate.location.trim() !== "") {
+    const location = normalizeForDedupe(candidate.location);
+    if (location !== "") return `${company}|${title}|${location}`;
+  }
+  return `${company}|${title}`;
+}
+
+export function dedupeDiscoveredJobs(
+  jobs: readonly DiscoveredJob[],
+): readonly DiscoveredJob[] {
+  const seen = new Map<string, DiscoveredJob>();
+  const result: DiscoveredJob[] = [];
+  for (const job of jobs) {
+    const key = candidateDedupeKey(job.candidate);
+    // Also deduplicate on normalized canonical URL host+path when available
+    const urlKey = (() => {
+      try {
+        const u = new URL(job.candidate.url);
+        // normalize host lowercased + pathname without trailing slash, ignore query for dedupe strength
+        return `${u.hostname.toLowerCase()}${u.pathname.replace(/\/+$/, "").toLowerCase()}`;
+      } catch {
+        return undefined;
+      }
+    })();
+
+    let duplicate = false;
+    if (key !== undefined && seen.has(key)) duplicate = true;
+    // URL-based duplicate is strong evidence even without company/title
+    if (!duplicate && urlKey !== undefined) {
+      // Check if any previous job has same urlKey
+      for (const prev of result) {
+        try {
+          const prevUrl = new URL(prev.candidate.url);
+          const prevKey = `${prevUrl.hostname.toLowerCase()}${prevUrl.pathname.replace(/\/+$/, "").toLowerCase()}`;
+          if (prevKey === urlKey) {
+            duplicate = true;
+            break;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (duplicate) continue;
+    if (key !== undefined) seen.set(key, job);
+    result.push(job);
+  }
+  return result;
+}
+
+function selectProviders(
+  query: JobSearchQuery,
+  available: readonly ProviderAdapter[],
+): readonly ProviderAdapter[] {
+  // Simple selection policy for PR1:
+  // - Always include Himalayas (public, remote-friendly) for any query
+  // - Include Careerjet for any query (licensed_source covers Japan)
+  // Future: query/location/remote/company could filter, but fan-out to both for now.
+  // Respect explicit result limits and concurrency via caller.
+  // Avoid unbounded fan-out: cap to available length (max 2 for PR1).
+  if (available.length === 0) return [];
+  // If query is empty (should not happen after validation), still return all
+  // to maximize coverage. Provider dedupe handles overlap.
+  void query;
+  return available;
+}
+
+async function withProviderTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  providerName: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new JobSearchProviderError(
+          "PROVIDER_TIMEOUT",
+          `The ${providerName} request timed out`,
+          true,
+        ),
+      );
+    }, timeoutMs);
+  });
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    return result;
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+}
+
+async function searchWithProviders(
+  query: JobSearchQuery,
+  context: { userIp: string; userAgent: string },
+  providers: readonly ProviderAdapter[],
+  now: () => Date,
+): Promise<{
+  jobs: DiscoveredJob[];
+  hits: number;
+  providerStatuses: Record<string, ProviderStatus>;
+}> {
+  if (providers.length === 0) {
+    throw new AppError(
+      "SERVER_MISCONFIGURED",
+      "The job search provider is not configured",
+      500,
+    );
+  }
+
+  const selected = selectProviders(query, providers);
+  const limited = selected.slice(0, PROVIDER_CONCURRENCY);
+
+  const fetchedAt = now().toISOString();
+
+  const results = await Promise.all(
+    limited.map(async (provider) => {
+      try {
+        const res = await withProviderTimeout(
+          provider.search(query, context),
+          PROVIDER_TIMEOUT_MS,
+          provider.name,
+        );
+        // Enforce per-provider result limit (defense in depth)
+        const candidates = res.candidates.slice(0, MAX_CANDIDATES_PER_PROVIDER);
+        const jobs: DiscoveredJob[] = candidates.map((candidate) => ({
+          candidate,
+          sourceName: provider.sourceName,
+          sourceKind: provider.sourceKind,
+          fetchedAt,
+        }));
+        return {
+          provider: provider.name,
+          status: "ok" as ProviderStatus,
+          jobs,
+          hits: res.hits,
+        };
+      } catch (error) {
+        if (error instanceof JobSearchProviderError) {
+          let status: ProviderStatus = "error";
+          if (error.code === "PROVIDER_TIMEOUT") status = "timeout";
+          else if (error.code === "PROVIDER_RATE_LIMITED")
+            status = "rate_limited";
+          else if (error.code === "PROVIDER_NOT_CONFIGURED") status = "skipped";
+          return {
+            provider: provider.name,
+            status,
+            jobs: [] as DiscoveredJob[],
+            hits: 0,
+            error,
+          };
+        }
+        return {
+          provider: provider.name,
+          status: "error" as ProviderStatus,
+          jobs: [] as DiscoveredJob[],
+          hits: 0,
+          error,
+        };
+      }
+    }),
+  );
+
+  const providerStatuses: Record<string, ProviderStatus> = {};
+  const allJobs: DiscoveredJob[] = [];
+  let totalHits = 0;
+
+  for (const r of results) {
+    providerStatuses[r.provider] = r.status;
+    if (r.status === "ok") {
+      totalHits += r.hits;
+      for (const job of r.jobs) {
+        if (allJobs.length >= MAX_TOTAL_CANDIDATES) break;
+        allJobs.push(job);
+      }
+    }
+  }
+
+  // If all providers failed, surface the most relevant error.
+  const hasOk = results.some((r) => r.status === "ok");
+  if (!hasOk) {
+    // Prefer rate_limited / timeout over generic error for UX
+    const priority: Record<ProviderStatus, number> = {
+      rate_limited: 0,
+      timeout: 1,
+      error: 2,
+      skipped: 3,
+      ok: 4,
+    };
+    const sorted = [...results].sort(
+      (a, b) => (priority[a.status] ?? 99) - (priority[b.status] ?? 99),
+    );
+    const firstError = (sorted[0] as { error?: unknown } | undefined)?.error;
+    if (firstError !== undefined) throw providerError(firstError);
+    throw new AppError(
+      "UPSTREAM_UNAVAILABLE",
+      "The job search provider could not be reached",
+      502,
+    );
+  }
+
+  const deduped = dedupeDiscoveredJobs(allJobs);
+  const sliced = deduped.slice(0, MAX_TOTAL_CANDIDATES);
+
+  return { jobs: sliced, hits: totalHits, providerStatuses };
+}
+
 /**
  * Turns the latest approved persona plus explicit user conditions into a
  * provider-backed list of job candidates. Nothing is persisted here;
@@ -374,10 +664,115 @@ export class DiscoveryService {
     context: { userIp: string; userAgent: string },
     options: DiscoverOptions = {},
   ): Promise<DiscoveryResult> {
-    // Explicit keywords are sufficient for provider search. This path must
-    // not require a persona or spend an LLM request (#132).
+    const now = options.now ?? (() => new Date());
+
+    // Legacy single-provider path for tests that inject a fake provider
+    if (options.provider !== undefined) {
+      const legacyProvider = options.provider as ProviderAdapter;
+      // Normalize to adapter shape if Careerjet instance was passed
+      const adapter: ProviderAdapter =
+        "name" in legacyProvider &&
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+        typeof (legacyProvider as ProviderAdapter).search === "function"
+          ? // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+            (legacyProvider as ProviderAdapter)
+          : {
+              name: CAREERJET_PROVIDER_NAME,
+              sourceKind: CAREERJET_SOURCE_KIND,
+              sourceName: CAREERJET_PROVIDER_NAME,
+              search: (
+                legacyProvider as unknown as CareerjetProvider
+              ).search.bind(legacyProvider as unknown as CareerjetProvider),
+            };
+
+      if (DiscoveryService.isManualSearch(overrides)) {
+        const query = {
+          keywords: overrides.keywords!.trim(),
+          ...(overrides.location === undefined
+            ? {}
+            : { location: overrides.location }),
+          ...(overrides.employmentType === undefined
+            ? {}
+            : employmentTypeToFilters(overrides.employmentType)),
+        };
+        let result;
+        try {
+          result = await withProviderTimeout(
+            adapter.search(query, context),
+            PROVIDER_TIMEOUT_MS,
+            adapter.name,
+          );
+        } catch (error) {
+          throw providerError(error);
+        }
+        const fetchedAt = now().toISOString();
+        return {
+          query,
+          promptVersion: `${JOB_SEARCH_PROMPT_VERSION}-manual`,
+          hits: result.hits,
+          jobs: result.candidates
+            .slice(0, MAX_CANDIDATES_PER_PROVIDER)
+            .map((candidate) => ({
+              candidate,
+              sourceName: adapter.sourceName,
+              sourceKind: adapter.sourceKind,
+              fetchedAt,
+            })),
+          providerStatuses: { [adapter.name]: "ok" },
+        };
+      }
+
+      const persona = this.loadLatestApprovedPersona(user.id);
+      const client = options.client ?? defaultClient();
+      let generated: { keywords: string } & JobSearchQuery;
+      try {
+        generated = await client.generateStructured({
+          messages: buildJobSearchMessages(persona),
+          output: queryContract,
+          schemaName: "job_search_query",
+        });
+      } catch (error) {
+        throw llmError(error);
+      }
+      const query = applyDiscoveryOverrides(generated, overrides);
+      if (query.keywords.trim() === "") {
+        throw new AppError(
+          "SEARCH_QUERY_REQUIRED",
+          "検索条件を生成できませんでした。キーワードを明示的に指定してください。",
+          422,
+        );
+      }
+      let result;
+      try {
+        result = await withProviderTimeout(
+          adapter.search(query, context),
+          PROVIDER_TIMEOUT_MS,
+          adapter.name,
+        );
+      } catch (error) {
+        throw providerError(error);
+      }
+      const fetchedAt = now().toISOString();
+      return {
+        query,
+        promptVersion: JOB_SEARCH_PROMPT_VERSION,
+        hits: result.hits,
+        jobs: result.candidates
+          .slice(0, MAX_CANDIDATES_PER_PROVIDER)
+          .map((candidate) => ({
+            candidate,
+            sourceName: adapter.sourceName,
+            sourceKind: adapter.sourceKind,
+            fetchedAt,
+          })),
+        providerStatuses: { [adapter.name]: "ok" },
+      };
+    }
+
+    // Multi-provider path (PR1: Careerjet + Himalayas)
+    const providers = options.providers ?? defaultProviders();
+
     if (DiscoveryService.isManualSearch(overrides)) {
-      const provider = options.provider ?? defaultProvider();
       const query = {
         keywords: overrides.keywords!.trim(),
         ...(overrides.location === undefined
@@ -387,28 +782,18 @@ export class DiscoveryService {
           ? {}
           : employmentTypeToFilters(overrides.employmentType)),
       };
-
-      let result;
-      try {
-        result = await provider.search(query, context);
-      } catch (error) {
-        throw providerError(error);
-      }
+      const multi = await searchWithProviders(query, context, providers, now);
       return {
         query,
         promptVersion: `${JOB_SEARCH_PROMPT_VERSION}-manual`,
-        hits: result.hits,
-        jobs: result.candidates.map((candidate) => ({
-          candidate,
-          sourceName: CAREERJET_PROVIDER_NAME,
-          sourceKind: CAREERJET_SOURCE_KIND,
-        })),
+        hits: multi.hits,
+        jobs: multi.jobs,
+        providerStatuses: multi.providerStatuses,
       };
     }
 
     const persona = this.loadLatestApprovedPersona(user.id);
     const client = options.client ?? defaultClient();
-    const provider = options.provider ?? defaultProvider();
 
     let generated: { keywords: string } & JobSearchQuery;
     try {
@@ -430,22 +815,14 @@ export class DiscoveryService {
       );
     }
 
-    let result;
-    try {
-      result = await provider.search(query, context);
-    } catch (error) {
-      throw providerError(error);
-    }
+    const multi = await searchWithProviders(query, context, providers, now);
 
     return {
       query,
       promptVersion: JOB_SEARCH_PROMPT_VERSION,
-      hits: result.hits,
-      jobs: result.candidates.map((candidate) => ({
-        candidate,
-        sourceName: CAREERJET_PROVIDER_NAME,
-        sourceKind: CAREERJET_SOURCE_KIND,
-      })),
+      hits: multi.hits,
+      jobs: multi.jobs,
+      providerStatuses: multi.providerStatuses,
     };
   }
 }
