@@ -27,7 +27,10 @@ function formatInZone(view: DeadlineView): string {
   }).format(new Date(view.dueAt));
 }
 
-export default async function DeadlinesPage() {
+export default async function DeadlinesPage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<{ applicationId?: string }> }>) {
+  const { applicationId: requestedApplicationId } = await searchParams;
   const user = await requireSessionUserPage();
   const deadlines = new DeadlineService(getDatabase()).list(user.id);
   const applications = new ApplicationService(getDatabase()).listApplications(
@@ -44,6 +47,19 @@ export default async function DeadlinesPage() {
   const applicationsAcceptingDeadlines = applications.filter(
     (application) => !terminalApplicationStatusSet.has(application.status),
   );
+  const requestedApplication = applicationsAcceptingDeadlines.find(
+    (application) => application.applicationId === requestedApplicationId,
+  );
+  const orderedApplications =
+    requestedApplication === undefined
+      ? applicationsAcceptingDeadlines
+      : [
+          requestedApplication,
+          ...applicationsAcceptingDeadlines.filter(
+            (application) =>
+              application.applicationId !== requestedApplication.applicationId,
+          ),
+        ];
 
   return (
     <div className="page">
@@ -53,7 +69,7 @@ export default async function DeadlinesPage() {
       </p>
 
       <DeadlineCreateForm
-        applications={applicationsAcceptingDeadlines.map((application) => ({
+        applications={orderedApplications.map((application) => ({
           id: application.applicationId,
           label: `${application.company} — ${application.role}`,
         }))}
