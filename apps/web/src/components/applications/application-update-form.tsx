@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import { apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
@@ -11,6 +11,7 @@ export type ApplicationUpdateFormProps = Readonly<{
   currentStatus: string;
   allowedNextStatuses: readonly string[];
   statusLabels: Readonly<Record<string, string>>;
+  initialStageLabel?: string;
   initialNextAction?: string;
   initialNote?: string;
 }>;
@@ -20,13 +21,18 @@ export function ApplicationUpdateForm({
   currentStatus,
   allowedNextStatuses,
   statusLabels,
+  initialStageLabel,
   initialNextAction,
   initialNote,
 }: ApplicationUpdateFormProps) {
   const router = useRouter();
   const [status, setStatus] = useState("");
+  const [stageLabel, setStageLabel] = useState(initialStageLabel ?? "");
   const [nextAction, setNextAction] = useState(initialNextAction ?? "");
   const [note, setNote] = useState(initialNote ?? "");
+  const [savedStageLabel, setSavedStageLabel] = useState(
+    (initialStageLabel ?? "").trim(),
+  );
   const [savedNextAction, setSavedNextAction] = useState(
     (initialNextAction ?? "").trim(),
   );
@@ -35,24 +41,15 @@ export function ApplicationUpdateForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Keep form in sync when the server-provided initial values change after refresh.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
-    setNextAction(initialNextAction ?? "");
-    setSavedNextAction((initialNextAction ?? "").trim());
-  }, [initialNextAction]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
-    setNote(initialNote ?? "");
-    setSavedNote((initialNote ?? "").trim());
-  }, [initialNote]);
-
   const hasStatusChange = status !== "";
+  const stageLabelTrimmed = stageLabel.trim();
   const nextActionTrimmed = nextAction.trim();
   const noteTrimmed = note.trim();
+  const stageLabelDirty = stageLabelTrimmed !== savedStageLabel;
   const nextActionDirty = nextActionTrimmed !== savedNextAction;
   const noteDirty = noteTrimmed !== savedNote;
-  const canSubmit = hasStatusChange || nextActionDirty || noteDirty;
+  const canSubmit =
+    hasStatusChange || stageLabelDirty || nextActionDirty || noteDirty;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -66,6 +63,12 @@ export function ApplicationUpdateForm({
         {
           ...jsonRequestInit("PATCH", {
             ...(status !== "" ? { status } : {}),
+            ...(stageLabelDirty
+              ? {
+                  stageLabel:
+                    stageLabelTrimmed === "" ? null : stageLabelTrimmed,
+                }
+              : {}),
             ...(nextActionDirty
               ? {
                   nextAction:
@@ -80,9 +83,10 @@ export function ApplicationUpdateForm({
         },
       );
       setStatus("");
-      // Keep form in sync with server after successful mutation.
-      // If the field was cleared (sent null), the server will have null,
-      // otherwise it will have the new trimmed value.
+      if (stageLabelDirty) {
+        setSavedStageLabel(stageLabelTrimmed);
+        setStageLabel(stageLabelTrimmed);
+      }
       if (nextActionDirty) {
         setSavedNextAction(nextActionTrimmed);
         setNextAction(nextActionTrimmed);
@@ -132,10 +136,26 @@ export function ApplicationUpdateForm({
           ))}
         </select>
         {allowedNextStatuses.length === 0 && (
-          <p className="hint-text">
-            現在のステータスは完了済みのため、遷移できるステータスがありません。
-          </p>
+          <p className="hint-text">完了済みの応募です。</p>
         )}
+      </div>
+      <div className="field">
+        <label htmlFor="application-stage-label-input">
+          現在の段階（任意）
+        </label>
+        <input
+          id="application-stage-label-input"
+          maxLength={100}
+          onChange={(event) => setStageLabel(event.target.value)}
+          placeholder={
+            initialStageLabel === undefined
+              ? "例: 2次面接"
+              : "空にすると削除されます"
+          }
+          type="text"
+          value={stageLabel}
+        />
+        <p className="hint-text">例: Webテスト / 2次面接 / 最終面接</p>
       </div>
       <div className="field">
         <label htmlFor="application-next-action-input">次のアクション</label>
@@ -156,9 +176,7 @@ export function ApplicationUpdateForm({
         )}
       </div>
       <div className="field">
-        <label htmlFor="application-note-input">
-          メモ（ステータス変更時の履歴に記録）
-        </label>
+        <label htmlFor="application-note-input">メモ</label>
         <textarea
           id="application-note-input"
           maxLength={2000}
@@ -169,9 +187,6 @@ export function ApplicationUpdateForm({
           rows={3}
           value={note}
         />
-        {initialNote !== undefined && (
-          <p className="hint-text">現在のメモがあります</p>
-        )}
       </div>
       <button
         aria-busy={pending}

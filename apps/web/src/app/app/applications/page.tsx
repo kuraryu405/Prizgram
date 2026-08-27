@@ -81,6 +81,8 @@ export default async function ApplicationsPage({
                   <p className="hint-text">
                     {applicationStatusLabels[application.status] ??
                       application.status}
+                    {application.stageLabel !== undefined &&
+                      ` / 段階: ${application.stageLabel}`}
                     {application.nextAction !== undefined &&
                       ` / 次のアクション: ${application.nextAction}`}
                   </p>

@@ -64,6 +64,13 @@
       "when": 1787808317966,
       "tag": "0008_familiar_venom",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787812610921,
+      "tag": "0009_stage_label",
+      "breakpoints": true
     }
   ]
 }

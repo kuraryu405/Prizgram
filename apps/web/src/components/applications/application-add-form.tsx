@@ -13,6 +13,7 @@ export type ApplicationAddFormProps = Readonly<{
 export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
   const router = useRouter();
   const [jobId, setJobId] = useState(jobs[0]?.jobId ?? "");
+  const [stageLabel, setStageLabel] = useState("");
   const [nextAction, setNextAction] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
@@ -38,6 +39,9 @@ export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
         "/api/applications",
         jsonRequestInit("POST", {
           jobId,
+          ...(stageLabel.trim() === ""
+            ? {}
+            : { stageLabel: stageLabel.trim() }),
           ...(nextAction.trim() === ""
             ? {}
             : { nextAction: nextAction.trim() }),
@@ -46,6 +50,7 @@ export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
       );
       setSuccessMessage("応募管理に追加しました。");
       setJobId("");
+      setStageLabel("");
       setNextAction("");
       setNote("");
       router.refresh();
@@ -93,6 +98,21 @@ export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
             </option>
           ))}
         </select>
+      </div>
+      <div className="field">
+        <label htmlFor="application-stage-label">現在の段階（任意）</label>
+        <input
+          id="application-stage-label"
+          maxLength={100}
+          onChange={(event) => setStageLabel(event.target.value)}
+          placeholder="例: 2次面接"
+          type="text"
+          value={stageLabel}
+        />
+        <p className="hint-text">
+          企業固有の段階を自由に記録できます（例: 書類選考中 / 1次面接）。
+          集計は広域ステータスで行われます。
+        </p>
       </div>
       <div className="field">
         <label htmlFor="application-next-action">次のアクション（任意）</label>

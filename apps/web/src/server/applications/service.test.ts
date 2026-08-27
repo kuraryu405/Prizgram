@@ -120,10 +120,15 @@ describe("transitions rule", () => {
 });
 
 describe("ApplicationService", () => {
-  it("creates an application from an owned job with an initial stage event", () => {
+  it("creates an application with an initial status and stage label", () => {
     seedJob("job-a", userA.id, "株式会社サンプル");
-    const created = service.createFromJob(userA, { jobId: "job-a" });
-    expect(created.status).toBe("saved");
+    const created = service.createFromJob(userA, {
+      jobId: "job-a",
+      status: "applying",
+      stageLabel: "書類選考中",
+    });
+    expect(created.status).toBe("applying");
+    expect(created.stageLabel).toBe("書類選考中");
     expect(created.company).toBe("株式会社サンプル");
 
     const detail: ApplicationDetail = service.getApplicationDetail(
@@ -133,7 +138,84 @@ describe("ApplicationService", () => {
     expect(detail.events).toHaveLength(1);
     expect(detail.events[0]).toMatchObject({
       sequence: 1,
+      toStatus: "applying",
+      stageLabel: "書類選考中",
+    });
+  });
+
+  it("records stage-label changes and corrections in selection history", () => {
+    seedJob("job-a", userA.id, "株式会社サンプル");
+    const created = service.createFromJob(userA, { jobId: "job-a" });
+
+    const labeled = service.updateApplication(userA, created.applicationId, {
+      stageLabel: "1次面接",
+    });
+    expect(labeled.stageLabel).toBe("1次面接");
+    expect(labeled.events).toHaveLength(2);
+    expect(labeled.events[1]).toMatchObject({
+      sequence: 2,
+      fromStatus: "saved",
       toStatus: "saved",
+      stageLabel: "1次面接",
+    });
+
+    const relabeled = service.updateApplication(userA, created.applicationId, {
+      stageLabel: "2次面接",
+    });
+    expect(relabeled.events).toHaveLength(3);
+    expect(relabeled.events[2]).toMatchObject({
+      sequence: 3,
+      fromStatus: "saved",
+      toStatus: "saved",
+      stageLabel: "2次面接",
+    });
+
+    const transitioned = service.updateApplication(
+      userA,
+      created.applicationId,
+      { status: "applying" },
+    );
+    expect(transitioned.events).toHaveLength(4);
+    expect(transitioned.events[3]).toMatchObject({
+      sequence: 4,
+      fromStatus: "saved",
+      toStatus: "applying",
+      stageLabel: "2次面接",
+    });
+
+    const cleared = service.updateApplication(userA, created.applicationId, {
+      stageLabel: null,
+    });
+    expect(cleared.stageLabel).toBeUndefined();
+    expect(cleared.events).toHaveLength(5);
+    expect(cleared.events[4]).toMatchObject({
+      sequence: 5,
+      fromStatus: "applying",
+      toStatus: "applying",
+    });
+    expect(cleared.events[4]?.stageLabel).toBeUndefined();
+  });
+
+  it("allows correcting a non-terminal broad status backwards", () => {
+    seedJob("job-a", userA.id, "株式会社サンプル");
+    const created = service.createFromJob(userA, {
+      jobId: "job-a",
+      status: "interview",
+      stageLabel: "1次面接",
+    });
+
+    const corrected = service.updateApplication(userA, created.applicationId, {
+      status: "screening",
+      stageLabel: "Webテスト",
+    });
+
+    expect(corrected.status).toBe("screening");
+    expect(corrected.stageLabel).toBe("Webテスト");
+    expect(corrected.events[1]).toMatchObject({
+      sequence: 2,
+      fromStatus: "interview",
+      toStatus: "screening",
+      stageLabel: "Webテスト",
     });
   });
 
@@ -182,14 +264,14 @@ describe("ApplicationService", () => {
     });
   });
 
-  it("rejects illegal transitions without touching data or history", () => {
+  it("rejects illegal terminal transitions without touching data or history", () => {
     seedJob("job-a", userA.id, "株式会社サンプル");
     const created = service.createFromJob(userA, { jobId: "job-a" });
 
     expect(
       syncErrorCode(() =>
         service.updateApplication(userA, created.applicationId, {
-          status: "offer",
+          status: "accepted",
         }),
       ),
     ).toBe("INVALID_STATUS_TRANSITION");
