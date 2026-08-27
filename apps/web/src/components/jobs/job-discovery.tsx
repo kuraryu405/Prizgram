@@ -56,6 +56,33 @@ type ImportResult = {
   duplicate: boolean;
 };
 
+type ScoreDimension = {
+  score: number;
+  reasons: string[];
+  evidenceRefs: string[];
+};
+
+type EvaluationResult = {
+  detail: {
+    jobId?: string;
+    jobVersionId: string;
+    axes: Record<string, ScoreDimension>;
+  };
+  duplicate: boolean;
+};
+
+type CardScore = Readonly<{
+  jobId: string;
+  axes: Record<string, ScoreDimension>;
+  duplicate: boolean;
+}>;
+
+const scoreAxisDefinitions = [
+  { key: "skillFit", label: "スキル適合" },
+  { key: "cultureValueFit", label: "文化・価値観フィット" },
+  { key: "difficultyGap", label: "難易度ギャップ（低いほど小さい）" },
+] as const;
+
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium" }).format(
     new Date(iso),
@@ -94,6 +121,37 @@ export function JobDiscovery() {
   );
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [evaluatingIds, setEvaluatingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [cardScores, setCardScores] = useState<ReadonlyMap<string, CardScore>>(
+    () => new Map(),
+  );
+  const [cardErrors, setCardErrors] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
+
+  const setEvaluating = (externalId: string, active: boolean) => {
+    setEvaluatingIds((current) => {
+      const next = new Set(current);
+      if (active) next.add(externalId);
+      else next.delete(externalId);
+      return next;
+    });
+  };
+
+  const clearCardError = (externalId: string) => {
+    setCardErrors((current) => {
+      if (!current.has(externalId)) return current;
+      const next = new Map(current);
+      next.delete(externalId);
+      return next;
+    });
+  };
+
+  const setCardError = (externalId: string, message: string) => {
+    setCardErrors((current) => new Map(current).set(externalId, message));
+  };
 
   const onSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,7 +190,12 @@ export function JobDiscovery() {
 
   const onImport = async (job: DiscoveredJob): Promise<void> => {
     const { candidate } = job;
-    if (importingId !== null || importedIds.has(candidate.externalId)) return;
+    if (
+      importingId !== null ||
+      evaluatingIds.has(candidate.externalId) ||
+      importedIds.has(candidate.externalId)
+    )
+      return;
     setImportMessage(null);
     setImportError(null);
 
@@ -163,6 +226,53 @@ export function JobDiscovery() {
       setImportError(describeApiError(error));
     } finally {
       setImportingId(null);
+    }
+  };
+
+  const onEvaluate = async (job: DiscoveredJob): Promise<void> => {
+    const { candidate } = job;
+    if (importingId !== null || evaluatingIds.has(candidate.externalId)) return;
+
+    clearCardError(candidate.externalId);
+    setEvaluating(candidate.externalId, true);
+    try {
+      // Always use the common import endpoint first. It resolves provider
+      // provenance and returns the existing job id for duplicate candidates.
+      const imported = await apiFetch<ImportResult>("/api/jobs", {
+        ...jsonRequestInit("POST", {
+          body: candidateBody(candidate),
+          ...(candidate.company === undefined
+            ? {}
+            : { companyName: candidate.company }),
+          sourceName: job.sourceName,
+          sourceUrl: candidate.url,
+          sourceKind: job.sourceKind,
+          sourceExternalId: candidate.externalId,
+        }),
+      });
+      setImportedIds(
+        (previous) => new Set([...previous, candidate.externalId]),
+      );
+
+      const evaluation = await apiFetch<EvaluationResult>(
+        `/api/jobs/${encodeURIComponent(imported.jobId)}/score`,
+        { method: "POST" },
+      );
+      setCardScores((previous) =>
+        new Map(previous).set(candidate.externalId, {
+          jobId: imported.jobId,
+          axes: evaluation.detail.axes,
+          duplicate: evaluation.duplicate,
+        }),
+      );
+      router.refresh();
+    } catch (error) {
+      // The import call happens before scoring, so an import failure cannot
+      // trigger scoring. If scoring fails, the imported job remains available
+      // and this card's action can be retried independently.
+      setCardError(candidate.externalId, describeApiError(error));
+    } finally {
+      setEvaluating(candidate.externalId, false);
     }
   };
 
@@ -275,6 +385,9 @@ export function JobDiscovery() {
               {result.jobs.map((job) => {
                 const { candidate } = job;
                 const imported = importedIds.has(candidate.externalId);
+                const evaluating = evaluatingIds.has(candidate.externalId);
+                const score = cardScores.get(candidate.externalId);
+                const cardError = cardErrors.get(candidate.externalId);
                 return (
                   <li key={candidate.externalId}>
                     <article className="job-candidate">
@@ -299,19 +412,114 @@ export function JobDiscovery() {
                       {candidate.description !== undefined && (
                         <p>{candidate.description}</p>
                       )}
-                      <button
-                        aria-busy={importingId === candidate.externalId}
-                        className="button button-secondary"
-                        disabled={imported || importingId !== null}
-                        onClick={() => void onImport(job)}
-                        type="button"
-                      >
-                        {imported
-                          ? "取り込み済み"
-                          : importingId === candidate.externalId
-                            ? "取り込み中…"
-                            : "この候補を取り込む"}
-                      </button>
+                      <div className="job-candidate-actions">
+                        <button
+                          aria-busy={evaluating}
+                          className="button button-primary"
+                          disabled={
+                            evaluating ||
+                            importingId !== null ||
+                            score !== undefined
+                          }
+                          onClick={() => void onEvaluate(job)}
+                          type="button"
+                        >
+                          {evaluating
+                            ? "評価中…"
+                            : score !== undefined
+                              ? "評価済み"
+                              : "3軸で評価"}
+                        </button>
+                        <button
+                          aria-busy={importingId === candidate.externalId}
+                          className="button button-secondary"
+                          disabled={
+                            imported ||
+                            importingId !== null ||
+                            evaluatingIds.size > 0
+                          }
+                          onClick={() => void onImport(job)}
+                          type="button"
+                        >
+                          {imported
+                            ? "取り込み済み"
+                            : importingId === candidate.externalId
+                              ? "取り込み中…"
+                              : "取り込む"}
+                        </button>
+                      </div>
+                      {cardError !== undefined && (
+                        <div className="job-card-error" role="alert">
+                          <p className="error-text">{cardError}</p>
+                          <button
+                            className="button button-secondary"
+                            disabled={evaluating || importingId !== null}
+                            onClick={() => void onEvaluate(job)}
+                            type="button"
+                          >
+                            再試行
+                          </button>
+                        </div>
+                      )}
+                      {score !== undefined && (
+                        <section
+                          aria-label={`${candidate.title}の3軸評価`}
+                          className="job-score-result"
+                        >
+                          <p className="job-score-status">
+                            {score.duplicate ? "評価済み" : "評価完了"}
+                          </p>
+                          <dl className="job-score-grid">
+                            {scoreAxisDefinitions.map((definition) => {
+                              const dimension = score.axes[definition.key];
+                              if (dimension === undefined) return null;
+                              return (
+                                <div key={definition.key}>
+                                  <dt>{definition.label}</dt>
+                                  <dd>{dimension.score}</dd>
+                                </div>
+                              );
+                            })}
+                          </dl>
+                          <details>
+                            <summary>根拠を見る</summary>
+                            <div className="job-score-evidence">
+                              {scoreAxisDefinitions.map((definition) => {
+                                const dimension = score.axes[definition.key];
+                                if (dimension === undefined) return null;
+                                return (
+                                  <div key={definition.key}>
+                                    <h4>{definition.label}</h4>
+                                    <ul>
+                                      {dimension.reasons.map((reason) => (
+                                        <li key={reason}>{reason}</li>
+                                      ))}
+                                      {dimension.evidenceRefs.length > 0 ? (
+                                        <li>
+                                          根拠ID:{" "}
+                                          {dimension.evidenceRefs.join(", ")}
+                                        </li>
+                                      ) : (
+                                        <li>
+                                          {definition.key === "cultureValueFit"
+                                            ? "情報不足（文化・価値観の根拠がありません）"
+                                            : "根拠情報がありません"}
+                                        </li>
+                                      )}
+                                    </ul>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </details>
+                          <Link
+                            className="button button-secondary"
+                            href={`/app/jobs/${encodeURIComponent(score.jobId)}`}
+                          >
+                            詳細へ
+                          </Link>
+                        </section>
+                      )}
                     </article>
                   </li>
                 );

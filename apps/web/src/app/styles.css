@@ -883,6 +883,94 @@ a {
   line-height: 1.7;
 }
 
+.job-candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.job-candidate-actions .button {
+  flex: 1 1 10rem;
+}
+
+.job-card-error {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  justify-content: space-between;
+}
+
+.job-card-error .error-text {
+  margin: 0;
+}
+
+.job-score-result {
+  background: var(--color-surface-tint);
+  border: 1px solid var(--color-primary-border);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.875rem;
+}
+
+.job-score-status {
+  color: var(--color-primary-strong);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.job-score-grid {
+  display: grid;
+  gap: 0.625rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.job-score-grid div {
+  min-width: 0;
+}
+
+.job-score-grid dt {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.job-score-grid dd {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin: 0.125rem 0 0;
+}
+
+.job-score-evidence {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.625rem;
+}
+
+.job-score-evidence h4 {
+  font-size: 0.8125rem;
+  margin: 0 0 0.25rem;
+}
+
+.job-score-evidence ul {
+  display: grid;
+  gap: 0.25rem;
+  list-style: disc;
+  padding-left: 1.125rem;
+}
+
+.job-score-result > .button {
+  justify-self: start;
+}
+
+@media (max-width: 480px) {
+  .job-score-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Scoring panel */
 
 .score-panel {
