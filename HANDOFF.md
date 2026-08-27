@@ -5,15 +5,15 @@ Updated: 2026-08-28 JST
 ## Repository state
 
 - `origin/main`: `9764c7c525ed629be5cfc49ba8c8bb5780c70057`
-- HEAD before this handoff update: `ba12a052c9eac3285ec6782bfec747662e191d30`
-- Working branch: `fix/300-303-non-ui-review` (based on PR #304 head `1392a8c`)
-- The branch must track `origin/fix/300-303-non-ui`, not the temporary local `origin/pr-304` ref.
+- HEAD after the preflight handoff commit: `2bacd1458070f6d3814b6156483cdd615af2b52a`
+- Working branch: `fix/300-303-non-ui-review`, tracking `origin/fix/300-303-non-ui`.
 
 ## Golden Journey progress
 
-- Current step: preflight; production Golden Journey has **not started**.
-- First blocking error: `git pull --ff-only` failed because the local branch was configured to merge `refs/heads/pr-304`, which does not exist on `origin`.
-- Classification: local Git tracking configuration. It is neither an E2E failure, a Prizgram runtime failure, nor an infrastructure failure.
+- Current step: preflight complete; production Golden Journey has **not started**.
+- First blocking error was `git pull --ff-only` attempting to merge `refs/heads/pr-304`, which does not exist on `origin`.
+- Resolution: the local branch now tracks `origin/fix/300-303-non-ui`; commit `2bacd14` is pushed there.
+- Classification: local Git tracking configuration. It was neither an E2E failure, a Prizgram runtime failure, nor an infrastructure failure.
 
 ## Completed work
 
@@ -25,6 +25,7 @@ Updated: 2026-08-28 JST
 
 - `apps/web/src/components/applications/application-update-form.test.tsx`
 - `ba12a05 test(applications): use supported text assertion matcher`
+- `2bacd14 docs: add golden journey handoff` (pushed)
 
 ## Prizgram issues
 
@@ -36,8 +37,6 @@ Updated: 2026-08-28 JST
 ## Required next commands
 
 ```bash
-git branch --set-upstream-to=origin/fix/300-303-non-ui
-git push -u origin HEAD:fix/300-303-non-ui
 git pull --ff-only
 E2E_BASE_URL=https://prizgram.kuraryu.jp E2E_ALLOW_MUTATION=true E2E_ALLOW_PRODUCTION=true pnpm test:golden
 ```
