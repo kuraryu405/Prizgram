@@ -186,14 +186,21 @@ describe("FixedWindowRateLimiter", () => {
 });
 
 describe("requestSourceKey", () => {
-  it("uses the first forwarded hop when present", () => {
+  it("uses the Cloudflare client IP header when present", () => {
     const request = new Request("https://prizgram.test", {
-      headers: { "x-forwarded-for": "203.0.113.7 , 70.41.3.18" },
+      headers: { "cf-connecting-ip": "203.0.113.7" },
     });
     expect(requestSourceKey(request)).toBe("203.0.113.7");
   });
 
-  it("falls back to a shared bucket without proxy headers", () => {
+  it("does not trust a client-supplied forwarded-for header", () => {
+    const request = new Request("https://prizgram.test", {
+      headers: { "x-forwarded-for": "203.0.113.7" },
+    });
+    expect(requestSourceKey(request)).toBe("unknown");
+  });
+
+  it("falls back to a shared bucket without the trusted proxy header", () => {
     expect(requestSourceKey(new Request("https://prizgram.test"))).toBe(
       "unknown",
     );
@@ -203,11 +210,10 @@ describe("requestSourceKey", () => {
 describe("enforceAuthRateLimit", () => {
   it("throws a 429 AppError with Retry-After once the budget is spent", () => {
     const limiter = createAuthRateLimiter({ maxRequests: 1, windowMs: 60_000 });
-    const request = (forwardedFor?: string) =>
+    const request = (clientIp?: string) =>
       new Request("https://prizgram.test/api/auth/login", {
         method: "POST",
-        headers:
-          forwardedFor === undefined ? {} : { "x-forwarded-for": forwardedFor },
+        headers: clientIp === undefined ? {} : { "cf-connecting-ip": clientIp },
       });
 
     expect(() =>

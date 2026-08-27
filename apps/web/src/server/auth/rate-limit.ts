@@ -103,14 +103,16 @@ export class FixedWindowRateLimiter {
 }
 
 /**
- * Derives the rate limit key from the client source. The TLS-terminating
- * reverse proxy must overwrite client-supplied X-Forwarded-For values; even
- * if sources are spoofed, the global scrypt gate still bounds CPU usage.
+ * Derives the rate limit key from the client source. Production traffic is
+ * expected to arrive through Cloudflare Tunnel, which overwrites
+ * `CF-Connecting-IP`. Direct access to the application port must be blocked
+ * at the edge so clients cannot provide this header themselves.
  */
 export function requestSourceKey(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  const firstHop = forwarded?.split(",", 1)[0]?.trim();
-  if (firstHop !== undefined && firstHop !== "") return firstHop;
+  const cloudflareClientIp = request.headers.get("cf-connecting-ip")?.trim();
+  if (cloudflareClientIp !== undefined && cloudflareClientIp !== "") {
+    return cloudflareClientIp;
+  }
   return "unknown";
 }
 
