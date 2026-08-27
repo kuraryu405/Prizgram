@@ -14,6 +14,7 @@ const COST = 131_072;
 const BLOCK_SIZE = 8;
 const PARALLELIZATION = 1;
 const MAX_MEMORY = 256 * 1024 * 1024;
+const SCRYPT_MEMORY_MULTIPLIER = 128;
 
 // How long a client told about scrypt saturation should wait before
 // retrying. The gate itself already queues for AUTH_SCRYPT_QUEUE_TIMEOUT_MS
@@ -108,9 +109,15 @@ function parsePasswordHash(encoded: string): ParsedPasswordHash | undefined {
   const parsedBlockSize = Number(blockSize);
   const parsedParallelization = Number(parallelization);
   if (
-    !Number.isInteger(parsedCost) ||
-    !Number.isInteger(parsedBlockSize) ||
-    !Number.isInteger(parsedParallelization)
+    !Number.isSafeInteger(parsedCost) ||
+    !Number.isSafeInteger(parsedBlockSize) ||
+    !Number.isSafeInteger(parsedParallelization)
+  ) {
+    return undefined;
+  }
+  if (
+    !/^[A-Za-z0-9_-]+$/.test(saltValue) ||
+    !/^[A-Za-z0-9_-]+$/.test(keyValue)
   ) {
     return undefined;
   }
@@ -130,6 +137,15 @@ function parsePasswordHash(encoded: string): ParsedPasswordHash | undefined {
     parsedParallelization < 1 ||
     parsedParallelization > 8
   ) {
+    return undefined;
+  }
+  if (!Number.isInteger(Math.log2(parsedCost))) {
+    return undefined;
+  }
+  // Node's scrypt maxmem check uses 128 * N * r as the memory estimate.
+  const requiredMemory =
+    SCRYPT_MEMORY_MULTIPLIER * parsedCost * parsedBlockSize;
+  if (!Number.isSafeInteger(requiredMemory) || requiredMemory > MAX_MEMORY) {
     return undefined;
   }
   return {
@@ -172,18 +188,10 @@ export async function verifyPassword(
 ): Promise<boolean> {
   const parsed = parsePasswordHash(encoded);
   if (parsed === undefined) return false;
-  let actual: Buffer;
-  try {
-    actual = await runWithinScryptCapacity(
-      () => deriveKey(password, parsed.salt, parsed),
-      gate,
-    );
-  } catch (error) {
-    // Deliberate overload responses must surface as 429 instead of being
-    // reported as a mere verification failure.
-    if (error instanceof AppError) throw error;
-    return false;
-  }
+  const actual = await runWithinScryptCapacity(
+    () => deriveKey(password, parsed.salt, parsed),
+    gate,
+  );
   return timingSafeEqual(actual, parsed.key);
 }
 
