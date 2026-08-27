@@ -280,6 +280,23 @@ describe("PersonaUpdateService", () => {
     expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
   });
 
+  it("rejects proposal that drops base evidence", () => {
+    const ids = seedBaseAndApplication();
+    // Base has ev-base; propose without it should be rejected
+    const dropped = personaSnapshotSchema.parse({
+      ...baseSnapshot(),
+      evidence: [], // drop ev-base
+    });
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: ids.personaVersionId,
+        requestId: "req-drop-evidence",
+        snapshot: dropped,
+      }),
+    ).toThrow(AppError);
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
+  });
+
   it("loads event sources with note and fromStatus and builds digest with them", () => {
     const ids = seedBaseAndApplication();
     const sources = service.loadEventSources(userA.id, ids.applicationId);
@@ -325,6 +342,73 @@ describe("PersonaUpdateService", () => {
     expect(digest).not.toContain("note:");
     expect(digest).toContain("interview");
   });
+
+  it("rejects proposal that drops base skill", () => {
+    // Seed a base with a skill
+    const skillBase = personaSnapshotSchema.parse({
+      ...baseSnapshot(),
+      skills: [
+        {
+          name: "TypeScript",
+          level: "intermediate",
+          evidenceRefs: ["ev-base"],
+        },
+      ],
+    });
+    connection.sqlite
+      .prepare("insert into users (id) values (?)")
+      .run(userA.id);
+    connection.sqlite
+      .prepare(
+        'insert into persona_versions (id, user_id, version, snapshot, provenance) values (\'persona-skill\', ?, 1, ?, \'{"source":"llm","sourceIds":[],"generatedAt":"2026-08-26T00:00:00Z"}\')',
+      )
+      .run(userA.id, JSON.stringify(skillBase));
+
+    const droppedSkill = personaSnapshotSchema.parse({
+      ...skillBase,
+      skills: [], // drop TypeScript
+    });
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: "persona-skill",
+        requestId: "req-drop-skill",
+        snapshot: droppedSkill,
+      }),
+    ).toThrow(AppError);
+  });
+
+  it("rejects proposal that drops base experience", () => {
+    const expBase = personaSnapshotSchema.parse({
+      ...baseSnapshot(),
+      experiences: [
+        {
+          title: "Webアプリ開発",
+          description: "チームで開発した。",
+          evidenceRefs: ["ev-base"],
+        },
+      ],
+    });
+    connection.sqlite
+      .prepare("insert into users (id) values (?)")
+      .run(userA.id);
+    connection.sqlite
+      .prepare(
+        'insert into persona_versions (id, user_id, version, snapshot, provenance) values (\'persona-exp\', ?, 1, ?, \'{"source":"llm","sourceIds":[],"generatedAt":"2026-08-26T00:00:00Z"}\')',
+      )
+      .run(userA.id, JSON.stringify(expBase));
+
+    const droppedExp = personaSnapshotSchema.parse({
+      ...expBase,
+      experiences: [], // drop
+    });
+    expect(() =>
+      service.approve(userA, {
+        basePersonaVersionId: "persona-exp",
+        requestId: "req-drop-exp",
+        snapshot: droppedExp,
+      }),
+    ).toThrow(AppError);
+  });
 });
 
 describe("PersonaUpdateService.propose error contract", () => {
@@ -365,6 +449,30 @@ describe("PersonaUpdateService.propose error contract", () => {
         { client: failingClient },
       ),
     ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
+  });
+
+  it("rejects propose that drops base facts via carry-forward invariant", async () => {
+    const ids = seedBaseAndApplication();
+    const droppedClient = {
+      generateStructured: () =>
+        Promise.resolve(
+          personaSnapshotSchema.parse({
+            ...baseSnapshot(),
+            evidence: [], // drop base evidence
+          }),
+        ),
+    };
+    await expect(
+      service.propose(
+        userA,
+        {
+          personaVersionId: ids.personaVersionId,
+          reflection: "振り返りメモ",
+        },
+        { client: droppedClient },
+      ),
+    ).rejects.toMatchObject({ code: "UPSTREAM_INVALID_RESPONSE", status: 502 });
+    expect(connection.db.select().from(personaVersions).all()).toHaveLength(1);
   });
 });
 
