@@ -45,7 +45,7 @@ const personaSnapshot = {
     {
       id: "ev:e3",
       sourceType: "user_input",
-      sourceId: "q3_values",
+      sourceId: "q5_values",
       summary: "自律的に課題へ向き合う価値観",
     },
   ],
