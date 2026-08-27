@@ -29,6 +29,7 @@ function notifyUnauthorized(): void {
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
+  options?: Readonly<{ notifyUnauthorized?: boolean }>,
 ): Promise<T> {
   let response: Response;
   try {
@@ -80,7 +81,11 @@ export async function apiFetch<T>(
       : undefined;
     const requestId =
       typeof error.requestId === "string" ? error.requestId : undefined;
-    if (response.status === 401 && code === "AUTHENTICATION_REQUIRED") {
+    if (
+      response.status === 401 &&
+      code === "AUTHENTICATION_REQUIRED" &&
+      options?.notifyUnauthorized !== false
+    ) {
       notifyUnauthorized();
     }
     throw new ApiClientError(
