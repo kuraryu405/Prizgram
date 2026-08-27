@@ -17,6 +17,8 @@ export class ApiClientError extends Error {
   }
 }
 
+const inFlightEntrySaves = new Set<Promise<unknown>>();
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -26,7 +28,24 @@ function notifyUnauthorized(): void {
   window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
 }
 
-export async function apiFetch<T>(
+function requestMethod(init?: RequestInit): string {
+  return (init?.method ?? "GET").toUpperCase();
+}
+
+function isEntrySaveRequest(path: string, init?: RequestInit): boolean {
+  return (
+    requestMethod(init) === "PATCH" && /^\/api\/entries\/[^/]+$/.test(path)
+  );
+}
+
+function isDocumentSubmitRequest(path: string, init?: RequestInit): boolean {
+  return (
+    requestMethod(init) === "POST" &&
+    /^\/api\/documents\/[^/]+\/submit$/.test(path)
+  );
+}
+
+async function executeApiFetch<T>(
   path: string,
   init?: RequestInit,
   options?: Readonly<{ notifyUnauthorized?: boolean }>,
@@ -98,6 +117,28 @@ export async function apiFetch<T>(
   }
 
   return payload.data as T;
+}
+
+export function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+  options?: Readonly<{ notifyUnauthorized?: boolean }>,
+): Promise<T> {
+  const request = (async () => {
+    if (isDocumentSubmitRequest(path, init) && inFlightEntrySaves.size > 0) {
+      await Promise.all([...inFlightEntrySaves]);
+    }
+    return executeApiFetch<T>(path, init, options);
+  })();
+
+  if (isEntrySaveRequest(path, init)) {
+    inFlightEntrySaves.add(request);
+    void request
+      .finally(() => inFlightEntrySaves.delete(request))
+      .catch(() => undefined);
+  }
+
+  return request;
 }
 
 export function jsonRequestInit(
