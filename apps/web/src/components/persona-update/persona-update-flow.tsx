@@ -11,6 +11,7 @@ type Proposed = {
   basePersonaVersionId: string;
   proposed: Record<string, unknown>;
   requestId: string;
+  applicationId: string;
 };
 
 type ProposeResponse = {
@@ -56,7 +57,11 @@ export function PersonaUpdateFlow({
           reflection: reflection.trim(),
         }),
       );
-      setProposed({ ...result, requestId: newRequestId() });
+      setProposed({
+        ...result,
+        requestId: newRequestId(),
+        applicationId,
+      });
     } catch (e) {
       setError(describeApiError(e));
     } finally {
@@ -75,7 +80,9 @@ export function PersonaUpdateFlow({
           basePersonaVersionId: proposed.basePersonaVersionId,
           snapshot: proposed.proposed,
           requestId: proposed.requestId,
-          ...(applicationId !== "" ? { applicationId } : {}),
+          ...(proposed.applicationId !== ""
+            ? { applicationId: proposed.applicationId }
+            : {}),
         }),
       );
       setNewPersonaVersionId(approved.personaVersionId);

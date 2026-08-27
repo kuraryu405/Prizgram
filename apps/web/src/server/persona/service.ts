@@ -391,6 +391,8 @@ export class PersonaService {
       };
     } catch (error) {
       // Release the claim so the user can retry after a transient failure.
+      // Guard with updatedAt = claimAt so a concurrent stale winner that
+      // already bumped updatedAt is not reset by this loser.
       this.connection.db
         .update(personaIntakes)
         .set({ status: "in_progress", updatedAt: now() })
@@ -398,6 +400,7 @@ export class PersonaService {
           and(
             eq(personaIntakes.id, intake.id),
             eq(personaIntakes.status, "completed"),
+            eq(personaIntakes.updatedAt, claimAt),
           ),
         )
         .run();
