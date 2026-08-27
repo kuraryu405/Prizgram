@@ -18,6 +18,7 @@ export const applicationStatusLabels: Readonly<Record<string, string>> = {
   accepted: "内定承諾",
   rejected: "落選",
   withdrawn: "辞退",
+  cancelled: "取消",
 } satisfies Record<(typeof applicationStatuses)[number], string>;
 
 export const deadlineKindLabels: Readonly<Record<string, string>> = {

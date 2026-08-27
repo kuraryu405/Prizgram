@@ -246,12 +246,14 @@ export const applicationStatuses = [
   "accepted",
   "rejected",
   "withdrawn",
+  "cancelled",
 ] as const;
 
 export const terminalApplicationStatuses = [
   "accepted",
   "rejected",
   "withdrawn",
+  "cancelled",
 ] as const;
 
 export type TerminalApplicationStatus =
@@ -265,15 +267,16 @@ export type TerminalApplicationStatus =
 export const applicationTransitions: Readonly<
   Record<ApplicationStatus, readonly ApplicationStatus[]>
 > = {
-  saved: ["applying", "withdrawn"],
-  applying: ["submitted", "withdrawn"],
-  submitted: ["screening", "rejected", "withdrawn"],
-  screening: ["interview", "rejected", "withdrawn"],
-  interview: ["offer", "rejected", "withdrawn"],
-  offer: ["accepted", "rejected", "withdrawn"],
+  saved: ["applying", "withdrawn", "cancelled"],
+  applying: ["submitted", "withdrawn", "cancelled"],
+  submitted: ["screening", "rejected", "withdrawn", "cancelled"],
+  screening: ["interview", "rejected", "withdrawn", "cancelled"],
+  interview: ["offer", "rejected", "withdrawn", "cancelled"],
+  offer: ["accepted", "rejected", "withdrawn", "cancelled"],
   accepted: [],
   rejected: [],
   withdrawn: [],
+  cancelled: [],
 };
 
 export function canTransitionApplication(
