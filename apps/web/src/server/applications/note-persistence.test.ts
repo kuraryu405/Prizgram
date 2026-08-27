@@ -113,10 +113,14 @@ describe("Application note persistence", () => {
       note: "keep me",
     });
 
-    const transitioned = service.updateApplication(user, created.applicationId, {
-      status: "applying",
-      note: "応募準備中",
-    });
+    const transitioned = service.updateApplication(
+      user,
+      created.applicationId,
+      {
+        status: "applying",
+        note: "応募準備中",
+      },
+    );
     expect(transitioned.note).toBe("応募準備中");
     expect(transitioned.events[1]).toMatchObject({
       fromStatus: "saved",
