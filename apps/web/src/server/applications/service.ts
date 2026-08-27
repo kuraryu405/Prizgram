@@ -259,9 +259,7 @@ export class ApplicationService {
       rows.map((r) => ({ jobId: r.jobId, jobVersionId: r.jobVersionId })),
     );
     const missingJobIds = rows
-      .filter(
-        (r) => r.jobVersionId == null || !pinnedMap.has(r.jobVersionId),
-      )
+      .filter((r) => r.jobVersionId == null || !pinnedMap.has(r.jobVersionId))
       .map((r) => r.jobId);
     const latestFallback =
       missingJobIds.length > 0
