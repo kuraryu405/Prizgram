@@ -581,11 +581,16 @@ describe("scoring helpers", () => {
     // Same raw id in both persona and job must be distinguishable
     const collisionPersona: PersonaSnapshot = {
       ...personaSnapshot,
+      skills: [],
+      experiences: [],
       evidence: [{ id: "collision", sourceType: "user_input", summary: "test" }],
     };
     const collisionJob: JobSnapshot = {
       ...jobSnapshot,
       requirements: [{ id: "collision", text: "something" }],
+      desiredSkills: [],
+      cultureValues: [],
+      difficulty: { level: "competitive", evidenceRefs: ["collision"] },
     };
     const refs = allowedEvidenceRefSet(collisionPersona, collisionJob);
     expect(refs.has("persona:collision")).toBe(true);
