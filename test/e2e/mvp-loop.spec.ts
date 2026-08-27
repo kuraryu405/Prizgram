@@ -89,9 +89,12 @@ test.describe("Prizgram MVP core loop", () => {
     await firstCandidate
       .getByRole("button", { name: /この候補を取り込む/ })
       .click();
-    await expect(page.getByText(/構造化して保存しました/).first()).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: /保存しました/ })
+        .first(),
+    ).toBeVisible({ timeout: 20_000 });
     // The discovered posting lands in the common imported-jobs pipeline.
     await expect(
       page.getByRole("link", {

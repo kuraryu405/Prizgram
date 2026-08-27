@@ -119,7 +119,7 @@ export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div aria-label="通知" className="toast-region">
+      <div aria-label="通知" className="toast-region" role="region">
         {toasts.map((toast) => (
           <div
             className={`toast toast-${toast.variant}`}
