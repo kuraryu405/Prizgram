@@ -221,6 +221,7 @@ export const jobs = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     sourceKind: text("source_kind"),
     sourceExternalId: text("source_external_id"),
+    archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(now),
@@ -240,6 +241,7 @@ export const jobs = sqliteTable(
       table.sourceExternalId,
     ),
     index("jobs_user_created_idx").on(table.userId, table.createdAt),
+    index("jobs_user_archived_idx").on(table.userId, table.archivedAt),
   ],
 );
 

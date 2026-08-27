@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -493,7 +493,7 @@ export class PersonaUpdateService {
     const totalJobs = this.connection.db
       .select({ id: jobs.id })
       .from(jobs)
-      .where(eq(jobs.userId, user.id))
+      .where(and(eq(jobs.userId, user.id), isNull(jobs.archivedAt)))
       .orderBy(asc(jobs.createdAt), asc(jobs.id))
       .all();
 
