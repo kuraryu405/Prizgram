@@ -164,6 +164,28 @@ describe("DeadlineService", () => {
     expect(sooner.completed).toBe(false);
   });
 
+  it.each(["accepted", "rejected", "withdrawn"])(
+    "rejects new deadlines for terminal application status %s",
+    (status) => {
+      connection.sqlite
+        .prepare("update applications set status = ? where id = ?")
+        .run(status, applicationId);
+
+      expect(
+        syncErrorCode(() =>
+          service.create(userA, {
+            applicationId,
+            kind: "document",
+            title: "作成されない締切",
+            dueLocal: "2026-09-01T10:00",
+            timeZone: "UTC",
+          }),
+        ),
+      ).toBe("APPLICATION_TERMINAL");
+      expect(service.list(userA.id)).toHaveLength(0);
+    },
+  );
+
   it("marks overdue and within24Hours flags relative to now", () => {
     vi.useFakeTimers();
     try {

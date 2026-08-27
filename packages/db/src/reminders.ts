@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 
+import { terminalApplicationStatuses } from "@prizgram/shared";
+
 import { applicationDeadlines, applications, reminders } from "./schema";
 import type { DatabaseConnection } from "./client";
 
@@ -21,11 +23,9 @@ export type ReminderStatus = "pending" | "sent" | "dismissed" | "failed";
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
-const TERMINAL_APPLICATION_STATUSES = new Set([
-  "accepted",
-  "rejected",
-  "withdrawn",
-]);
+const TERMINAL_APPLICATION_STATUSES = new Set<string>(
+  terminalApplicationStatuses as readonly string[],
+);
 
 const priorityRank: Record<ReminderPriority, number> = {
   urgent: 0,

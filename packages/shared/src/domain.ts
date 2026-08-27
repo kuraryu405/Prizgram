@@ -248,6 +248,15 @@ export const applicationStatuses = [
   "withdrawn",
 ] as const;
 
+export const terminalApplicationStatuses = [
+  "accepted",
+  "rejected",
+  "withdrawn",
+] as const;
+
+export type TerminalApplicationStatus =
+  (typeof terminalApplicationStatuses)[number];
+
 /**
  * Allowed forward transitions between selection statuses. Terminal statuses
  * permit nothing further; `withdrawn` is reachable while still actionable,

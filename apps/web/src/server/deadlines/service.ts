@@ -5,7 +5,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { deadlineKinds, type AuthenticatedUser } from "@prizgram/shared";
+import {
+  deadlineKinds,
+  terminalApplicationStatuses,
+  type AuthenticatedUser,
+} from "@prizgram/shared";
 import {
   applications,
   applicationDeadlines,
@@ -15,6 +19,9 @@ import {
 import { AppError } from "../api";
 
 const TIMEZONE_PATTERN = /^[A-Za-z_]+\/[A-Za-z_+-]+(\/[A-Za-z_+-]+)?$|^UTC$/;
+const TERMINAL_APPLICATION_STATUSES = new Set<string>(
+  terminalApplicationStatuses as readonly string[],
+);
 
 function isValidTimeZone(timeZone: string): boolean {
   try {
@@ -196,7 +203,7 @@ export class DeadlineService {
 
   create(user: AuthenticatedUser, input: DeadlineCreateInput): DeadlineView {
     const ownedApplication = this.connection.db
-      .select({ id: applications.id })
+      .select({ id: applications.id, status: applications.status })
       .from(applications)
       .where(
         and(
@@ -207,6 +214,13 @@ export class DeadlineService {
       .get();
     if (ownedApplication === undefined) {
       throw new AppError("NOT_FOUND", "Application not found", 404);
+    }
+    if (TERMINAL_APPLICATION_STATUSES.has(ownedApplication.status)) {
+      throw new AppError(
+        "APPLICATION_TERMINAL",
+        "Completed applications cannot receive new deadlines",
+        409,
+      );
     }
 
     const dueAt = safeZonedToIso(input.dueLocal, input.timeZone);
