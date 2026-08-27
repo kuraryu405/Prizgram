@@ -258,7 +258,7 @@ describe("DiscoveryService.discover", () => {
     expect(provider.search).toHaveBeenCalledWith(result.query, context);
   });
 
-  it("preserves generated employment filters without an override", async () => {
+  it("preserves generated employment filters", async () => {
     seedPersona(userA.id);
     const service = new DiscoveryService(connection);
     const provider = providerReturning([]);
