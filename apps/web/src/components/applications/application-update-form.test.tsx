@@ -58,15 +58,9 @@ describe("ApplicationUpdateForm", () => {
       />,
     );
 
+    expect(screen.getByLabelText("次のアクション").value).toBe("ESを書く");
     expect(
-      (screen.getByLabelText("次のアクション") as HTMLInputElement).value,
-    ).toBe("ESを書く");
-    expect(
-      (
-        screen.getByLabelText(
-          "メモ（ステータス変更時の履歴に記録）",
-        ) as HTMLTextAreaElement
-      ).value,
+      screen.getByLabelText("メモ（ステータス変更時の履歴に記録）").value,
     ).toBe("採用ページを確認");
     expect(
       screen.getByRole("button", { name: "更新する" }).matches(":disabled"),
@@ -93,9 +87,7 @@ describe("ApplicationUpdateForm", () => {
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("更新しました"),
     );
-    expect(requestBodies(fetchMock)).toEqual([
-      { nextAction: null, note: null },
-    ]);
+    expect(requestBodies(fetchMock)).toEqual([{ nextAction: null, note: null }]);
 
     const submit = screen.getByRole("button", { name: "更新する" });
     expect(submit.matches(":disabled")).toBe(true);
@@ -114,7 +106,10 @@ describe("ApplicationUpdateForm", () => {
       />,
     );
 
-    await user.selectOptions(screen.getByLabelText("ステータス変更（任意）"), "applying");
+    await user.selectOptions(
+      screen.getByLabelText("ステータス変更（任意）"),
+      "applying",
+    );
     await user.click(screen.getByRole("button", { name: "更新する" }));
 
     await waitFor(() => expect(requestBodies(fetchMock)).toHaveLength(1));
@@ -139,10 +134,8 @@ describe("ApplicationUpdateForm", () => {
       />,
     );
 
-    const nextAction = screen.getByLabelText("次のアクション") as HTMLInputElement;
-    const note = screen.getByLabelText(
-      "メモ（ステータス変更時の履歴に記録）",
-    ) as HTMLTextAreaElement;
+    const nextAction = screen.getByLabelText("次のアクション");
+    const note = screen.getByLabelText("メモ（ステータス変更時の履歴に記録）");
     await waitFor(() => expect(nextAction.value).toBe("新アクション"));
     expect(note.value).toBe("新メモ");
     expect(
