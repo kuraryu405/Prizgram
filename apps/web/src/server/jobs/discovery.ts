@@ -143,7 +143,14 @@ export function applyDiscoveryOverrides(
 ): JobSearchQuery & { keywords: string } {
   const filters =
     overrides.employmentType === undefined
-      ? {}
+      ? {
+          ...(generated.contractType === undefined
+            ? {}
+            : { contractType: generated.contractType }),
+          ...(generated.workHours === undefined
+            ? {}
+            : { workHours: generated.workHours }),
+        }
       : employmentTypeToFilters(overrides.employmentType);
   return {
     keywords: overrides.keywords ?? generated.keywords,
@@ -152,8 +159,7 @@ export function applyDiscoveryOverrides(
         ? {}
         : { location: generated.location }
       : { location: overrides.location }),
-    ...(filters.contractType === undefined ? {} : filters),
-    ...(filters.workHours === undefined ? {} : filters),
+    ...filters,
   };
 }
 
@@ -329,8 +335,10 @@ export class DiscoveryService {
       );
     }
     const raw = this.connection.sqlite
-      .prepare("select snapshot from persona_versions where id = ?")
-      .get(row.id) as { snapshot: string } | undefined;
+      .prepare(
+        "select snapshot from persona_versions where id = ? and user_id = ?",
+      )
+      .get(row.id, userId) as { snapshot: string } | undefined;
     if (raw === undefined) {
       throw new AppError(
         "PERSONA_REQUIRED",
