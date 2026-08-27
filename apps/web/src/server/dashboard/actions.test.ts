@@ -23,7 +23,13 @@ describe("buildNextActions", () => {
     const actions = buildNextActions({
       ...emptyInput,
       urgentReminderCount: 2,
-      overdueDeadlines: [{ title: "ES提出", dueAt: "2026-01-01T00:00:00Z" }],
+      overdueDeadlines: [
+        {
+          applicationId: "app-1",
+          title: "ES提出",
+          dueAt: "2026-01-01T00:00:00Z",
+        },
+      ],
     });
     expect(actions.map((action) => action.tone)).toEqual([
       "urgent",
@@ -32,6 +38,7 @@ describe("buildNextActions", () => {
     ]);
     expect(actions[0]?.label).toContain("緊急リマインダー");
     expect(actions[1]?.label).toContain("期限超過: ES提出");
+    expect(actions[1]?.href).toBe("/app/applications/app-1");
   });
 
   it("moves users with a persona toward job import and scoring", () => {
