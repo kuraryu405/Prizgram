@@ -21,9 +21,7 @@ test(
       .getByRole("heading", { name: "選考中の企業を追加" })
       .locator("..");
     await minimalForm.getByLabel("企業名").fill("E2E株式会社");
-    await minimalForm
-      .getByLabel("現在のステータス")
-      .selectOption("interview");
+    await minimalForm.getByLabel("現在のステータス").selectOption("interview");
     await minimalForm.getByLabel("現在の段階（任意）").fill("2次面接");
     await minimalForm.getByRole("button", { name: "応募を追加" }).click();
 
