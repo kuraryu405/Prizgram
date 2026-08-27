@@ -137,14 +137,15 @@ export function ScoreEvaluateButton({
                       const text =
                         evidenceTextById[reference] ??
                         (reference.includes(":")
-                          ? evidenceTextById[reference.split(":").slice(1).join(":")]
-                          : evidenceTextById[`persona:${reference}`] ??
-                            evidenceTextById[`job:${reference}`]) ??
+                          ? evidenceTextById[
+                              reference.split(":").slice(1).join(":")
+                            ]
+                          : (evidenceTextById[`persona:${reference}`] ??
+                            evidenceTextById[`job:${reference}`])) ??
                         "";
                       return (
                         <li key={reference}>
-                          <span className="signal-id">{reference}</span>{" "}
-                          {text}
+                          <span className="signal-id">{reference}</span> {text}
                         </li>
                       );
                     })}

@@ -583,7 +583,9 @@ describe("scoring helpers", () => {
       ...personaSnapshot,
       skills: [],
       experiences: [],
-      evidence: [{ id: "collision", sourceType: "user_input", summary: "test" }],
+      evidence: [
+        { id: "collision", sourceType: "user_input", summary: "test" },
+      ],
     };
     const collisionJob: JobSnapshot = {
       ...jobSnapshot,

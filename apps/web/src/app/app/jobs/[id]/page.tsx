@@ -98,7 +98,9 @@ export default async function JobDetailPage({
     evidenceTextById.set(id, text);
     evidenceTextById.set(`job:${id}`, text);
   }
-  const addPersonaEvidence = (evidence: ReadonlyArray<{ id: string; summary: string }>) => {
+  const addPersonaEvidence = (
+    evidence: ReadonlyArray<{ id: string; summary: string }>,
+  ) => {
     for (const ev of evidence) {
       evidenceTextById.set(ev.id, ev.summary);
       evidenceTextById.set(`persona:${ev.id}`, ev.summary);
@@ -253,14 +255,15 @@ export default async function JobDetailPage({
                         const text =
                           evidenceTextById.get(ref) ??
                           (ref.includes(":")
-                            ? evidenceTextById.get(ref.split(":").slice(1).join(":")) ?? ""
-                            : evidenceTextById.get(`persona:${ref}`) ??
+                            ? (evidenceTextById.get(
+                                ref.split(":").slice(1).join(":"),
+                              ) ?? "")
+                            : (evidenceTextById.get(`persona:${ref}`) ??
                               evidenceTextById.get(`job:${ref}`) ??
-                              "");
+                              ""));
                         return (
                           <li key={ref}>
-                            <span className="signal-id">{ref}</span>{" "}
-                            {text}
+                            <span className="signal-id">{ref}</span> {text}
                           </li>
                         );
                       })}
