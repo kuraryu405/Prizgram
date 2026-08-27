@@ -134,11 +134,7 @@ export function MinimalApplicationForm() {
       </div>
       <div className="field">
         <label htmlFor="minimal-status">現在のステータス</label>
-        <select
-          id="minimal-status"
-          onChange={onStatusChange}
-          value={status}
-        >
+        <select id="minimal-status" onChange={onStatusChange} value={status}>
           {applicationStatuses.map((value) => (
             <option key={value} value={value}>
               {applicationStatusLabels[value] ?? value}
