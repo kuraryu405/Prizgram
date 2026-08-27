@@ -81,6 +81,11 @@ test.describe("Prizgram MVP core loop", () => {
       timeout: 20_000,
     });
     await expect(firstCandidate).toContainText("株式会社キャリアジェット");
+    await expect(firstCandidate).toContainText("React / TypeScript");
+    await expect(firstCandidate).toContainText("フロントエンド開発");
+    await expect(firstCandidate).not.toContainText("<strong>");
+    await expect(firstCandidate).not.toContainText("<br>");
+    await expect(firstCandidate).not.toContainText("&nbsp;");
     await firstCandidate
       .getByRole("button", { name: /この候補を取り込む/ })
       .click();

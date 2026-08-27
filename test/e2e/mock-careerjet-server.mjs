@@ -14,7 +14,7 @@ const jobs = [
     company: "株式会社キャリアジェット",
     date: "Tue, 25 Aug 2026 09:00:00 GMT",
     description:
-      "ReactとTypeScriptを用いたフロントエンド開発インターンです。メンターが付き、コードレビューを通じて実務スキルを伸ばせます。週3日以上の勤務をお願いします。",
+      "React&nbsp;/&nbsp;TypeScriptを用いた<br><strong>フロントエンド開発</strong>インターンです。メンターが付き、コードレビューを通じて実務スキルを伸ばせます。週3日以上の勤務をお願いします。",
     locations: "東京都渋谷区",
     salary: "時給1,800円",
     salary_currency_code: "JPY",
