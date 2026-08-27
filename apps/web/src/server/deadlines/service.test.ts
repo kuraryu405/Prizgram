@@ -214,25 +214,67 @@ describe("DeadlineService", () => {
     }
   });
 
-  it("completes and reopens a deadline, updating updated_at", () => {
-    const created = service.create(userA, {
-      applicationId,
-      kind: "document",
-      title: "ES提出",
-      dueLocal: "2026-08-30T12:00",
-      timeZone: "UTC",
-    });
-    const completed = service.update(userA, created.deadlineId, {
-      completed: true,
-    });
-    expect(completed.completed).toBe(true);
-    const reopened = service.update(userA, created.deadlineId, {
-      completed: false,
-      title: "ES提出（修正）",
-    });
-    expect(reopened.completed).toBe(false);
-    expect(reopened.title).toBe("ES提出（修正）");
-    expect(Date.parse(reopened.dueAt)).toBe(Date.parse(created.dueAt));
+  it("updates completed_at only when the completion state changes", () => {
+    vi.useFakeTimers();
+    try {
+      const t1 = new Date("2026-08-26T01:00:00Z");
+      const t2 = new Date("2026-08-26T02:00:00Z");
+      const t3 = new Date("2026-08-26T03:00:00Z");
+      const completedAt = () => {
+        const row = connection.sqlite
+          .prepare(
+            "select completed_at as completedAt from application_deadlines where id = ?",
+          )
+          .get(created.deadlineId) as { completedAt: number | null };
+        return row.completedAt;
+      };
+
+      vi.setSystemTime(t1);
+      const created = service.create(userA, {
+        applicationId,
+        kind: "document",
+        title: "ES提出",
+        dueLocal: "2026-08-30T12:00",
+        timeZone: "UTC",
+      });
+
+      const stillIncomplete = service.update(userA, created.deadlineId, {
+        completed: false,
+      });
+      expect(stillIncomplete.completed).toBe(false);
+      expect(completedAt()).toBeNull();
+
+      const completed = service.update(userA, created.deadlineId, {
+        completed: true,
+      });
+      expect(completed.completed).toBe(true);
+      expect(completedAt()).toBe(t1.getTime());
+
+      vi.setSystemTime(t2);
+      const retried = service.update(userA, created.deadlineId, {
+        completed: true,
+      });
+      expect(retried.completed).toBe(true);
+      expect(completedAt()).toBe(t1.getTime());
+
+      const reopened = service.update(userA, created.deadlineId, {
+        completed: false,
+        title: "ES提出（修正）",
+      });
+      expect(reopened.completed).toBe(false);
+      expect(reopened.title).toBe("ES提出（修正）");
+      expect(completedAt()).toBeNull();
+
+      vi.setSystemTime(t3);
+      const completedAgain = service.update(userA, created.deadlineId, {
+        completed: true,
+      });
+      expect(completedAgain.completed).toBe(true);
+      expect(completedAt()).toBe(t3.getTime());
+      expect(Date.parse(completedAgain.dueAt)).toBe(Date.parse(created.dueAt));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("edits due date across time zones keeping UTC storage", () => {
