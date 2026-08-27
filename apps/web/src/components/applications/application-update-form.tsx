@@ -27,27 +27,33 @@ export function ApplicationUpdateForm({
   const [status, setStatus] = useState("");
   const [nextAction, setNextAction] = useState(initialNextAction ?? "");
   const [note, setNote] = useState(initialNote ?? "");
+  const [savedNextAction, setSavedNextAction] = useState(
+    (initialNextAction ?? "").trim(),
+  );
+  const [savedNote, setSavedNote] = useState((initialNote ?? "").trim());
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Keep form in sync when the server-provided initial values change after refresh.
+  // Keep both the controlled value and dirty baseline in sync after refresh.
   useEffect(() => {
+    const nextValue = initialNextAction ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
-    setNextAction(initialNextAction ?? "");
+    setNextAction(nextValue);
+    setSavedNextAction(nextValue.trim());
   }, [initialNextAction]);
   useEffect(() => {
+    const nextValue = initialNote ?? "";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
-    setNote(initialNote ?? "");
+    setNote(nextValue);
+    setSavedNote(nextValue.trim());
   }, [initialNote]);
 
   const hasStatusChange = status !== "";
   const nextActionTrimmed = nextAction.trim();
   const noteTrimmed = note.trim();
-  const initialNextActionTrimmed = (initialNextAction ?? "").trim();
-  const initialNoteTrimmed = (initialNote ?? "").trim();
-  const nextActionDirty = nextActionTrimmed !== initialNextActionTrimmed;
-  const noteDirty = noteTrimmed !== initialNoteTrimmed;
+  const nextActionDirty = nextActionTrimmed !== savedNextAction;
+  const noteDirty = noteTrimmed !== savedNote;
   const canSubmit = hasStatusChange || nextActionDirty || noteDirty;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -76,11 +82,16 @@ export function ApplicationUpdateForm({
         },
       );
       setStatus("");
-      // Keep form in sync with server after successful mutation.
-      // If the field was cleared (sent null), the server will have null,
-      // otherwise it will have the new trimmed value.
-      if (nextActionDirty) setNextAction(nextActionTrimmed);
-      if (noteDirty) setNote(noteTrimmed);
+      // Treat the acknowledged mutation as the new local baseline immediately;
+      // router.refresh() may not deliver updated server props before pending ends.
+      if (nextActionDirty) {
+        setNextAction(nextActionTrimmed);
+        setSavedNextAction(nextActionTrimmed);
+      }
+      if (noteDirty) {
+        setNote(noteTrimmed);
+        setSavedNote(noteTrimmed);
+      }
       setSuccessMessage("更新しました。");
       router.refresh();
     } catch (error) {
