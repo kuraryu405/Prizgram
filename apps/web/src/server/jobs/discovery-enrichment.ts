@@ -108,6 +108,19 @@ function isJapanLocation(location: string): boolean {
   ].includes(normalized);
 }
 
+function queryWithoutLocation(
+  query: JobSearchQuery,
+  keywords: string | undefined,
+): JobSearchQuery {
+  return {
+    ...(keywords === undefined ? {} : { keywords }),
+    ...(query.contractType === undefined
+      ? {}
+      : { contractType: query.contractType }),
+    ...(query.workHours === undefined ? {} : { workHours: query.workHours }),
+  };
+}
+
 /** Maps the app-level query onto the semantics of each provider. */
 export function adaptQueryForProvider(
   providerName: string,
@@ -120,28 +133,23 @@ export function adaptQueryForProvider(
       ? undefined
       : internationalizeJobKeywords(query.keywords);
   const location = query.location?.trim();
+  const base = queryWithoutLocation(query, keywords);
 
   if (providerName === HIMALAYAS_PROVIDER_NAME) {
+    if (location === undefined || location === "" || isRemoteLocation(location))
+      return base;
     return {
-      ...query,
-      ...(keywords === undefined ? {} : { keywords }),
-      ...(location === undefined || location === "" || isRemoteLocation(location)
-        ? { location: undefined }
-        : isJapanLocation(location)
-          ? { location: "Japan" }
-          : { location }),
+      ...base,
+      location: isJapanLocation(location) ? "Japan" : location,
     };
   }
 
   if (providerName === JOBICY_PROVIDER_NAME) {
+    if (location === undefined || location === "" || isRemoteLocation(location))
+      return base;
     return {
-      ...query,
-      ...(keywords === undefined ? {} : { keywords }),
-      ...(location === undefined || location === "" || isRemoteLocation(location)
-        ? { location: undefined }
-        : isJapanLocation(location)
-          ? { location: "apac" }
-          : { location }),
+      ...base,
+      location: isJapanLocation(location) ? "apac" : location,
     };
   }
 
@@ -219,7 +227,8 @@ function companyExtractionInput(jobs: readonly CompanyEnrichableJob[]) {
     .map((job, index) => ({ job, key: String(index) }))
     .filter(
       ({ job }) =>
-        job.candidate.company === undefined || job.candidate.company.trim() === "",
+        job.candidate.company === undefined ||
+        job.candidate.company.trim() === "",
     )
     .map(({ job, key }) => ({
       key,
@@ -294,7 +303,10 @@ export async function enrichMissingCompanies(
   );
 
   return jobs.map((job, index) => {
-    if (job.candidate.company !== undefined && job.candidate.company.trim() !== "")
+    if (
+      job.candidate.company !== undefined &&
+      job.candidate.company.trim() !== ""
+    )
       return job;
     const company = byKey.get(String(index));
     if (company === undefined) return job;
