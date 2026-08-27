@@ -300,7 +300,7 @@ export class ApplicationService {
         ? undefined
         : this.companyRoleForApplications(userId, [
             { jobId: row.jobId, jobVersionId: row.jobVersionId },
-          ]).get(row.jobId);
+          ]).get(row.jobVersionId);
     const latest = this.latestJobVersions(userId, [row.jobId]).get(row.jobId);
     const resolved = pinned ?? latest ?? { company: "(不明)", role: "(不明)" };
     return {
