@@ -1525,6 +1525,35 @@ a {
   font-weight: 600;
 }
 
+.dashboard-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 0.5rem;
+}
+
+.dashboard-metrics li {
+  background: var(--color-surface-tint);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+.dashboard-metric-value {
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.dashboard-metric-label {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 /* Dashboard onboarding steps */
 
 .onboarding-steps {
