@@ -11,6 +11,7 @@ import {
 import {
   applicationDocuments,
   applicationDocumentEntries,
+  applicationInterviewReflections,
   applications,
   applicationStageEvents,
   jobs,
@@ -302,7 +303,31 @@ export class ApplicationAiContextBuilder {
     const stageFeedbackNotes = filteredEvents
       .filter((e) => e.note !== null && e.note.trim() !== "")
       .map((e) => e.note as string);
-    const feedbackNotes = stageFeedbackNotes;
+    const reflectionRows = this.connection.db
+      .select()
+      .from(applicationInterviewReflections)
+      .where(
+        and(
+          eq(applicationInterviewReflections.userId, userId),
+          eq(applicationInterviewReflections.applicationId, applicationId),
+        ),
+      )
+      .all();
+    const reflectionNotes = reflectionRows.flatMap((reflection) =>
+      [
+        `面接で聞かれた質問: ${reflection.questionsAsked}`,
+        reflection.answerNotes === ""
+          ? null
+          : `面接回答メモ: ${reflection.answerNotes}`,
+        reflection.impression === null
+          ? null
+          : `面接の感触: ${reflection.impression}`,
+        reflection.feedback === null
+          ? null
+          : `面接フィードバック: ${reflection.feedback}`,
+      ].filter((note): note is string => note !== null),
+    );
+    const feedbackNotes = [...stageFeedbackNotes, ...reflectionNotes];
 
     return {
       userId,
