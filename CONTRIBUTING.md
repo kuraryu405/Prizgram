@@ -30,6 +30,25 @@ Prizgram は現在 MVP フェーズです。変更はできるだけ小さく、
 
 `main` へマージする前に `CI / Validate monorepo` が成功している必要があります。
 
+> **Note (#285 一時措置):** GitHub-hosted runner の利用量抑制のため `.github/workflows/ci.yml` は `workflow_dispatch` のみに退避しています。GitHub 上での自動 CI は現在実行されず、branch protection で `Validate monorepo` が required の場合は PR が pending 表示になる可能性があります。この期間は下記ローカル検証を必須とし、PR本文へ実行結果を明記してください。復旧時は `ci.yml` の `on:` を元に戻します。
+
+## ローカル検証（#285 期間中は必須）
+
+`pnpm install` で `simple-git-hooks` による git hooks が有効化されます（`prepare` で自動設定）。
+
+- **pre-commit:** `pnpm verify:commit` → `pnpm format:check` + `pnpm lint`
+- **pre-push / PR作成前:** `pnpm verify:push` → `pnpm typecheck` + `pnpm test` + `pnpm build`
+- **PR前フルチェック:** `pnpm verify:pr`（commit + push をまとめて実行）
+- **UI / 認証 / Application 主要導線を変更したPR:** `pnpm test:e2e` をローカルで実行（E2Eコード自体は削除せず維持）
+
+fresh clone 後の有効化:
+
+```bash
+pnpm install --frozen-lockfile  # .git/hooks が自動生成される
+```
+
+hooks を一時スキップする場合: `git commit --no-verify` / `SKIP_SIMPLE_GIT_HOOKS=1`
+
 ## マージ
 
 基本は Squash merge を使用します。

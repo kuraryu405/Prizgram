@@ -558,6 +558,117 @@ export const reminders = sqliteTable(
   ],
 );
 
+export const applicationDocuments = sqliteTable(
+  "application_documents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    applicationId: text("application_id").notNull(),
+    type: text("type", { enum: ["es", "cv", "other"] })
+      .notNull()
+      .default("es"),
+    title: text("title").notNull(),
+    status: text("status", {
+      enum: ["draft", "generated", "edited", "submitted"],
+    })
+      .notNull()
+      .default("draft"),
+    submittedAt: integer("submitted_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "application_documents_type_valid",
+      sql`${table.type} in ('es','cv','other')`,
+    ),
+    check(
+      "application_documents_status_valid",
+      sql`${table.status} in ('draft','generated','edited','submitted')`,
+    ),
+    check(
+      "application_documents_submitted_at_required",
+      sql`(${table.status} != 'submitted') or (${table.submittedAt} is not null)`,
+    ),
+    uniqueIndex("application_documents_user_id_unique").on(
+      table.userId,
+      table.id,
+    ),
+    index("application_documents_user_application_idx").on(
+      table.userId,
+      table.applicationId,
+    ),
+    index("application_documents_user_status_idx").on(
+      table.userId,
+      table.status,
+    ),
+    foreignKey({
+      columns: [table.userId, table.applicationId],
+      foreignColumns: [applications.userId, applications.id],
+      name: "application_documents_owner_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const applicationDocumentEntries = sqliteTable(
+  "application_document_entries",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    documentId: text("document_id").notNull(),
+    question: text("question").notNull(),
+    answer: text("answer").notNull().default(""),
+    characterLimit: integer("character_limit"),
+    ordering: integer("ordering").notNull().default(0),
+    provenance: text("provenance", {
+      enum: ["generated", "edited", "submitted"],
+    })
+      .notNull()
+      .default("edited"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(now),
+  },
+  (table) => [
+    check(
+      "application_document_entries_question_shape",
+      sql`length(${table.question}) between 1 and 500`,
+    ),
+    check(
+      "application_document_entries_answer_limit",
+      sql`length(${table.answer}) <= 20000`,
+    ),
+    check(
+      "application_document_entries_provenance_valid",
+      sql`${table.provenance} in ('generated','edited','submitted')`,
+    ),
+    uniqueIndex("application_document_entries_user_id_unique").on(
+      table.userId,
+      table.id,
+    ),
+    index("application_document_entries_document_ordering_idx").on(
+      table.documentId,
+      table.ordering,
+    ),
+    foreignKey({
+      columns: [table.userId, table.documentId],
+      foreignColumns: [applicationDocuments.userId, applicationDocuments.id],
+      name: "application_document_entries_owner_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
 export const schema = {
   users,
   userCredentials,
@@ -572,6 +683,8 @@ export const schema = {
   applicationStageEvents,
   applicationDeadlines,
   reminders,
+  applicationDocuments,
+  applicationDocumentEntries,
 };
 
 export const tableNames = [
@@ -588,4 +701,6 @@ export const tableNames = [
   "application_stage_events",
   "application_deadlines",
   "reminders",
+  "application_documents",
+  "application_document_entries",
 ] as const;

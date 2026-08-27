@@ -1,9 +1,13 @@
 name: CI
 
+# Temporarily paused: GitHub-hosted runner minutes are being exhausted (see #285).
+# Original triggers preserved for quick restore:
+# on:
+#   pull_request:
+#   push:
+#     branches: [main]
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read

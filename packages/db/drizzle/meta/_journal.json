@@ -71,6 +71,13 @@
       "when": 1787812610921,
       "tag": "0009_stage_label",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787839804227,
+      "tag": "0010_naive_metal_master",
+      "breakpoints": true
     }
   ]
 }

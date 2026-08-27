@@ -265,6 +265,34 @@ export class DeadlineService {
     return rows.map((row) => this.toView(row, now));
   }
 
+  listForApplication(userId: string, applicationId: string): DeadlineView[] {
+    const owned = this.connection.db
+      .select({ id: applications.id })
+      .from(applications)
+      .where(
+        and(
+          eq(applications.id, applicationId),
+          eq(applications.userId, userId),
+        ),
+      )
+      .get();
+    if (owned === undefined)
+      throw new AppError("NOT_FOUND", "Application not found", 404);
+    const rows = this.connection.db
+      .select()
+      .from(applicationDeadlines)
+      .where(
+        and(
+          eq(applicationDeadlines.userId, userId),
+          eq(applicationDeadlines.applicationId, applicationId),
+        ),
+      )
+      .all();
+    rows.sort((x, y) => x.dueAt.getTime() - y.dueAt.getTime());
+    const now = Date.now();
+    return rows.map((row) => this.toView(row, now));
+  }
+
   update(
     user: AuthenticatedUser,
     deadlineId: string,

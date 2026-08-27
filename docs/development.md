@@ -44,6 +44,14 @@ GitHub Actions の `CI / Validate monorepo` をマージ必須チェックとし
 
 CI のチェック名は branch protection から参照するため、理由なく変更しません。
 
+> **Note (#285 一時措置):** GitHub-hosted runner の利用量抑制のため、`.github/workflows/ci.yml` は `workflow_dispatch` のみに退避しています。`Validate monorepo` / `Browser E2E` の job 定義・Playwright 設定・artifact は削除せず保持し、復旧時は `on:` のみを `pull_request` / `push: [main]` に戻します。この期間は GitHub 上で自動 CI は実行されないため、ローカル検証を必須とします。branch protection で `Validate monorepo` が required の場合、この期間は PR が pending 表示になる可能性があるため、PR本文へローカル検証結果を明記し、復旧後に再有効化します。
+>
+> 復旧手順:
+>
+> 1. 小さい検証 run で runner が割り当てられることを確認
+> 2. `ci.yml` の `on:` を元に戻す
+> 3. 必要に応じて `Browser E2E` の path filter 等で minutes を抑制
+
 ## ローカル開発
 
 Node.js 22 以上と、`packageManager` で固定した pnpm を利用します。
@@ -77,6 +85,24 @@ pnpm build
 ```bash
 pnpm test:e2e          # 初回のみ: pnpm exec playwright install chromium
 ```
+
+### Git hooks / ローカル検証（#285 期間中は必須）
+
+`simple-git-hooks`（`prepare: simple-git-hooks`）により `pnpm install` で自動設定されます。
+
+- **pre-commit:** `pnpm verify:commit` → `format:check` + `lint`（軽量のみ）
+- **pre-push:** `pnpm verify:push` → `typecheck` + `test` + `build`
+- **PR前フルチェック:** `pnpm verify:pr`
+- UI / 認証 / Application 主要導線を変更したPRでは `pnpm test:e2e` をローカルで実行（E2Eコードは削除せず維持）
+
+fresh clone 後の有効化確認:
+
+```bash
+pnpm install --frozen-lockfile
+ls .git/hooks/pre-commit .git/hooks/pre-push  # 生成されていること
+```
+
+一時スキップ: `git commit --no-verify` / `SKIP_SIMPLE_GIT_HOOKS=1`
 
 DB schema を変更する PR は `pnpm db:generate` で migration を生成し、既存 migration を書き換えずに追加します。SQLite migration はデプロイ時に単一プロセスで実行し、本番では事前に DB ファイルをバックアップします。
 
