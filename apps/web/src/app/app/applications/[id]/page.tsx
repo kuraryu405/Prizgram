@@ -12,7 +12,7 @@ import {
   ApplicationService,
   type ApplicationDetail,
 } from "@/server/applications/service";
-import { DeadlineService } from "@/server/deadlines/service";
+import { DeadlineService, type DeadlineView } from "@/server/deadlines/service";
 import { requireSessionUserPage } from "@/server/page-session";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +23,14 @@ function formatDateTime(iso: string): string {
     timeStyle: "short",
     timeZone: "Asia/Tokyo",
   }).format(new Date(iso));
+}
+
+function formatDeadline(view: DeadlineView): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: view.timeZone,
+  }).format(new Date(view.dueAt));
 }
 
 function historyEventLabel(event: ApplicationDetail["events"][number]): string {
@@ -77,7 +85,7 @@ export default async function ApplicationDetailPage({
         )}
         {nextDeadline !== undefined && (
           <p className="hint-text">
-            次の締切: {nextDeadline.title} — {formatDateTime(nextDeadline.dueAt)}
+            次の締切: {nextDeadline.title} — {formatDeadline(nextDeadline)}
           </p>
         )}
       </header>
@@ -133,7 +141,7 @@ export default async function ApplicationDetailPage({
                 <li key={deadline.deadlineId}>
                   <strong>{deadline.title}</strong>（
                   {kindLabels[deadline.kind] ?? deadline.kind}） —{" "}
-                  {formatDateTime(deadline.dueAt)}
+                  {formatDeadline(deadline)}
                   {deadline.completed
                     ? " — 完了"
                     : deadline.overdue
