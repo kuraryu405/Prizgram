@@ -95,7 +95,7 @@ describe("Application JobVersion pinning", () => {
     expect(detail.appliedRole).toBe("V1エンジニア");
   });
 
-  it("resolves separate attempts of the same job by their own pinned versions", () => {
+  it("keeps each attempt pinned to its own version", () => {
     const first = service.createFromJob(user, { jobId: "job-pin" });
     connection.sqlite
       .prepare("update applications set status = 'cancelled' where id = ?")
