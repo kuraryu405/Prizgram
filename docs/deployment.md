@@ -142,9 +142,6 @@ cron例（毎日03:20）:
 ```
 
 月1回のrestore drill:
-- 本番のcanonical edgeはCloudflare Tunnelとし、Cloudflareが上書きする `CF-Connecting-IP` をauth rate limitのsource keyに使う。
-- LXCの `127.0.0.1:3000` は外部へ直接公開しない。Cloudflare Tunnel以外から任意のforwarded headerを送れる経路を作らない。
-- 証明書更新: certbot timer有効化
 
 ```bash
 "$HOME/prizgram/current/scripts/restore-drill.sh" \
@@ -174,14 +171,15 @@ Reminder batchはrelease sourceとpnpmを必要とするため、standalone web 
 
 失敗時は非0終了をjournaldまたは監視基盤で検知します。
 
-## 9. Reverse proxy requirements
+## 9. Cloudflare Tunnel / TLS requirements
 
-外部公開proxyは `127.0.0.1:3000` へ転送し、次を満たす必要があります。
+本番のcanonical edgeはCloudflare Tunnelです。Tunnel側でTLSを終端し、LXC上のweb serviceへloopback接続します。
 
-- TLSを終端する。
-- `Host` と `X-Forwarded-Proto` を設定する。
-- client supplied値を信頼せず、`X-Forwarded-For` をproxy側で上書きする。
-- LXCのport 3000をinternetへ直接公開しない。
+- auth rate limitのclient source keyには、Cloudflareが上書きする `CF-Connecting-IP` だけを使う。
+- `deploy/prizgram-web.service` は `HOSTNAME=127.0.0.1` とし、web serviceをloopbackにだけbindする。
+- LXCのport 3000を外部へ公開しない。Tunnel以外から任意のforwarded headerを送れる経路を作らない。
+- Tunnel tokenは `shared/cloudflared.token` に置き、リポジトリやworkflowへ書かない。
+- Cloudflare側でTLS、Host制御、必要なアクセス制御を有効にする。
 
 ## 10. Incident checklist
 

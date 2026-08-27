@@ -8,7 +8,7 @@ Type=simple
 WorkingDirectory=%h/prizgram/current/apps/web/.next/standalone/apps/web
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=HOSTNAME=0.0.0.0
+Environment=HOSTNAME=127.0.0.1
 Environment=PRIZGRAM_MIGRATIONS_DIR=%h/prizgram/current/apps/web/.next/standalone/apps/web/.next/drizzle
 Environment=PATH=%h/.local/node/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=%h/prizgram/shared/.env
