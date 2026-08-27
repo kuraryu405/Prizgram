@@ -324,7 +324,11 @@ export class DeadlineService {
         timezone: timeZone,
         ...(input.completed === undefined
           ? {}
-          : { completedAt: input.completed ? new Date() : null }),
+          : input.completed
+            ? row.completedAt === null
+              ? { completedAt: new Date() }
+              : {}
+            : { completedAt: null }),
         updatedAt: new Date(),
       })
       .where(eq(applicationDeadlines.id, deadlineId))
