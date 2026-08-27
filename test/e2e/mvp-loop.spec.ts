@@ -116,7 +116,7 @@ test.describe("Prizgram MVP core loop", () => {
     await page.goto("/app/jobs");
     const posting = [
       "【募集】フロントエンドエンジニアインターン",
-      "株式会社サンプルではReactとTypeScriptを使う開発インターンを募集しています。",
+      "株式会社サンプルではReactとTypeScriptを使う開発インターンを募雀しています。",
       "週3日以上勤務できる方を歓迎します。メンターが付き、コードレビューを受けながら成長できます。",
     ].join("\n");
     await page.getByLabel("求人票本文").fill(posting);
@@ -146,7 +146,7 @@ test.describe("Prizgram MVP core loop", () => {
 
     // --- Register an application for the scored job via its page flow.
     await page.goto("/app/applications");
-    const addFormJobSelect = page.getByLabel("求人");
+    const addFormJobSelect = page.getByRole("combobox", { name: "求人" });
     if (await addFormJobSelect.isVisible().catch(() => false)) {
       // Select by explicit label: dropdown ordering is not part of the
       // contract, so index-based selection would be flaky.
