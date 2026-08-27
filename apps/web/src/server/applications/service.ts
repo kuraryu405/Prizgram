@@ -279,6 +279,37 @@ export class ApplicationService {
     });
   }
 
+  findApplicationForJob(
+    userId: string,
+    jobId: string,
+  ): ApplicationSummary | undefined {
+    const row = this.connection.db
+      .select()
+      .from(applications)
+      .where(
+        and(
+          eq(applications.userId, userId),
+          eq(applications.jobId, jobId),
+          sql`${applications.status} != 'cancelled'`,
+        ),
+      )
+      .get();
+    if (row === undefined) return undefined;
+    const pinned =
+      row.jobVersionId === null || row.jobVersionId === undefined
+        ? undefined
+        : this.companyRoleForApplications(userId, [
+            { jobId: row.jobId, jobVersionId: row.jobVersionId },
+          ]).get(row.jobId);
+    const latest = this.latestJobVersions(userId, [row.jobId]).get(row.jobId);
+    const resolved = pinned ?? latest ?? { company: "(不明)", role: "(不明)" };
+    return {
+      ...this.coreFromDrizzle(row),
+      company: resolved.company,
+      role: resolved.role,
+    };
+  }
+
   getApplicationDetail(
     userId: string,
     applicationId: string,

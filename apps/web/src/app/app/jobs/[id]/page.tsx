@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ScoreEvaluateButton } from "@/components/scoring/score-panel";
+import { JobApplyButton } from "@/components/jobs/job-apply-button";
 import { JobArchiveButton } from "@/components/jobs/job-archive-button";
 import { JobReimportForm } from "@/components/jobs/job-reimport-form";
 import { decodeJsonColumn, personaSnapshotSchema } from "@prizgram/shared";
 
 import { AppError } from "@/server/api";
 import { getDatabase } from "@/server/database";
+import { ApplicationService } from "@/server/applications/service";
 import { JobService } from "@/server/jobs/service";
 import { PersonaService } from "@/server/persona/service";
 import { ScoringService } from "@/server/scoring/service";
@@ -63,7 +65,8 @@ export default async function JobDetailPage({
 }: Readonly<{ params: Promise<{ id: string }> }>) {
   const { id } = await params;
   const user = await requireSessionUserPage();
-  const service = new JobService(getDatabase());
+  const db = getDatabase();
+  const service = new JobService(db);
   const detail = (() => {
     try {
       return service.getJobDetail(user.id, id);
@@ -83,7 +86,6 @@ export default async function JobDetailPage({
   );
 
   // Scoring: freshness-aware current score + history for reload persistence
-  const db = getDatabase();
   const scoring = new ScoringService(db);
   const freshness = scoring.describeFreshness(user.id, id);
   const currentScore = scoring.getCurrentScore(user.id, id);
@@ -136,6 +138,18 @@ export default async function JobDetailPage({
     }
   }
 
+  let existingApplication: ReturnType<
+    ApplicationService["findApplicationForJob"]
+  >;
+  try {
+    existingApplication = new ApplicationService(db).findApplicationForJob(
+      user.id,
+      detail.jobId,
+    );
+  } catch {
+    existingApplication = undefined;
+  }
+
   return (
     <div className="page page-job-detail">
       <p className="breadcrumb">
@@ -151,6 +165,15 @@ export default async function JobDetailPage({
         jobId={detail.jobId}
         archived={detail.archivedAt !== undefined}
       />
+      {existingApplication !== undefined ? (
+        <JobApplyButton
+          jobId={detail.jobId}
+          alreadyApplied
+          applicationId={existingApplication.applicationId}
+        />
+      ) : (
+        <JobApplyButton jobId={detail.jobId} />
+      )}
 
       <section aria-labelledby="job-description" className="card">
         <h2 id="job-description">本文</h2>
