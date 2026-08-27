@@ -72,7 +72,9 @@ export function isPersonaVersionUniqueViolation(error: unknown): boolean {
 export interface EventEvidenceSource {
   eventId: string;
   sequence: number;
+  fromStatus: string | null;
   toStatus: string;
+  note: string | null;
   occurredAt: string;
 }
 
@@ -125,21 +127,6 @@ function upstreamError(error: unknown): AppError {
   throw error;
 }
 
-  private assertCarryForward(
-    base: PersonaSnapshot,
-    proposed: PersonaSnapshot,
-  ): void {
-    const baseEvidenceIds = new Set(base.evidence.map((e) => e.id));
-    const proposedEvidenceIds = new Set(proposed.evidence.map((e) => e.id));
-    for (const id of baseEvidenceIds) {
-      if (!proposedEvidenceIds.has(id)) {
-        throw new AppError(
-          "UPSTREAM_INVALID_RESPONSE",
-          `Proposal dropped base evidence ${id}`,
-          502,
-        );
-      }
-
 export class PersonaUpdateService {
   constructor(private readonly connection: DatabaseConnection) {}
 
@@ -191,7 +178,9 @@ export class PersonaUpdateService {
     return rows.map((row) => ({
       eventId: row.id,
       sequence: row.sequence,
+      fromStatus: row.fromStatus,
       toStatus: row.toStatus,
+      note: row.note,
       occurredAt: row.occurredAt.toISOString(),
     }));
   }
@@ -237,8 +226,7 @@ export class PersonaUpdateService {
             evidence.sourceId !== undefined &&
             !baseEvidenceIds.has(evidence.sourceId) &&
             !baseUserInputSourceIds.has(evidence.sourceId) &&
-            !evidence.sourceId.startsWith(REFLECTION_PREFIX) &&
-            !eventIds.has(evidence.sourceId)
+            !evidence.sourceId.startsWith(REFLECTION_PREFIX)
           ) {
             throw new AppError(
               "UPSTREAM_INVALID_RESPONSE",
@@ -265,6 +253,47 @@ export class PersonaUpdateService {
     }
     void userId;
     return snapshot;
+  }
+
+  private assertCarryForward(
+    base: PersonaSnapshot,
+    proposed: PersonaSnapshot,
+  ): void {
+    const baseEvidenceIds = new Set(base.evidence.map((e) => e.id));
+    const proposedEvidenceIds = new Set(proposed.evidence.map((e) => e.id));
+    for (const id of baseEvidenceIds) {
+      if (!proposedEvidenceIds.has(id)) {
+        throw new AppError(
+          "UPSTREAM_INVALID_RESPONSE",
+          `Proposal dropped base evidence ${id}`,
+          502,
+        );
+      }
+    }
+
+    const baseSkillNames = new Set(base.skills.map((s) => s.name));
+    const proposedSkillNames = new Set(proposed.skills.map((s) => s.name));
+    for (const name of baseSkillNames) {
+      if (!proposedSkillNames.has(name)) {
+        throw new AppError(
+          "UPSTREAM_INVALID_RESPONSE",
+          `Proposal dropped base skill ${name}`,
+          502,
+        );
+      }
+    }
+
+    const baseExpTitles = new Set(base.experiences.map((e) => e.title));
+    const proposedExpTitles = new Set(proposed.experiences.map((e) => e.title));
+    for (const title of baseExpTitles) {
+      if (!proposedExpTitles.has(title)) {
+        throw new AppError(
+          "UPSTREAM_INVALID_RESPONSE",
+          `Proposal dropped base experience ${title}`,
+          502,
+        );
+      }
+    }
   }
 
   /** Inserts an approved snapshot as the next immutable persona version. */
@@ -404,10 +433,13 @@ export class PersonaUpdateService {
   static buildEventDigest(events: readonly EventEvidenceSource[]): string {
     if (events.length === 0) return "（選考イベントはありません）";
     return events
-      .map(
-        (event) =>
-          `- [id=${event.eventId}] ${event.toStatus} (${event.occurredAt})`,
-      )
+      .map((event) => {
+        const base = `- [id=${event.eventId}] ${event.fromStatus ?? "null"} -> ${event.toStatus} (${event.occurredAt})`;
+        if (event.note !== null && event.note.trim() !== "") {
+          return `${base} note:${JSON.stringify(event.note)}`;
+        }
+        return base;
+      })
       .join("\n");
   }
 
