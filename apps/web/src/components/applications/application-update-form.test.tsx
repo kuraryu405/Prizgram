@@ -58,16 +58,19 @@ describe("ApplicationUpdateForm", () => {
       />,
     );
 
-    expect(screen.getByLabelText("次のアクション").value).toBe("ESを書く");
+    expect(screen.getByLabelText("次のアクション")).toHaveProperty(
+      "value",
+      "ESを書く",
+    );
     expect(
-      screen.getByLabelText("メモ（ステータス変更時の履歴に記録）").value,
-    ).toBe("採用ページを確認");
+      screen.getByLabelText("メモ（ステータス変更時の履歴に記録）"),
+    ).toHaveProperty("value", "採用ページを確認");
     expect(
       screen.getByRole("button", { name: "更新する" }).matches(":disabled"),
     ).toBe(true);
   });
 
-  test("sends null for cleared fields and becomes clean immediately after success", async () => {
+  test("clears dirty state immediately after saving null fields", async () => {
     const fetchMock = successfulPatch();
     const user = userEvent.setup();
     render(
@@ -87,7 +90,9 @@ describe("ApplicationUpdateForm", () => {
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("更新しました"),
     );
-    expect(requestBodies(fetchMock)).toEqual([{ nextAction: null, note: null }]);
+    expect(requestBodies(fetchMock)).toEqual([
+      { nextAction: null, note: null },
+    ]);
 
     const submit = screen.getByRole("button", { name: "更新する" });
     expect(submit.matches(":disabled")).toBe(true);
@@ -136,8 +141,10 @@ describe("ApplicationUpdateForm", () => {
 
     const nextAction = screen.getByLabelText("次のアクション");
     const note = screen.getByLabelText("メモ（ステータス変更時の履歴に記録）");
-    await waitFor(() => expect(nextAction.value).toBe("新アクション"));
-    expect(note.value).toBe("新メモ");
+    await waitFor(() =>
+      expect(nextAction).toHaveProperty("value", "新アクション"),
+    );
+    expect(note).toHaveProperty("value", "新メモ");
     expect(
       screen.getByRole("button", { name: "更新する" }).matches(":disabled"),
     ).toBe(true);
