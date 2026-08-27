@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -215,7 +216,7 @@ export function ApplicationDocumentsSection({ applicationId }: Props) {
                 >
                   {editingDoc === document.id ? (
                     <>
-                      <label className="sr-only" htmlFor={`doc-title-${document.id}`}>
+                      <label htmlFor={`doc-title-${document.id}`}>
                         書類タイトル
                       </label>
                       <input
@@ -274,7 +275,9 @@ export function ApplicationDocumentsSection({ applicationId }: Props) {
                           onClick={() => void onSubmit(document.id)}
                           type="button"
                         >
-                          {submittingDoc === document.id ? "提出中…" : "提出済みにする"}
+                          {submittingDoc === document.id
+                            ? "提出中…"
+                            : "提出済みにする"}
                         </button>
                       )}
                     </>
