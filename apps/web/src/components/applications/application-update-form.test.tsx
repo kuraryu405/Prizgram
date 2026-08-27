@@ -149,13 +149,15 @@ describe("ApplicationUpdateForm", () => {
     await user.type(screen.getByLabelText("現在の段階（任意）"), "1次面接");
     await user.click(screen.getByRole("button", { name: "更新する" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("更新しました。");
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "更新しました。",
+    );
 
     view.rerender(
       <ApplicationUpdateForm {...defaultProps} initialStageLabel="1次面接" />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("更新しました。");
+    expect(screen.getByRole("status").textContent).toContain("更新しました。");
     expect(screen.getByLabelText("現在の段階（任意）")).toHaveProperty(
       "value",
       "1次面接",
