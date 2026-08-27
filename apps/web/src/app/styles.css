@@ -1963,11 +1963,11 @@ a {
     min-width: 0;
   }
 
-  .field label {
+  .page-jobs .field label {
     font-size: 0.8125rem;
   }
 
-  .field {
+  .page-jobs .field {
     gap: 0.25rem;
     margin-bottom: 0;
   }

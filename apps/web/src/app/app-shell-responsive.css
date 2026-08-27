@@ -4,7 +4,9 @@
   }
 
   .app-account-trigger {
-    min-height: 2.5rem;
+    justify-content: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
     padding-inline: 0.25rem;
   }
 
@@ -21,8 +23,10 @@
   }
 
   .app-header-bell {
-    height: 2.25rem;
-    width: 2.25rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    width: 2.75rem;
   }
 
   .app-header-bell svg {
