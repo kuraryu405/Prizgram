@@ -176,9 +176,6 @@ export default async function PersonaPage() {
             </li>
           ))}
         </ul>
-        <Link className="button button-secondary" href="/app/persona/intake">
-          新しいヒアリングで更新する
-        </Link>
       </section>
     </div>
   );
