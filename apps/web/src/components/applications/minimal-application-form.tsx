@@ -4,35 +4,42 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { applicationStatuses } from "@prizgram/shared";
+import {
+  applicationStatuses,
+  terminalApplicationStatuses,
+} from "@prizgram/shared";
 
 import { apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
 import { applicationStatusLabels } from "@/lib/labels";
 
-type MinimalApplicationResponse = Readonly<{ applicationId: string }>;
+type ApplicationStatus = (typeof applicationStatuses)[number];
+type MinimalApplicationResponse = Readonly<{
+  applicationId: string;
+  status: ApplicationStatus;
+}>;
+
+const terminalStatusSet = new Set<string>(terminalApplicationStatuses);
 
 export function MinimalApplicationForm() {
   const router = useRouter();
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
-  const [status, setStatus] =
-    useState<(typeof applicationStatuses)[number]>("saved");
+  const [status, setStatus] = useState<ApplicationStatus>("saved");
   const [stageLabel, setStageLabel] = useState("");
   const [nextAction, setNextAction] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [createdApplicationId, setCreatedApplicationId] = useState<
-    string | null
-  >(null);
+  const [createdApplication, setCreatedApplication] =
+    useState<MinimalApplicationResponse | null>(null);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending || company.trim() === "") return;
     setPending(true);
     setFormError(null);
-    setCreatedApplicationId(null);
+    setCreatedApplication(null);
     try {
       const created = await apiFetch<MinimalApplicationResponse>(
         "/api/applications/minimal",
@@ -49,7 +56,7 @@ export function MinimalApplicationForm() {
           ...(note.trim() === "" ? {} : { note: note.trim() }),
         }),
       );
-      setCreatedApplicationId(created.applicationId);
+      setCreatedApplication(created);
       setCompany("");
       setRole("");
       setStatus("saved");
@@ -79,14 +86,19 @@ export function MinimalApplicationForm() {
           {formError}
         </p>
       )}
-      {createdApplicationId !== null && (
+      {createdApplication !== null && (
         <p className="form-success" role="status">
-          応募を追加しました。{" "}
-          <Link
-            href={`/app/deadlines?applicationId=${encodeURIComponent(createdApplicationId)}`}
-          >
-            締切を追加
-          </Link>
+          応募を追加しました。
+          {!terminalStatusSet.has(createdApplication.status) && (
+            <>
+              {" "}
+              <Link
+                href={`/app/deadlines?applicationId=${encodeURIComponent(createdApplication.applicationId)}`}
+              >
+                締切を追加
+              </Link>
+            </>
+          )}
         </p>
       )}
       <div className="field">
@@ -114,11 +126,7 @@ export function MinimalApplicationForm() {
         <label htmlFor="minimal-status">現在のステータス</label>
         <select
           id="minimal-status"
-          onChange={(event) =>
-            setStatus(
-              event.target.value as (typeof applicationStatuses)[number],
-            )
-          }
+          onChange={(event) => setStatus(event.target.value as ApplicationStatus)}
           value={status}
         >
           {applicationStatuses.map((value) => (
