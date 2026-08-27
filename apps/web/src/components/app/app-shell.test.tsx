@@ -81,8 +81,13 @@ describe("AppShell", () => {
       "締切",
       "通知",
     ]) {
-      expect(screen.getByRole("link", { name: label }).textContent).toBe(label);
+      const link = screen.getByRole("link", { name: label });
+      expect(link.textContent).toBe(label);
+      expect(link.getAttribute("aria-label")).toBe(label);
     }
+    expect(
+      screen.getByRole("link", { name: "PRIZGRAM" }).getAttribute("aria-label"),
+    ).toBe("PRIZGRAM");
     expect(
       screen.getByRole("link", { name: "求人" }).getAttribute("aria-current"),
     ).toBe("page");
@@ -98,6 +103,7 @@ describe("AppShell", () => {
     renderShell();
     await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
 
+    await user.click(screen.getByRole("button", { name: "アカウント user01" }));
     await user.click(screen.getByRole("button", { name: "ログアウト" }));
     await waitFor(() =>
       expect(navigationMocks.replace).toHaveBeenCalledWith("/"),
@@ -120,6 +126,7 @@ describe("AppShell", () => {
     renderShell();
     await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
 
+    await user.click(screen.getByRole("button", { name: "アカウント user01" }));
     await user.click(screen.getByRole("button", { name: "ログアウト" }));
     await waitFor(() =>
       expect(
@@ -129,5 +136,21 @@ describe("AppShell", () => {
       ).toBe(true),
     );
     expect(navigationMocks.replace).not.toHaveBeenCalled();
+  });
+
+  test("groups the account identity and logout in an accessible menu", async () => {
+    const user = userEvent.setup();
+    stubAuthenticatedSession();
+    renderShell();
+    await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
+
+    expect(screen.getByText("US")).not.toBeNull();
+    expect(screen.queryByText("⋯")).toBeNull();
+    const accountTrigger = screen.getByRole("button", {
+      name: "アカウント user01",
+    });
+    expect(accountTrigger.getAttribute("title")).toBe("アカウント user01");
+    await user.click(accountTrigger);
+    expect(screen.getByRole("button", { name: "ログアウト" })).not.toBeNull();
   });
 });
