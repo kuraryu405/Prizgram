@@ -380,10 +380,12 @@ export const applications = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     jobId: text("job_id").notNull(),
+    jobVersionId: text("job_version_id"),
     status: text("status", { enum: applicationStatuses })
       .notNull()
       .default("saved"),
     nextAction: text("next_action"),
+    note: text("note"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(now),
@@ -394,15 +396,21 @@ export const applications = sqliteTable(
   (table) => [
     check(
       "applications_status_valid",
-      sql`${table.status} in ('saved','applying','submitted','screening','interview','offer','accepted','rejected','withdrawn')`,
+      sql`${table.status} in ('saved','applying','submitted','screening','interview','offer','accepted','rejected','withdrawn','cancelled')`,
     ),
     uniqueIndex("applications_user_id_unique").on(table.userId, table.id),
-    uniqueIndex("applications_user_job_unique").on(table.userId, table.jobId),
+    index("applications_user_job_idx").on(table.userId, table.jobId),
     index("applications_user_status_idx").on(table.userId, table.status),
+    index("applications_job_version_idx").on(table.jobVersionId),
     foreignKey({
       columns: [table.userId, table.jobId],
       foreignColumns: [jobs.userId, jobs.id],
       name: "applications_job_owner_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.userId, table.jobVersionId],
+      foreignColumns: [jobVersions.userId, jobVersions.id],
+      name: "applications_job_version_owner_fk",
     }).onDelete("restrict"),
   ],
 );
@@ -431,11 +439,11 @@ export const applicationStageEvents = sqliteTable(
     ),
     check(
       "application_stage_events_from_status_valid",
-      sql`${table.fromStatus} is null or ${table.fromStatus} in ('saved','applying','submitted','screening','interview','offer','accepted','rejected','withdrawn')`,
+      sql`${table.fromStatus} is null or ${table.fromStatus} in ('saved','applying','submitted','screening','interview','offer','accepted','rejected','withdrawn','cancelled')`,
     ),
     check(
       "application_stage_events_to_status_valid",
-      sql`${table.toStatus} in ('saved','applying','submitted','screening','interview','offer','accepted','rejected','withdrawn')`,
+      sql`${table.toStatus} in ('saved','applying','submitted','screening','interview','offer','accepted','rejected','withdrawn','cancelled')`,
     ),
     uniqueIndex("application_stage_events_sequence_unique").on(
       table.applicationId,

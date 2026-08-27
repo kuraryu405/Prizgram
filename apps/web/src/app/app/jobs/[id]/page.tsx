@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ScoreEvaluateButton } from "@/components/scoring/score-panel";
 import { JobArchiveButton } from "@/components/jobs/job-archive-button";
+import { JobReimportForm } from "@/components/jobs/job-reimport-form";
 import { decodeJsonColumn, personaSnapshotSchema } from "@prizgram/shared";
 
 import { AppError } from "@/server/api";
@@ -342,6 +343,8 @@ export default async function JobDetailPage({
           ))}
         </ul>
       </section>
+
+      <JobReimportForm jobId={detail.jobId} />
     </div>
   );
 }
