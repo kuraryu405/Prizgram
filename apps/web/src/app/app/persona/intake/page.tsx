@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { PersonaWizard } from "@/components/persona/persona-wizard";
 import { getDatabase } from "@/server/database";
@@ -12,6 +12,9 @@ export const dynamic = "force-dynamic";
 export default async function PersonaIntakePage() {
   const user = await requireSessionUserPage();
   const service = new PersonaService(getDatabase());
+  if (service.latestPersona(user.id) !== undefined) {
+    redirect("/app/persona");
+  }
   const intake = (() => {
     try {
       return service.startIntake(user.id);

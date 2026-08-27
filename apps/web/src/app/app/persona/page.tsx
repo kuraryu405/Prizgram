@@ -55,7 +55,7 @@ export default async function PersonaPage() {
       </p>
       <h1>ペルソナ</h1>
       <p className="summary-line">
-        最終更新: {formatDateTime(latest.createdAt)}
+        v{latest.version}（{formatDateTime(latest.createdAt)}）
       </p>
       <p className="hint-text">
         すべての項目はヒアリングの回答のみを根拠にしています。推測は含まれません。
@@ -166,13 +166,10 @@ export default async function PersonaPage() {
         <ul>
           {versions.map((version) => (
             <li key={version.personaVersionId}>
-              更新 {formatDateTime(version.createdAt)}
+              v{version.version}（{formatDateTime(version.createdAt)}）
             </li>
           ))}
         </ul>
-        <Link className="button button-secondary" href="/app/persona/intake">
-          新しいヒアリングで更新する
-        </Link>
       </section>
     </div>
   );
