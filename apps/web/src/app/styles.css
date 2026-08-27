@@ -1145,6 +1145,17 @@ a {
   width: calc(100% - 2rem);
 }
 
+/* A backdrop filter establishes a containing block for fixed descendants in
+   WebKit. Keep it off the authenticated mobile header so its tab bar always
+   stays fixed to the viewport, even if a stale client still has lp-nav's
+   landing-page scroll class. */
+@media (max-width: 899px) {
+  .app-shell .app-header.lp-nav {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 .app-header.lp-nav .app-brand {
   padding: 0;
 }
