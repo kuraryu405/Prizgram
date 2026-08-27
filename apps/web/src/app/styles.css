@@ -404,6 +404,61 @@ a {
   min-width: 0;
 }
 
+.app-account-menu {
+  min-width: 0;
+  position: relative;
+}
+
+.app-account-trigger {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 0.625rem;
+  list-style: none;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  width: 100%;
+}
+
+.app-account-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.app-account-trigger::marker {
+  content: "";
+}
+
+.app-account-trigger:hover {
+  background: var(--color-surface-tint);
+}
+
+.app-account-avatar {
+  align-items: center;
+  background: var(--color-primary-soft);
+  border: 1px solid var(--color-primary-border);
+  border-radius: 50%;
+  color: var(--color-primary-strong);
+  display: inline-flex;
+  flex: none;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  height: 2rem;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  width: 2rem;
+}
+
+.app-account-copy {
+  display: block;
+  min-width: 0;
+}
+
 .app-login-id {
   color: var(--color-text-muted);
   font-size: 0.75rem;
@@ -413,11 +468,25 @@ a {
   white-space: nowrap;
 }
 
-.app-header-account .button {
-  flex: none;
+.app-account-popover {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: 0 8px 24px rgb(27 39 34 / 0.12);
+  left: auto;
+  min-width: 9rem;
+  padding: 0.375rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  z-index: 35;
+}
+
+.app-account-popover .button {
   font-size: 0.8125rem;
   min-height: 2.5rem;
   padding: 0 0.875rem;
+  width: 100%;
 }
 
 /* Bottom tab bar (mobile). From 900px the same markup becomes the sidebar's
@@ -492,12 +561,12 @@ a {
   }
 
   .app-header {
-    align-items: stretch;
+    align-items: flex-start;
     flex: none;
     border-bottom: none;
     border-right: 1px solid var(--color-border);
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1rem;
     height: 100vh;
     height: 100dvh;
     padding: 1.25rem 1rem;
@@ -515,14 +584,19 @@ a {
   .app-nav {
     border-top: none;
     inset-inline: auto;
-    margin-block: auto;
+    margin-block: 0;
     padding-bottom: 0;
     position: static;
   }
 
   .app-nav ul {
+    align-items: flex-start;
     gap: 0.375rem;
     grid-template-columns: none;
+  }
+
+  .app-nav li {
+    width: max-content;
   }
 
   .app-nav a {
@@ -532,6 +606,7 @@ a {
     gap: 0.875rem;
     min-height: 2.75rem;
     padding: 0 0.875rem;
+    width: max-content;
   }
 
   .app-nav svg {
@@ -542,7 +617,7 @@ a {
 
   .app-nav a[aria-current="page"] {
     background: var(--color-primary-soft);
-    box-shadow: inset 3px 0 0 var(--color-primary);
+    box-shadow: none;
     color: var(--color-primary-strong);
   }
 
@@ -554,9 +629,19 @@ a {
     border-top: 1px solid var(--color-border);
     flex-direction: column;
     align-items: stretch;
-    gap: 0.5rem;
     margin-top: auto;
+    margin-left: 0;
     padding-top: 1rem;
+    width: 100%;
+  }
+
+  .app-account-menu,
+  .app-account-trigger {
+    width: 100%;
+  }
+
+  .app-account-trigger {
+    padding-inline: 0.5rem;
   }
 
   .app-login-id {
@@ -564,9 +649,10 @@ a {
     overflow-wrap: anywhere;
   }
 
-  .app-header-account .button {
-    font-size: 0.875rem;
-    min-height: 2.75rem;
+  .app-account-popover {
+    bottom: calc(100% + 0.5rem);
+    right: 0;
+    top: auto;
   }
 
   .app-main {
@@ -600,6 +686,127 @@ a {
      above on purpose so the dashboard override wins the cascade. */
   .app-main > .page-dashboard {
     max-width: 56rem;
+  }
+}
+
+@media (min-width: 900px) and (max-width: 1199px) {
+  .app-header {
+    align-items: center;
+    padding-inline: 0.625rem;
+    width: 5rem;
+  }
+
+  .app-brand {
+    align-items: center;
+    display: flex;
+    font-size: 0;
+    height: 2.75rem;
+    justify-content: center;
+    letter-spacing: 0;
+    padding: 0;
+    width: 2.75rem;
+  }
+
+  .app-brand::after {
+    color: var(--color-primary);
+    content: "P";
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+  }
+
+  .app-nav {
+    width: 100%;
+  }
+
+  .app-nav ul {
+    align-items: center;
+  }
+
+  .app-nav li {
+    width: 100%;
+  }
+
+  .app-nav a {
+    height: 2.75rem;
+    justify-content: center;
+    padding: 0;
+    position: relative;
+    width: 2.75rem;
+  }
+
+  .app-nav a[aria-current="page"] {
+    background: var(--color-primary-soft);
+    box-shadow: none;
+  }
+
+  .app-nav-label {
+    border: 0;
+    clip: rect(0 0 0 0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+
+  .app-nav a::after {
+    background: var(--color-text);
+    border-radius: var(--radius-control);
+    color: var(--color-surface);
+    content: attr(data-tooltip);
+    font-size: 0.75rem;
+    font-weight: 600;
+    left: calc(100% + 0.625rem);
+    opacity: 0;
+    padding: 0.375rem 0.5rem;
+    pointer-events: none;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: opacity 120ms ease;
+    white-space: nowrap;
+    z-index: 40;
+  }
+
+  .app-nav a:hover::after,
+  .app-nav a:focus-visible::after {
+    opacity: 1;
+  }
+
+  .app-header-account {
+    align-items: center;
+    padding-top: 0.75rem;
+  }
+
+  .app-account-menu,
+  .app-account-trigger {
+    width: 2.75rem;
+  }
+
+  .app-account-trigger {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-account-copy {
+    border: 0;
+    clip: rect(0 0 0 0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    width: 1px;
+  }
+
+  .app-account-popover {
+    bottom: 0;
+    left: calc(100% + 0.5rem);
+    right: auto;
+    top: auto;
   }
 }
 

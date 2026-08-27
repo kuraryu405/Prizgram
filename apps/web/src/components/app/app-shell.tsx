@@ -130,6 +130,18 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function getAccountInitials(loginId: string): string {
+  const parts = loginId.split(/[._-]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return parts
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase();
+  }
+  return loginId.slice(0, 2).toUpperCase();
+}
+
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const { user, status, logout, reloadSession } = useAuth();
   const router = useRouter();
@@ -194,7 +206,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
       </a>
       <div className="app-layout">
         <header className="app-header">
-          <Link className="app-brand" href="/app">
+          <Link aria-label="PRIZGRAM" className="app-brand" href="/app">
             PRIZGRAM
           </Link>
           <nav aria-label="メインナビゲーション" className="app-nav">
@@ -202,28 +214,47 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
               {navigationItems.map((item) => (
                 <li key={item.href}>
                   <Link
+                    aria-label={item.label}
                     aria-current={
                       isActive(pathname, item.href) ? "page" : undefined
                     }
+                    data-tooltip={item.label}
                     href={item.href}
+                    title={item.label}
                   >
                     <item.Icon />
-                    <span>{item.label}</span>
+                    <span className="app-nav-label">{item.label}</span>
                   </Link>
                 </li>
               ))}
             </ul>
           </nav>
           <div className="app-header-account">
-            <span className="app-login-id">{user.loginId}</span>
-            <button
-              className="button button-secondary"
-              disabled={loggingOut}
-              onClick={() => void handleLogout()}
-              type="button"
-            >
-              ログアウト
-            </button>
+            <details className="app-account-menu">
+              <summary
+                aria-label={`アカウント ${user.loginId}`}
+                className="app-account-trigger"
+                role="button"
+                title={`アカウント ${user.loginId}`}
+              >
+                <span aria-hidden="true" className="app-account-avatar">
+                  {getAccountInitials(user.loginId)}
+                </span>
+                <span className="app-account-copy">
+                  <span className="app-login-id">{user.loginId}</span>
+                </span>
+              </summary>
+              <div className="app-account-popover">
+                <button
+                  className="button button-secondary"
+                  disabled={loggingOut}
+                  onClick={() => void handleLogout()}
+                  type="button"
+                >
+                  ログアウト
+                </button>
+              </div>
+            </details>
           </div>
         </header>
         {logoutError !== null && (
