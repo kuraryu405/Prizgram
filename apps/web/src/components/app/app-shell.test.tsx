@@ -75,18 +75,17 @@ describe("AppShell", () => {
     renderShell();
     await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
 
-    for (const label of [
-      "ホーム",
-      "ペルソナ",
-      "求人",
-      "応募",
-      "締切",
-      "通知",
-    ]) {
+    for (const label of ["ホーム", "求人", "応募", "ペルソナ"]) {
       const link = screen.getByRole("link", { name: label });
-      expect(link.textContent).toBe(label);
       expect(link.getAttribute("aria-label")).toBe(label);
     }
+    expect(screen.getByRole("button", { name: "その他" })).not.toBeNull();
+    // header bell for notifications is always visible
+    const bell = screen.getByRole("link", { name: "通知" });
+    expect(bell.getAttribute("href")).toBe("/app/reminders");
+    // secondary items live inside the More disclosure
+    expect(document.querySelector('a[href="/app/deadlines"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/app/reminders"]')).not.toBeNull();
     expect(
       screen.getByRole("link", { name: "PRIZGRAM" }).getAttribute("aria-label"),
     ).toBe("PRIZGRAM");
@@ -153,6 +152,17 @@ describe("AppShell", () => {
     });
     expect(accountTrigger.getAttribute("title")).toBe("アカウント user01");
     await user.click(accountTrigger);
+    expect(screen.getByRole("link", { name: "プロフィール" })).not.toBeNull();
     expect(screen.getByRole("button", { name: "ログアウト" })).not.toBeNull();
+  });
+
+  test("shows the More menu with secondary navigation", async () => {
+    stubAuthenticatedSession();
+    renderShell();
+    await waitFor(() => expect(screen.queryByTestId("content")).not.toBeNull());
+
+    expect(document.querySelector('a[href="/app/deadlines"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/app/reminders"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/app/profile"]')).not.toBeNull();
   });
 });

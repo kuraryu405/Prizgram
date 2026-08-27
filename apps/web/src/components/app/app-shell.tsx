@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { describeApiError } from "@/lib/error-messages";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { PrizgramLogo } from "@/components/brand/prizgram-logo";
 
 function HomeIcon() {
   return (
@@ -116,11 +117,36 @@ function RemindersIcon() {
   );
 }
 
-const navigationItems = [
+function MoreIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19.5" cy="12" r="1.8" />
+      <circle cx="4.5" cy="12" r="1.8" />
+    </svg>
+  );
+}
+
+// Primary navigation (bottom bar / sidebar). Secondary items live in the
+// header bell and the account menu / More sheet so the bottom bar stays at
+// 5 tap targets with comfortable width even at 320px.
+const primaryNavigationItems = [
   { href: "/app", Icon: HomeIcon, label: "ホーム" },
-  { href: "/app/persona", Icon: PersonaIcon, label: "ペルソナ" },
   { href: "/app/jobs", Icon: JobsIcon, label: "求人" },
   { href: "/app/applications", Icon: ApplicationsIcon, label: "応募" },
+  { href: "/app/persona", Icon: PersonaIcon, label: "ペルソナ" },
+] as const;
+
+const secondaryNavigationItems = [
   { href: "/app/deadlines", Icon: DeadlinesIcon, label: "締切" },
   { href: "/app/reminders", Icon: RemindersIcon, label: "通知" },
 ] as const;
@@ -202,6 +228,10 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
     }
   };
 
+  const isMoreActive = secondaryNavigationItems.some((item) =>
+    isActive(pathname, item.href),
+  );
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
@@ -210,11 +240,11 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
       <div className="app-layout">
         <header className="app-header">
           <Link aria-label="PRIZGRAM" className="app-brand" href="/app">
-            PRIZGRAM
+            <PrizgramLogo className="app-brand-logo" />
           </Link>
           <nav aria-label="メインナビゲーション" className="app-nav">
             <ul>
-              {navigationItems.map((item) => (
+              {primaryNavigationItems.map((item) => (
                 <li key={item.href}>
                   <Link
                     aria-label={item.label}
@@ -230,9 +260,63 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                   </Link>
                 </li>
               ))}
+              {/* Mobile-only: More sheet containing secondary items + profile */}
+              <li className="app-nav-item--more">
+                <details className="app-nav-more">
+                  <summary
+                    aria-label="その他"
+                    aria-current={isMoreActive ? "page" : undefined}
+                    className={
+                      isMoreActive ? "app-nav-more-trigger is-active" : "app-nav-more-trigger"
+                    }
+                    data-tooltip="その他"
+                    role="button"
+                    title="その他"
+                  >
+                    <MoreIcon />
+                    <span className="app-nav-label">その他</span>
+                  </summary>
+                  <div className="app-nav-more-panel" role="menu">
+                    {secondaryNavigationItems.map((item) => (
+                      <Link
+                        key={item.href}
+                        aria-current={
+                          isActive(pathname, item.href) ? "page" : undefined
+                        }
+                        className="app-nav-more-link"
+                        href={item.href}
+                        role="menuitem"
+                      >
+                        <item.Icon />
+                        <span>{item.label}</span>
+                      </Link>
+                    ))}
+                    <Link
+                      aria-current={
+                        isActive(pathname, "/app/profile") ? "page" : undefined
+                      }
+                      className="app-nav-more-link"
+                      href="/app/profile"
+                      role="menuitem"
+                    >
+                      <PersonaIcon />
+                      <span>プロフィール</span>
+                    </Link>
+                  </div>
+                </details>
+              </li>
+
             </ul>
           </nav>
           <div className="app-header-account">
+            <Link
+              aria-label="通知"
+              className="app-header-bell"
+              href="/app/reminders"
+              title="通知"
+            >
+              <RemindersIcon />
+            </Link>
             <details className="app-account-menu">
               <summary
                 aria-label={`アカウント ${user.loginId}`}
@@ -248,6 +332,12 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                 </span>
               </summary>
               <div className="app-account-popover">
+                <Link
+                  className="button button-secondary"
+                  href="/app/profile"
+                >
+                  プロフィール
+                </Link>
                 <button
                   className="button button-secondary"
                   disabled={loggingOut}
