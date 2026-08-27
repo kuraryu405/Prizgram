@@ -27,6 +27,10 @@ export function ApplicationUpdateForm({
   const [status, setStatus] = useState("");
   const [nextAction, setNextAction] = useState(initialNextAction ?? "");
   const [note, setNote] = useState(initialNote ?? "");
+  const [savedNextAction, setSavedNextAction] = useState(
+    (initialNextAction ?? "").trim(),
+  );
+  const [savedNote, setSavedNote] = useState((initialNote ?? "").trim());
   const [pending, setPending] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -35,19 +39,19 @@ export function ApplicationUpdateForm({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
     setNextAction(initialNextAction ?? "");
+    setSavedNextAction((initialNextAction ?? "").trim());
   }, [initialNextAction]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled form from server props
     setNote(initialNote ?? "");
+    setSavedNote((initialNote ?? "").trim());
   }, [initialNote]);
 
   const hasStatusChange = status !== "";
   const nextActionTrimmed = nextAction.trim();
   const noteTrimmed = note.trim();
-  const initialNextActionTrimmed = (initialNextAction ?? "").trim();
-  const initialNoteTrimmed = (initialNote ?? "").trim();
-  const nextActionDirty = nextActionTrimmed !== initialNextActionTrimmed;
-  const noteDirty = noteTrimmed !== initialNoteTrimmed;
+  const nextActionDirty = nextActionTrimmed !== savedNextAction;
+  const noteDirty = noteTrimmed !== savedNote;
   const canSubmit = hasStatusChange || nextActionDirty || noteDirty;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -79,8 +83,14 @@ export function ApplicationUpdateForm({
       // Keep form in sync with server after successful mutation.
       // If the field was cleared (sent null), the server will have null,
       // otherwise it will have the new trimmed value.
-      if (nextActionDirty) setNextAction(nextActionTrimmed);
-      if (noteDirty) setNote(noteTrimmed);
+      if (nextActionDirty) {
+        setSavedNextAction(nextActionTrimmed);
+        setNextAction(nextActionTrimmed);
+      }
+      if (noteDirty) {
+        setSavedNote(noteTrimmed);
+        setNote(noteTrimmed);
+      }
       setSuccessMessage("更新しました。");
       router.refresh();
     } catch (error) {
