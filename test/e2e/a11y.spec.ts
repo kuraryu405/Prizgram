@@ -57,7 +57,7 @@ async function expectNoSeriousViolations(
 }
 
 test.describe("accessibility regression guard", () => {
-  for (const path of ["/login", "/register"]) {
+  for (const path of ["/", "/login", "/register"]) {
     test(`unauthenticated ${path} has no serious axe violations`, async ({
       page,
     }) => {

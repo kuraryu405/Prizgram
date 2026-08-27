@@ -1,246 +1,491 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import dynamic from "next/dynamic";
+import {
+  MotionConfig,
+  animate,
+  motion,
+  useInView,
+  useMotionValue,
+  useMotionValueEvent,
+  useReducedMotion,
+  useScroll,
+  useSpring,
+  useTransform,
+  type AnimationPlaybackControls,
+  type MotionValue,
+} from "motion/react";
+import {
+  Component,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-const LOGO_VIEWBOX_SIZE = 120;
-const INTRO_DURATION_MS = 2_400;
+import {
+  landingChapters,
+  landingProofs,
+  type LandingChapter,
+  type LandingChapterId,
+} from "./landing-content";
+import {
+  selectInitialSceneQuality,
+  type SceneQuality,
+} from "./landing-scene-model";
 
-type Particle = {
-  startX: number;
-  startY: number;
-  targetX: number;
-  targetY: number;
-  phase: number;
-  size: number;
-  hue: number;
+const LandingThreeScene = dynamic(() => import("./landing-three-scene"), {
+  loading: () => null,
+  ssr: false,
+});
+
+type ActivePanel = "hero" | LandingChapterId;
+
+const sceneCopy: Record<
+  ActivePanel,
+  { bottomLeft: string; bottomRight: string; topLeft: string; topRight: string }
+> = {
+  hero: {
+    topLeft: "CONTINUOUS CAREER CONTEXT",
+    topRight: "MVP LOOP",
+    bottomLeft: "DIALOGUE → DECISION",
+    bottomRight: "FEEDBACK → NEXT SEARCH",
+  },
+  persona: {
+    topLeft: "01 / HEARING",
+    topRight: "6 ANSWERS",
+    bottomLeft: "EVIDENCE IN",
+    bottomRight: "APPROVAL BEFORE UPDATE",
+  },
+  discovery: {
+    topLeft: "02 / DISCOVERY",
+    topRight: "APPROVED PERSONA",
+    bottomLeft: "JOB SEARCH API",
+    bottomRight: "MANUAL IMPORT",
+  },
+  scoring: {
+    topLeft: "03 / SCORING",
+    topRight: "3 INDEPENDENT AXES",
+    bottomLeft: "SOURCE EVIDENCE",
+    bottomRight: "UNCERTAINTY VISIBLE",
+  },
+  learning: {
+    topLeft: "04 / SELECTION",
+    topRight: "STATUS / DEADLINE",
+    bottomLeft: "REFLECTION IN",
+    bottomRight: "RE-SCORE / RE-DISCOVER",
+  },
 };
 
-const logoPaths = [
-  "M28 92V28h31c19 0 31 10 31 25S78 78 59 78H45",
-  "M73 92c16-4 28-14 34-28",
-  "M89 22v12M83 28h12",
-];
+type SceneBoundaryProps = {
+  children: ReactNode;
+  fallback: ReactNode;
+};
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
+type SceneBoundaryState = {
+  failed: boolean;
+};
+
+class SceneBoundary extends Component<SceneBoundaryProps, SceneBoundaryState> {
+  override state: SceneBoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): SceneBoundaryState {
+    return { failed: true };
+  }
+
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
 }
 
-function createParticles(
-  width: number,
-  height: number,
-  logo: SVGSVGElement,
-): Particle[] {
-  const targetPoints: Array<{ x: number; y: number }> = [];
-
-  logo.querySelectorAll("path").forEach((path) => {
-    if (typeof path.getTotalLength !== "function") return;
-    const length = path.getTotalLength();
-    const samples = Math.max(16, Math.ceil(length / 1.25));
-    for (let index = 0; index < samples; index += 1) {
-      const point = path.getPointAtLength((length * index) / samples);
-      targetPoints.push({ x: point.x, y: point.y });
-    }
-  });
-
-  if (targetPoints.length === 0) return [];
-
-  const count = clamp(Math.round(width / 1.8), 280, 560);
-  const scale = Math.min(width * 0.38, height * 0.72) / LOGO_VIEWBOX_SIZE;
-  const centerX = width * 0.5;
-  const centerY = height * 0.43;
-
-  return Array.from({ length: count }, (_, index) => {
-    const point = targetPoints[index % targetPoints.length]!;
-    const targetX = centerX + (point.x - LOGO_VIEWBOX_SIZE / 2) * scale;
-    const targetY = centerY + (point.y - LOGO_VIEWBOX_SIZE / 2) * scale;
-    return {
-      startX: Math.random() * width,
-      startY: Math.random() * height,
-      targetX: targetX + (Math.random() - 0.5) * 1.8,
-      targetY: targetY + (Math.random() - 0.5) * 1.8,
-      phase: Math.random() * Math.PI * 2,
-      size: 0.8 + Math.random() * 1.8,
-      hue: 145 + Math.random() * 32,
-    };
-  });
-}
-
-function StaticLogo() {
+function StaticLogo({ opacity }: { opacity?: MotionValue<number> }) {
   return (
-    <div aria-hidden="true" className="landing-logo-lockup">
-      <svg className="landing-logo-static" viewBox="0 0 120 120">
-        {logoPaths.map((path) => (
-          <path d={path} key={path} />
-        ))}
-      </svg>
-      <span>PRIZGRAM</span>
-    </div>
+    <motion.div
+      aria-hidden="true"
+      className="landing-static-logo"
+      data-testid="landing-static-logo"
+      style={opacity === undefined ? undefined : { opacity }}
+    >
+      <span className="landing-static-glow" />
+      <Image
+        alt=""
+        height={1_254}
+        priority
+        src="/prizgram-icon-refined.svg"
+        width={1_254}
+      />
+    </motion.div>
   );
 }
 
-export function LandingExperience() {
-  const stageRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const targetLogoRef = useRef<SVGSVGElement>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const doneRef = useRef(false);
-  const [introDone, setIntroDone] = useState(false);
+function ChapterPanel({
+  chapter,
+  progress,
+  reduceMotion,
+}: {
+  chapter: LandingChapter;
+  progress: MotionValue<number>;
+  reduceMotion: boolean;
+}) {
+  const opacity = useTransform(progress, chapter.range, [0, 1, 1, 0]);
+  const y = useTransform(progress, chapter.range, [48, 0, 0, -48]);
 
-  const finishIntro = useCallback(() => {
-    doneRef.current = true;
-    if (animationFrameRef.current !== null) {
-      window.cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
+  return (
+    <article
+      aria-labelledby={`landing-${chapter.id}-title`}
+      className={`landing-chapter landing-chapter-${chapter.id}`}
+      data-chapter={chapter.id}
+    >
+      <motion.div
+        className="landing-chapter-card"
+        style={reduceMotion ? undefined : { opacity, y }}
+      >
+        <div className="landing-chapter-meta">
+          <span>{chapter.index}</span>
+          <span>{chapter.eyebrow}</span>
+        </div>
+        <h2 id={`landing-${chapter.id}-title`}>{chapter.title}</h2>
+        <p>{chapter.body}</p>
+        <span className="landing-chapter-metric">{chapter.metric}</span>
+      </motion.div>
+    </article>
+  );
+}
+
+function resolveActivePanel(progress: number): ActivePanel {
+  if (progress < 0.12) return "hero";
+  if (progress < 0.34) return "persona";
+  if (progress < 0.55) return "discovery";
+  if (progress < 0.77) return "scoring";
+  return "learning";
+}
+
+function detectInitialQuality(): SceneQuality {
+  const navigatorWithMemory = navigator as Navigator & {
+    deviceMemory?: number;
+  };
+  return selectInitialSceneQuality({
+    coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+    deviceMemory: navigatorWithMemory.deviceMemory,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    width: window.innerWidth,
+  });
+}
+
+export function LandingExperience() {
+  const narrativeRef = useRef<HTMLElement>(null);
+  const sceneRef = useRef<HTMLDivElement>(null);
+  const introAnimationRef = useRef<AnimationPlaybackControls | null>(null);
+  const activePanelRef = useRef<ActivePanel>("hero");
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const introProgress = useMotionValue(0);
+  const shouldReduceMotion = useReducedMotion() ?? false;
+  const sceneInView = useInView(sceneRef, { amount: 0.05 });
+  const [documentVisible, setDocumentVisible] = useState(true);
+  const [introDone, setIntroDone] = useState(shouldReduceMotion);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [quality, setQuality] = useState<SceneQuality>("balanced");
+  const [activePanel, setActivePanel] = useState<ActivePanel>("hero");
+  const { scrollYProgress } = useScroll({
+    target: narrativeRef,
+    offset: ["start start", "end end"],
+  });
+  const storyProgress = useSpring(scrollYProgress, {
+    damping: 30,
+    mass: 0.42,
+    stiffness: 92,
+  });
+  const progressScale = useTransform(storyProgress, [0, 1], [0, 1]);
+  const exactLogoOpacity = useTransform(() => {
+    const intro = introProgress.get();
+    const story = storyProgress.get();
+    const smoothstep = (start: number, end: number, value: number) => {
+      const normalized = Math.min(
+        1,
+        Math.max(0, (value - start) / (end - start)),
+      );
+      return normalized * normalized * (3 - 2 * normalized);
+    };
+    const introLock = smoothstep(0.82, 1, intro);
+    const openingLock = 1 - smoothstep(0.08, 0.16, story);
+    const closingLock = smoothstep(0.88, 0.98, story);
+    return introLock * Math.max(openingLock, closingLock);
+  });
+
+  const playIntro = useCallback(() => {
+    introAnimationRef.current?.stop();
+    if (shouldReduceMotion) {
+      introProgress.set(1);
+      setIntroDone(true);
+      return;
     }
-    setIntroDone(true);
-    try {
-      window.sessionStorage.setItem("prizgram-landing-intro-seen", "1");
-    } catch {
-      // Storage can be unavailable in privacy-focused browser contexts.
-    }
+    introProgress.set(0);
+    setIntroDone(false);
+    introAnimationRef.current = animate(introProgress, 1, {
+      duration: 2.4,
+      ease: [0.16, 1, 0.3, 1],
+      onComplete: () => setIntroDone(true),
+    });
+  }, [introProgress, shouldReduceMotion]);
+
+  useEffect(() => {
+    const qualityFrame = window.requestAnimationFrame(() => {
+      setQuality(detectInitialQuality());
+    });
+    return () => window.cancelAnimationFrame(qualityFrame);
   }, []);
 
   useEffect(() => {
-    const stage = stageRef.current;
-    const canvas = canvasRef.current;
-    const logo = targetLogoRef.current;
-    if (!stage || !canvas || !logo) return;
-    doneRef.current = false;
-
-    let resizeObserver: ResizeObserver | null = null;
-    let particles: Particle[] = [];
-    let context: CanvasRenderingContext2D | null = null;
-    let startedAt = 0;
-
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    let alreadySeen = false;
-    try {
-      alreadySeen =
-        window.sessionStorage.getItem("prizgram-landing-intro-seen") === "1";
-    } catch {
-      alreadySeen = false;
-    }
-
-    const resize = () => {
-      const rect = stage.getBoundingClientRect();
-      const width = Math.max(1, rect.width);
-      const height = Math.max(1, rect.height);
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      try {
-        context = canvas.getContext("2d");
-      } catch {
-        context = null;
-      }
-      context?.setTransform(dpr, 0, 0, dpr, 0, 0);
-      particles = createParticles(width, height, logo);
+    const introFrame = window.requestAnimationFrame(playIntro);
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) playIntro();
     };
-
-    resize();
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(resize);
-      resizeObserver.observe(stage);
-    }
-
-    if (!context || reducedMotion || alreadySeen || particles.length === 0) {
-      finishIntro();
-      return () => resizeObserver?.disconnect();
-    }
-
-    const draw = (timestamp: number) => {
-      if (doneRef.current || !context) return;
-      if (startedAt === 0) startedAt = timestamp;
-      const progress = clamp((timestamp - startedAt) / INTRO_DURATION_MS, 0, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const turbulence = (1 - progress) * (1 - progress) * 18;
-      const rect = stage.getBoundingClientRect();
-      context.clearRect(0, 0, rect.width, rect.height);
-
-      for (const particle of particles) {
-        const angle = particle.phase + progress * Math.PI * 3.2;
-        const swirlX = Math.cos(angle) * turbulence;
-        const swirlY = Math.sin(angle) * turbulence;
-        const x =
-          particle.startX +
-          (particle.targetX - particle.startX) * eased +
-          swirlX;
-        const y =
-          particle.startY +
-          (particle.targetY - particle.startY) * eased +
-          swirlY;
-        const alpha = 0.28 + eased * 0.72;
-        context.beginPath();
-        context.arc(
-          x,
-          y,
-          particle.size * (0.75 + eased * 0.25),
-          0,
-          Math.PI * 2,
-        );
-        context.fillStyle = `hsla(${particle.hue}, 72%, 66%, ${alpha})`;
-        context.fill();
-      }
-
-      if (progress >= 1) {
-        finishIntro();
-        resizeObserver?.disconnect();
-        context.clearRect(0, 0, rect.width, rect.height);
-        return;
-      }
-      animationFrameRef.current = window.requestAnimationFrame(draw);
-    };
-
-    animationFrameRef.current = window.requestAnimationFrame(draw);
+    window.addEventListener("pageshow", onPageShow);
     return () => {
-      doneRef.current = true;
-      if (animationFrameRef.current !== null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-      }
-      resizeObserver?.disconnect();
+      window.cancelAnimationFrame(introFrame);
+      introAnimationRef.current?.stop();
+      window.removeEventListener("pageshow", onPageShow);
     };
-  }, [finishIntro]);
+  }, [playIntro]);
+
+  useEffect(() => {
+    const onVisibilityChange = () =>
+      setDocumentVisible(document.visibilityState === "visible");
+    onVisibilityChange();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
+  useMotionValueEvent(storyProgress, "change", (value) => {
+    const next = resolveActivePanel(value);
+    if (next === activePanelRef.current) return;
+    activePanelRef.current = next;
+    setActivePanel(next);
+  });
+
+  const skipIntro = useCallback(() => {
+    introAnimationRef.current?.stop();
+    introProgress.set(1);
+    setIntroDone(true);
+  }, [introProgress]);
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (shouldReduceMotion) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      pointerX.set(((event.clientX - rect.left) / rect.width - 0.5) * 2);
+      pointerY.set(-((event.clientY - rect.top) / rect.height - 0.5) * 2);
+    },
+    [pointerX, pointerY, shouldReduceMotion],
+  );
+
+  const resetPointer = useCallback(() => {
+    pointerX.set(0);
+    pointerY.set(0);
+  }, [pointerX, pointerY]);
+
+  const handleSceneReady = useCallback(() => setSceneReady(true), []);
 
   return (
-    <section
-      aria-label="Prizgramのロゴアニメーション"
-      className="landing-visual"
-    >
-      <div
-        className={`landing-stage${introDone ? " is-revealed" : ""}`}
-        ref={stageRef}
+    <MotionConfig reducedMotion="user">
+      <header className="landing-header">
+        <Link aria-label="Prizgram ホーム" className="landing-brand" href="/">
+          <Image
+            alt=""
+            height={42}
+            priority
+            src="/prizgram-icon-refined.svg"
+            width={42}
+          />
+          <span>PRIZGRAM</span>
+        </Link>
+        <nav aria-label="アカウント" className="landing-header-actions">
+          <Link className="landing-login-link" href="/login">
+            ログイン
+          </Link>
+          <Link className="button landing-header-cta" href="/register">
+            はじめる
+          </Link>
+        </nav>
+      </header>
+
+      <section
+        aria-label="Prizgramの仕組み"
+        className="landing-narrative"
+        data-active-chapter={activePanel}
+        data-intro-state={introDone ? "complete" : "running"}
+        data-quality={quality}
+        onPointerLeave={resetPointer}
+        onPointerMove={handlePointerMove}
+        ref={narrativeRef}
       >
-        <div aria-hidden="true" className="landing-orbit landing-orbit-one" />
-        <div aria-hidden="true" className="landing-orbit landing-orbit-two" />
-        <canvas
-          aria-hidden="true"
-          className="landing-particles"
-          ref={canvasRef}
-        />
-        <svg
-          aria-hidden="true"
-          className="landing-logo-target"
-          ref={targetLogoRef}
-          viewBox="0 0 120 120"
-        >
-          {logoPaths.map((path) => (
-            <path d={path} key={path} />
+        <div className="landing-story-sticky" ref={sceneRef}>
+          <div
+            aria-hidden="true"
+            className={`landing-scene${sceneReady ? " is-ready" : ""}`}
+            data-scene-ready={sceneReady ? "true" : "false"}
+          >
+            <div className="landing-scene-grid" />
+            <StaticLogo
+              opacity={
+                sceneReady && !shouldReduceMotion ? exactLogoOpacity : undefined
+              }
+            />
+            {!shouldReduceMotion && (
+              <SceneBoundary fallback={null}>
+                <div className="landing-scene-canvas">
+                  <LandingThreeScene
+                    active={sceneInView && documentVisible}
+                    introProgress={introProgress}
+                    onQualityChange={setQuality}
+                    onReady={handleSceneReady}
+                    pointerX={pointerX}
+                    pointerY={pointerY}
+                    quality={quality}
+                    storyProgress={storyProgress}
+                  />
+                </div>
+              </SceneBoundary>
+            )}
+            <div className="landing-scene-label landing-scene-label-top">
+              <span>{sceneCopy[activePanel].topLeft}</span>
+              <span>{sceneCopy[activePanel].topRight}</span>
+            </div>
+            <div className="landing-scene-label landing-scene-label-bottom">
+              <span>{sceneCopy[activePanel].bottomLeft}</span>
+              <span>{sceneCopy[activePanel].bottomRight}</span>
+            </div>
+          </div>
+          <div aria-hidden="true" className="landing-progress">
+            <motion.span style={{ scaleY: progressScale }} />
+            <b>
+              {activePanel === "hero"
+                ? "00"
+                : landingChapters.find((chapter) => chapter.id === activePanel)
+                    ?.index}
+            </b>
+          </div>
+        </div>
+
+        <div className="landing-panels">
+          <section
+            aria-labelledby="landing-title"
+            className="landing-hero-panel"
+          >
+            <motion.div
+              animate={{ opacity: 1, y: 0 }}
+              className="landing-hero-copy"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 24 }}
+              transition={{ delay: 0.12, duration: 0.7 }}
+            >
+              <p className="landing-pill">就活パーソナルエージェント</p>
+              <h1 id="landing-title">
+                選考を重ねるたび、
+                <span>あなたを学習する。</span>
+              </h1>
+              <p className="landing-lead">
+                対話から作る就活ペルソナを、求人探索、根拠付き3軸評価、応募・締切管理へ。選考結果と振り返りは、あなたが承認したときだけ次の探索に反映します。
+              </p>
+              <div className="landing-actions">
+                <Link
+                  className="button landing-primary-action"
+                  href="/register"
+                >
+                  ペルソナ作成をはじめる
+                  <span aria-hidden="true">↗</span>
+                </Link>
+                <Link className="landing-secondary-action" href="/login">
+                  アカウントをお持ちの方
+                </Link>
+              </div>
+              <div aria-hidden="true" className="landing-scroll-cue">
+                <span />
+                SCROLL TO TRACE THE LOOP
+              </div>
+            </motion.div>
+          </section>
+
+          {landingChapters.map((chapter) => (
+            <ChapterPanel
+              chapter={chapter}
+              key={chapter.id}
+              progress={storyProgress}
+              reduceMotion={shouldReduceMotion}
+            />
           ))}
-        </svg>
-        <StaticLogo />
-        <span aria-hidden="true" className="landing-stage-caption">
-          YOUR NEXT MOVE, WITH EVIDENCE.
-        </span>
-      </div>
-      {!introDone && (
-        <button className="landing-skip" onClick={finishIntro} type="button">
-          アニメーションをスキップ
-        </button>
-      )}
-    </section>
+        </div>
+
+        {!introDone && !shouldReduceMotion && (
+          <button className="landing-skip" onClick={skipIntro} type="button">
+            イントロをスキップ
+          </button>
+        )}
+      </section>
+
+      <section
+        aria-labelledby="landing-proof-title"
+        className="landing-proof-section"
+      >
+        <div className="landing-section-heading">
+          <p className="landing-pill">WHY PRIZGRAM</p>
+          <h2 id="landing-proof-title">
+            相談できる環境の差を、機会の差にしない。
+          </h2>
+          <p>
+            強いOB・OGネットワークや体系的な就活支援にアクセスしづらくても、自己理解・求人探索・選考管理をひと続きで進められる状態を目指します。ただし、あなたのモデルと最終判断はあなた自身の手元に残します。
+          </p>
+        </div>
+        <div className="landing-proof-grid">
+          {landingProofs.map((proof, index) => (
+            <motion.article
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 28 }}
+              key={proof.label}
+              transition={{ delay: index * 0.08, duration: 0.55 }}
+              viewport={{ amount: 0.35, once: true }}
+              whileInView={{ opacity: 1, y: 0 }}
+            >
+              <div className="landing-proof-meta">
+                <span>{proof.index}</span>
+                <span>{proof.label}</span>
+              </div>
+              <h3>{proof.title}</h3>
+              <p>{proof.body}</p>
+              <span aria-hidden="true" className="landing-proof-orbit" />
+            </motion.article>
+          ))}
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="landing-cta-title"
+        className="landing-final-cta"
+      >
+        <div className="landing-cta-signal" aria-hidden="true">
+          {Array.from({ length: 9 }, (_, index) => (
+            <span key={index} />
+          ))}
+        </div>
+        <p className="landing-pill">YOUR NEXT MOVE, WITH EVIDENCE.</p>
+        <h2 id="landing-cta-title">
+          次の選択を、
+          <span>次の学びへ。</span>
+        </h2>
+        <p>まずは6つの質問から、根拠のある就活ペルソナをつくります。</p>
+        <Link className="button landing-final-action" href="/register">
+          Prizgramをはじめる
+          <span aria-hidden="true">↗</span>
+        </Link>
+      </section>
+
+      <footer className="landing-footer">
+        <span>PRIZGRAM</span>
+        <span>PERSONAL CAREER AGENT</span>
+      </footer>
+    </MotionConfig>
   );
 }
