@@ -10,6 +10,17 @@ import {
   verifyPassword,
 } from "./password";
 
+class FailingGate extends ConcurrencyGate {
+  constructor(private readonly failure: Error) {
+    super({ maxConcurrent: 1, maxQueued: 0, queueTimeoutMs: 5_000 });
+  }
+
+  override run<T>(task: () => Promise<T>): Promise<T> {
+    void task;
+    return Promise.reject(this.failure);
+  }
+}
+
 function deriveLegacyKey(
   password: string,
   salt: Buffer,
@@ -78,7 +89,13 @@ describe("password hashing", () => {
       randomBytes(16).toString("base64url"),
       randomBytes(32).toString("base64url"),
     ].join("$");
-    await expect(verifyPassword("anything", inflated)).resolves.toBe(false);
+    await expect(
+      verifyPassword(
+        "anything",
+        inflated,
+        new FailingGate(new Error("unsafe parameters must not derive")),
+      ),
+    ).resolves.toBe(false);
   });
 
   it("rejects malformed hashes", async () => {
@@ -147,6 +164,22 @@ describe("password hashing", () => {
 
     releaseSlot();
     await held;
+  });
+
+  it("propagates unexpected derive failures from password verification", async () => {
+    const injected = new Error("crypto backend exploded");
+    const encoded = [
+      "scrypt",
+      "16384",
+      "8",
+      "1",
+      Buffer.alloc(16).toString("base64url"),
+      Buffer.alloc(32).toString("base64url"),
+    ].join("$");
+
+    await expect(
+      verifyPassword("anything", encoded, new FailingGate(injected)),
+    ).rejects.toBe(injected);
   });
 
   it("propagates non-capacity failures unchanged", async () => {
