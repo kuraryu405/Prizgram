@@ -97,6 +97,19 @@ describe("domain schemas", () => {
       createScoringLlmOutputSchema(new Set(["e1"])).safeParse(validScoring)
         .success,
     ).toBe(false);
+
+    const axisAwareSchema = createScoringLlmOutputSchema({
+      skillFit: new Set(["e1"]),
+      cultureValueFit: new Set(["e2"]),
+      difficultyGap: new Set(["e3"]),
+    });
+    expect(axisAwareSchema.safeParse(validScoring).success).toBe(true);
+    expect(
+      axisAwareSchema.safeParse({
+        ...validScoring,
+        skillFit: { ...validScoring.skillFit, evidenceRefs: ["e2"] },
+      }).success,
+    ).toBe(false);
   });
 
   it("provides stable job evidence ids and validates deadline time zones", () => {

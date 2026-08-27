@@ -7,6 +7,7 @@ import {
   jobDifficultyLevels,
   jobSnapshotSchema,
   skillLevels,
+  type ScoringEvidenceAllowList,
   type JobSnapshot,
   type PersonaSnapshot,
   type ScoringOutput,
@@ -124,7 +125,7 @@ export const scoringProviderOutputSchema = z
   .strict();
 
 export function createScoringStructuredOutput(
-  allowedEvidenceRefs: ReadonlySet<string>,
+  allowedEvidenceRefs: ScoringEvidenceAllowList,
 ): StructuredOutputContract<ScoringOutput, ScoringOutput> {
   return {
     providerSchema: scoringProviderOutputSchema,

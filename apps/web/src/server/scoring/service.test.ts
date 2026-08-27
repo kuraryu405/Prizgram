@@ -17,6 +17,7 @@ import { OpenAiCompatibleClient } from "../llm";
 import {
   SCORING_AXES,
   ScoringService,
+  allowedEvidenceRefsByAxis,
   allowedEvidenceRefSet,
   buildScoringMessages,
 } from "./service";
@@ -157,7 +158,7 @@ function scoringPayload(overrides?: {
       evidenceRefs:
         overrides?.fabricatedRef !== undefined
           ? [overrides.fabricatedRef]
-          : ["ev:ts", "job:culture:1"],
+          : ["job:culture:1"],
     },
     difficultyGap: {
       score: overrides?.difficultyGapScore ?? 30,
@@ -232,7 +233,7 @@ describe("ScoringService.evaluateJob", () => {
     expect(result.detail.personaVersionId).toBe(`persona-v-user-a-1`);
     expect(result.detail.jobVersionId).toBe(`job-ver-job-1-1`);
     expect(result.detail.model).toBe("test-model");
-    expect(result.detail.promptVersion).toBe("scoring-v1");
+    expect(result.detail.promptVersion).toBe("scoring-v2");
     expect(Object.keys(result.detail.axes).sort()).toEqual(
       [...SCORING_AXES].sort(),
     );
@@ -572,6 +573,17 @@ describe("scoring helpers", () => {
     expect(refs.has("job:req:1")).toBe(true);
     expect(refs.has("job:culture:1")).toBe(true);
     expect(refs.size).toBe(4);
+  });
+
+  it("keeps job signal citations scoped to their score axis", () => {
+    const refs = allowedEvidenceRefsByAxis(personaSnapshot, jobSnapshot);
+    expect(refs.skillFit.has("job:req:1")).toBe(true);
+    expect(refs.skillFit.has("job:culture:1")).toBe(false);
+    expect(refs.cultureValueFit.has("job:culture:1")).toBe(true);
+    expect(refs.cultureValueFit.has("job:req:1")).toBe(false);
+    expect(refs.cultureValueFit.has("ev:ts")).toBe(false);
+    expect(refs.difficultyGap.has("job:req:1")).toBe(true);
+    expect(refs.difficultyGap.has("job:culture:1")).toBe(false);
   });
 
   it("delimits external data inside the prompt", () => {

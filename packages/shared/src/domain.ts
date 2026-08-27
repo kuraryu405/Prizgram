@@ -206,15 +206,33 @@ export const scoringOutputSchema = z
   })
   .strict();
 
+export const scoringAxes = [
+  "skillFit",
+  "cultureValueFit",
+  "difficultyGap",
+] as const;
+
+export type ScoringAxis = (typeof scoringAxes)[number];
+
+export type AxisEvidenceRefs = Readonly<
+  Record<ScoringAxis, ReadonlySet<string>>
+>;
+
+export type ScoringEvidenceAllowList = ReadonlySet<string> | AxisEvidenceRefs;
+
 export const personaLlmOutputSchema = personaSnapshotSchema;
 
 export function createScoringLlmOutputSchema(
-  allowedEvidenceRefs: ReadonlySet<string>,
+  allowedEvidenceRefs: ScoringEvidenceAllowList,
 ) {
   return scoringOutputSchema.superRefine((output, context) => {
     for (const [axis, dimension] of Object.entries(output)) {
+      const axisRefs =
+        "has" in allowedEvidenceRefs
+          ? allowedEvidenceRefs
+          : allowedEvidenceRefs[axis as ScoringAxis];
       for (const [index, reference] of dimension.evidenceRefs.entries()) {
-        if (!allowedEvidenceRefs.has(reference)) {
+        if (!axisRefs?.has(reference)) {
           context.addIssue({
             code: "custom",
             message: "score evidence reference is not present in its inputs",
