@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
 import { newRequestId } from "@/lib/request-id";
+import { useToast } from "@/components/app/toast";
 
 type Proposed = {
   basePersonaVersionId: string;
@@ -22,6 +23,7 @@ export function PersonaUpdateFlow({
   applications,
 }: Readonly<{ applications: readonly { id: string; label: string }[] }>) {
   const router = useRouter();
+  const { notify } = useToast();
   const [reflection, setReflection] = useState("");
   const [applicationId, setApplicationId] = useState("");
   const [proposed, setProposed] = useState<Proposed | null>(null);
@@ -51,8 +53,12 @@ export function PersonaUpdateFlow({
         }),
       );
       setProposed(result);
+      notify({
+        variant: "success",
+        message: "ペルソナの更新案を作成しました。",
+      });
     } catch (e) {
-      setError(describeApiError(e));
+      notify({ variant: "error", message: describeApiError(e) });
     } finally {
       setPending(null);
     }
@@ -73,11 +79,12 @@ export function PersonaUpdateFlow({
         }),
       );
       setNewPersonaVersionId(approved.personaVersionId);
+      notify({ variant: "success", message: "ペルソナを更新しました。" });
       router.refresh();
       // Continue to re-evaluation with the newly approved version.
       await reEvaluate(approved.personaVersionId);
     } catch (e) {
-      setError(describeApiError(e));
+      notify({ variant: "error", message: describeApiError(e) });
       setPending(null);
     }
   };
@@ -94,8 +101,17 @@ export function PersonaUpdateFlow({
       );
       setAudit(result.audit);
       setRemainingJobs(result.remainingJobs);
+      notify({
+        variant: result.audit.some((entry) => entry.status !== "scored")
+          ? "warning"
+          : "success",
+        message:
+          result.remainingJobs > 0
+            ? `再評価を一部完了しました。残り${result.remainingJobs}件です。`
+            : "求人の再評価が完了しました。",
+      });
     } catch (e) {
-      setError(describeApiError(e));
+      notify({ variant: "error", message: describeApiError(e) });
     } finally {
       setPending(null);
     }

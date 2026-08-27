@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 export type ApplicationUpdateFormProps = Readonly<{
   applicationId: string;
@@ -24,6 +25,7 @@ export function ApplicationUpdateForm({
   initialNote,
 }: ApplicationUpdateFormProps) {
   const router = useRouter();
+  const { notify } = useToast();
   const [status, setStatus] = useState("");
   const [nextAction, setNextAction] = useState(initialNextAction ?? "");
   const [note, setNote] = useState(initialNote ?? "");
@@ -32,8 +34,6 @@ export function ApplicationUpdateForm({
   );
   const [savedNote, setSavedNote] = useState((initialNote ?? "").trim());
   const [pending, setPending] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Keep form in sync when the server-provided initial values change after refresh.
   useEffect(() => {
@@ -58,8 +58,6 @@ export function ApplicationUpdateForm({
     event.preventDefault();
     if (pending) return;
     setPending(true);
-    setFormError(null);
-    setSuccessMessage(null);
     try {
       await apiFetch<unknown>(
         `/api/applications/${encodeURIComponent(applicationId)}`,
@@ -91,10 +89,10 @@ export function ApplicationUpdateForm({
         setSavedNote(noteTrimmed);
         setNote(noteTrimmed);
       }
-      setSuccessMessage("更新しました。");
+      notify({ variant: "success", message: "応募情報を更新しました。" });
       router.refresh();
     } catch (error) {
-      setFormError(describeApiError(error));
+      notify({ variant: "error", message: describeApiError(error) });
     } finally {
       setPending(false);
     }
@@ -107,16 +105,6 @@ export function ApplicationUpdateForm({
       onSubmit={(e) => void onSubmit(e)}
     >
       <h2>更新</h2>
-      {formError !== null && (
-        <p className="form-alert" role="alert">
-          {formError}
-        </p>
-      )}
-      {successMessage !== null && (
-        <p className="form-success" role="status">
-          {successMessage}
-        </p>
-      )}
       <div className="field">
         <label htmlFor="application-status">ステータス変更（任意）</label>
         <select

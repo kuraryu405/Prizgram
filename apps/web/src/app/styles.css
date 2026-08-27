@@ -276,6 +276,107 @@ a {
   text-align: left;
 }
 
+/* Viewport notifications stay visible while the user operates on long lists. */
+.toast-region {
+  display: grid;
+  gap: 0.75rem;
+  inset-inline-end: 0.75rem;
+  max-width: min(24rem, calc(100vw - 1.5rem));
+  pointer-events: none;
+  position: fixed;
+  top: 0.75rem;
+  width: 100%;
+  z-index: 50;
+}
+
+.toast {
+  align-items: start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-inline-start: 0.3rem solid var(--color-primary);
+  border-radius: var(--radius-control);
+  box-shadow: 0 0.5rem 1.5rem rgb(27 39 34 / 0.16);
+  display: grid;
+  gap: 0.625rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 0.75rem;
+  pointer-events: auto;
+}
+
+.toast-error {
+  border-inline-start-color: var(--color-danger);
+}
+
+.toast-warning {
+  border-inline-start-color: #b7791f;
+}
+
+.toast-icon {
+  align-items: center;
+  background: var(--color-primary-soft);
+  border-radius: 999px;
+  color: var(--color-primary-strong);
+  display: inline-flex;
+  font-weight: 800;
+  height: 1.5rem;
+  justify-content: center;
+  line-height: 1;
+  width: 1.5rem;
+}
+
+.toast-error .toast-icon {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+}
+
+.toast-warning .toast-icon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.toast-content {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.toast-content strong {
+  font-size: 0.75rem;
+}
+
+.toast-content span {
+  overflow-wrap: anywhere;
+}
+
+.toast-dismiss {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 1.25rem;
+  height: 1.75rem;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 1.75rem;
+}
+
+.toast-dismiss:hover {
+  background: var(--color-surface-tint);
+  color: var(--color-text);
+}
+
+@media (max-width: 899px) {
+  .toast-region {
+    top: calc(3.75rem + env(safe-area-inset-top));
+  }
+}
+
 /* Cards and auth pages */
 
 .card {

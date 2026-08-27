@@ -3,8 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
-import { ApiClientError, apiFetch, jsonRequestInit } from "@/lib/api-client";
+import { apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 export type ApplicationAddFormProps = Readonly<{
   jobs: ReadonlyArray<{ jobId: string; company: string; role: string }>;
@@ -12,12 +13,11 @@ export type ApplicationAddFormProps = Readonly<{
 
 export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
   const router = useRouter();
+  const { notify } = useToast();
   const [jobId, setJobId] = useState(jobs[0]?.jobId ?? "");
   const [nextAction, setNextAction] = useState("");
   const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (jobs.length === 0) {
     return (
@@ -31,8 +31,6 @@ export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
     event.preventDefault();
     if (pending || jobId === "") return;
     setPending(true);
-    setFormError(null);
-    setSuccessMessage(null);
     try {
       await apiFetch<unknown>(
         "/api/applications",
@@ -44,19 +42,13 @@ export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
           ...(note.trim() === "" ? {} : { note: note.trim() }),
         }),
       );
-      setSuccessMessage("応募管理に追加しました。");
+      notify({ variant: "success", message: "応募管理に追加しました。" });
       setJobId("");
       setNextAction("");
       setNote("");
       router.refresh();
     } catch (error) {
-      setFormError(describeApiError(error));
-      if (
-        error instanceof ApiClientError &&
-        error.code === "APPLICATION_EXISTS"
-      ) {
-        setSuccessMessage(null);
-      }
+      notify({ variant: "error", message: describeApiError(error) });
     } finally {
       setPending(false);
     }
@@ -69,16 +61,6 @@ export function ApplicationAddForm({ jobs }: ApplicationAddFormProps) {
       onSubmit={(e) => void onSubmit(e)}
     >
       <h2>保存済み求人から応募を追加</h2>
-      {formError !== null && (
-        <p className="form-alert" role="alert">
-          {formError}
-        </p>
-      )}
-      {successMessage !== null && (
-        <p className="form-success" role="status">
-          {successMessage}
-        </p>
-      )}
       <div className="field">
         <label htmlFor="application-job">求人</label>
         <select

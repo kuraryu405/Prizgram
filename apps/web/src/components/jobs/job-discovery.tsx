@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -11,6 +10,7 @@ import {
   type ApiFieldErrors,
 } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 const employmentTypeOptions = [
   { value: "", label: "指定しない" },
@@ -78,12 +78,12 @@ function candidateBody(candidate: Candidate): string {
 
 export function JobDiscovery() {
   const router = useRouter();
+  const { notify } = useToast();
   const [keywords, setKeywords] = useState("");
   const [location, setLocation] = useState("");
   const [employmentType, setEmploymentType] = useState("");
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<DiscoverResult | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
   const [searchFieldErrors, setSearchFieldErrors] = useState<ApiFieldErrors>(
     {},
   );
@@ -92,15 +92,10 @@ export function JobDiscovery() {
   const [importedIds, setImportedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [importMessage, setImportMessage] = useState<string | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
 
   const onSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (searching) return;
-    setFormError(null);
-    setImportMessage(null);
-    setImportError(null);
     setSearchFieldErrors({});
 
     setSearching(true);
@@ -120,10 +115,10 @@ export function JobDiscovery() {
         const errors = error.fieldErrors ?? {};
         setSearchFieldErrors(errors);
         if (Object.keys(errors).length === 0) {
-          setFormError(describeApiError(error));
+          notify({ variant: "error", message: describeApiError(error) });
         }
       } else {
-        setFormError(describeApiError(error));
+        notify({ variant: "error", message: describeApiError(error) });
       }
     } finally {
       setSearching(false);
@@ -133,9 +128,6 @@ export function JobDiscovery() {
   const onImport = async (job: DiscoveredJob): Promise<void> => {
     const { candidate } = job;
     if (importingId !== null || importedIds.has(candidate.externalId)) return;
-    setImportMessage(null);
-    setImportError(null);
-
     setImportingId(candidate.externalId);
     try {
       const imported = await apiFetch<ImportResult>("/api/jobs", {
@@ -153,14 +145,15 @@ export function JobDiscovery() {
       setImportedIds(
         (previous) => new Set([...previous, candidate.externalId]),
       );
-      setImportMessage(
-        imported.duplicate
+      notify({
+        variant: imported.duplicate ? "info" : "success",
+        message: imported.duplicate
           ? `${candidate.title} は既に取り込み済みです。`
-          : `${candidate.title} を構造化して保存しました（バージョン${imported.version}）。`,
-      );
+          : `${candidate.title} を保存しました。`,
+      });
       router.refresh();
     } catch (error) {
-      setImportError(describeApiError(error));
+      notify({ variant: "error", message: describeApiError(error) });
     } finally {
       setImportingId(null);
     }
@@ -174,11 +167,6 @@ export function JobDiscovery() {
         {result?.jobs[0]?.sourceName ?? "Careerjet"}）から候補を取得します。
         条件を空のまま実行すると、ペルソナのみから条件が組み立てられます。
       </p>
-      {formError !== null && (
-        <p className="form-alert" role="alert">
-          {formError}
-        </p>
-      )}
       <form noValidate onSubmit={(event) => void onSearch(event)}>
         <div className="field-row">
           <div className="field">
@@ -248,17 +236,6 @@ export function JobDiscovery() {
           {searching ? "検索中…" : "求人を探す"}
         </button>
       </form>
-
-      {importMessage !== null && (
-        <p className="form-success" role="status">
-          {importMessage} <Link href="/app/jobs">取り込み済みの求人一覧へ</Link>
-        </p>
-      )}
-      {importError !== null && (
-        <p className="form-alert" role="alert">
-          {importError}
-        </p>
-      )}
 
       {result !== null && (
         <>

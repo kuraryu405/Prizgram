@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { apiFetch } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 /**
  * Dismisses a reminder via POST /api/reminders/[id]/dismiss. Reminders and
@@ -15,21 +16,21 @@ export function ReminderDismissButton({
   reminderId,
 }: Readonly<{ reminderId: string }>) {
   const router = useRouter();
+  const { notify } = useToast();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const dismiss = async () => {
     if (pending) return;
     setPending(true);
-    setError(null);
     try {
       await apiFetch<{ dismissed: boolean }>(
         `/api/reminders/${encodeURIComponent(reminderId)}/dismiss`,
         { method: "POST" },
       );
+      notify({ variant: "success", message: "通知を解除しました。" });
       router.refresh();
     } catch (caught) {
-      setError(describeApiError(caught));
+      notify({ variant: "error", message: describeApiError(caught) });
       setPending(false);
     }
   };
@@ -45,11 +46,6 @@ export function ReminderDismissButton({
       >
         {pending ? "解除中…" : "解除"}
       </button>
-      {error !== null && (
-        <p className="error-text" role="alert">
-          {error}
-        </p>
-      )}
     </span>
   );
 }

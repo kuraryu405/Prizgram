@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { ApiClientError, apiFetch } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 type AxesPayload = Record<
   string,
@@ -54,20 +55,12 @@ export function ScoreEvaluateButton({
   evidenceTextById: Readonly<Record<string, string>>;
 }>) {
   const router = useRouter();
+  const { notify } = useToast();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [axes, setAxes] = useState<AxesPayload | null>(null);
-  const [meta, setMeta] = useState<{
-    model: string;
-    promptVersion: string;
-    duplicate: boolean;
-    personaVersionId: string;
-    jobVersionId: string;
-  } | null>(null);
 
   const onEvaluate = async () => {
     if (pending) return;
-    setError(null);
     setPending(true);
     try {
       const result = await apiFetch<EvaluationResponse>(
@@ -75,19 +68,21 @@ export function ScoreEvaluateButton({
         { method: "POST" },
       );
       setAxes(result.detail.axes);
-      setMeta({
-        model: result.detail.model,
-        promptVersion: result.detail.promptVersion,
-        duplicate: result.duplicate,
-        personaVersionId: result.detail.personaVersionId,
-        jobVersionId: result.detail.jobVersionId,
+      notify({
+        variant: result.duplicate ? "info" : "success",
+        message: result.duplicate
+          ? "保存済みの評価を表示しています。"
+          : "評価を保存しました。",
       });
       router.refresh();
     } catch (caught) {
       if (caught instanceof ApiClientError) {
-        setError(describeApiError(caught));
+        notify({ variant: "error", message: describeApiError(caught) });
       } else {
-        setError("評価中に予期しないエラーが発生しました。");
+        notify({
+          variant: "error",
+          message: "評価中に予期しないエラーが発生しました。",
+        });
       }
     } finally {
       setPending(false);
@@ -107,11 +102,6 @@ export function ScoreEvaluateButton({
       >
         {pending ? "評価中…" : "この求人を評価する"}
       </button>
-      {error !== null && (
-        <p role="alert" className="error-text">
-          {error}
-        </p>
-      )}
       {axes !== null && (
         <>
           <ul className="axis-list">
@@ -144,14 +134,6 @@ export function ScoreEvaluateButton({
               );
             })}
           </ul>
-          {meta !== null && (
-            <p className="hint-text">
-              評価に使用: persona {meta.personaVersionId.slice(0, 8)} / job
-              version {meta.jobVersionId.slice(0, 8)} / model: {meta.model} /
-              prompt: {meta.promptVersion}
-              {meta.duplicate && "（既存の評価を再利用）"}
-            </p>
-          )}
         </>
       )}
     </div>

@@ -5,6 +5,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { okEnvelope, stubFetch } from "@/test-support/http";
 
+import { ToastProvider } from "@/components/app/toast";
+
 import {
   ApplicationUpdateForm,
   type ApplicationUpdateFormProps,
@@ -42,12 +44,20 @@ function submittedBody(fetchMock: ReturnType<typeof stubFetch>) {
   return JSON.parse(init.body as string) as Record<string, unknown>;
 }
 
+function renderForm(props: ApplicationUpdateFormProps = defaultProps) {
+  return render(
+    <ToastProvider>
+      <ApplicationUpdateForm {...props} />
+    </ToastProvider>,
+  );
+}
+
 describe("ApplicationUpdateForm", () => {
   test("renders current values and omits unchanged fields for status-only updates", async () => {
     const fetchMock = successfulPatch();
     const user = userEvent.setup();
 
-    render(<ApplicationUpdateForm {...defaultProps} />);
+    renderForm();
 
     expect(screen.getByLabelText("次のアクション")).toHaveProperty(
       "value",
@@ -71,7 +81,7 @@ describe("ApplicationUpdateForm", () => {
     const fetchMock = successfulPatch();
     const user = userEvent.setup();
 
-    render(<ApplicationUpdateForm {...defaultProps} />);
+    renderForm();
 
     await user.clear(screen.getByLabelText("次のアクション"));
     await user.clear(
@@ -93,14 +103,16 @@ describe("ApplicationUpdateForm", () => {
   test("syncs new server props as the rendered values and clean baseline", async () => {
     const fetchMock = successfulPatch();
     const user = userEvent.setup();
-    const view = render(<ApplicationUpdateForm {...defaultProps} />);
+    const view = renderForm();
 
     view.rerender(
-      <ApplicationUpdateForm
-        {...defaultProps}
-        initialNextAction="面接日程を返信する"
-        initialNote="候補日は金曜日"
-      />,
+      <ToastProvider>
+        <ApplicationUpdateForm
+          {...defaultProps}
+          initialNextAction="面接日程を返信する"
+          initialNote="候補日は金曜日"
+        />
+      </ToastProvider>,
     );
 
     await waitFor(() =>

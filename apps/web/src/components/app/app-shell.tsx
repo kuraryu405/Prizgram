@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { describeApiError } from "@/lib/error-messages";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { useToast } from "@/components/app/toast";
 
 function HomeIcon() {
   return (
@@ -132,10 +133,10 @@ function isActive(pathname: string, href: string): boolean {
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const { user, status, logout, reloadSession } = useAuth();
+  const { notify } = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
@@ -177,13 +178,12 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const handleLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
-    setLogoutError(null);
     try {
       await logout();
       router.replace("/");
     } catch (error) {
       setLoggingOut(false);
-      setLogoutError(describeApiError(error));
+      notify({ variant: "error", message: describeApiError(error) });
     }
   };
 
@@ -226,11 +226,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </button>
           </div>
         </header>
-        {logoutError !== null && (
-          <p className="form-alert app-shell-alert" role="alert">
-            {logoutError}
-          </p>
-        )}
         <main className="app-main" id="main-content">
           {children}
         </main>

@@ -8,6 +8,7 @@ import { errorEnvelope, okEnvelope, stubFetch } from "@/test-support/http";
 import { AuthProvider } from "@/components/auth/auth-provider";
 
 import { AppShell } from "./app-shell";
+import { ToastProvider } from "./toast";
 
 const navigationMocks = vi.hoisted(() => ({
   replace: vi.fn(),
@@ -32,9 +33,11 @@ afterEach(() => {
 function renderShell() {
   return render(
     <AuthProvider>
-      <AppShell>
-        <p data-testid="content">本文</p>
-      </AppShell>
+      <ToastProvider>
+        <AppShell>
+          <p data-testid="content">本文</p>
+        </AppShell>
+      </ToastProvider>
     </AuthProvider>,
   );
 }

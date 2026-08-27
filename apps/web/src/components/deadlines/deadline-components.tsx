@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { ApiClientError, apiFetch, jsonRequestInit } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 export type DeadlineToggleProps = Readonly<{
   deadlineId: string;
@@ -13,22 +14,26 @@ export type DeadlineToggleProps = Readonly<{
 
 export function DeadlineToggle({ deadlineId, completed }: DeadlineToggleProps) {
   const router = useRouter();
+  const { notify } = useToast();
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const toggle = async () => {
     if (pending) return;
     setPending(true);
-    setError(null);
     try {
       await apiFetch<unknown>(
         `/api/deadlines/${encodeURIComponent(deadlineId)}`,
         jsonRequestInit("PATCH", { completed: !completed }),
       );
+      notify({
+        variant: "success",
+        message: completed
+          ? "締切を未完了に戻しました。"
+          : "締切を完了にしました。",
+      });
       router.refresh();
     } catch (caught) {
-      // Surface the failure next to the control; the list refreshes on success.
-      setError(describeApiError(caught));
+      notify({ variant: "error", message: describeApiError(caught) });
       setPending(false);
     }
   };
@@ -44,11 +49,6 @@ export function DeadlineToggle({ deadlineId, completed }: DeadlineToggleProps) {
       >
         {completed ? "未完了に戻す" : "完了にする"}
       </button>
-      {error !== null && (
-        <p className="error-text" role="alert">
-          {error}
-        </p>
-      )}
     </span>
   );
 }
@@ -59,6 +59,7 @@ export function DeadlineCreateForm({
   applications,
 }: Readonly<{ applications: readonly DeadlineFormOption[] }>) {
   const router = useRouter();
+  const { notify } = useToast();
   const [applicationId, setApplicationId] = useState(applications[0]?.id ?? "");
   const [kind, setKind] = useState("document");
   const [title, setTitle] = useState("");
@@ -93,11 +94,13 @@ export function DeadlineCreateForm({
       );
       setTitle("");
       setDueLocal("");
+      notify({ variant: "success", message: "締切を登録しました。" });
       router.refresh();
     } catch (error) {
-      setFormError(describeApiError(error));
       if (error instanceof ApiClientError && error.fieldErrors !== undefined) {
         setFormError("入力内容を確認してください。");
+      } else {
+        notify({ variant: "error", message: describeApiError(error) });
       }
     } finally {
       setPending(false);

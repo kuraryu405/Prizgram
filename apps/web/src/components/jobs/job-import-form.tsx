@@ -10,6 +10,7 @@ import {
   type ApiFieldErrors,
 } from "@/lib/api-client";
 import { describeApiError } from "@/lib/error-messages";
+import { useToast } from "@/components/app/toast";
 
 const MAX_BODY_LENGTH = 20_000;
 const MAX_COMPANY_NAME_LENGTH = 200;
@@ -36,20 +37,17 @@ function hasUnrenderedFieldError(errors: ApiFieldErrors): boolean {
 
 export function JobImportForm() {
   const router = useRouter();
+  const { notify } = useToast();
   const [body, setBody] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [pending, setPending] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ApiFieldErrors>({});
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending) return;
-    setFormError(null);
-    setSuccessMessage(null);
     setFieldErrors({});
 
     if (body.trim().length < 40) {
@@ -78,11 +76,12 @@ export function JobImportForm() {
       setCompanyName("");
       setSourceName("");
       setSourceUrl("");
-      setSuccessMessage(
-        result.duplicate
+      notify({
+        variant: result.duplicate ? "info" : "success",
+        message: result.duplicate
           ? "同一内容の求人は既に登録済みのため、既存のバージョンを表示します。"
-          : `求人を構造化して保存しました（バージョン${result.version}）。`,
-      );
+          : "求人を保存しました。",
+      });
       router.refresh();
     } catch (error) {
       if (error instanceof ApiClientError) {
@@ -92,10 +91,10 @@ export function JobImportForm() {
           Object.keys(errors).length === 0 ||
           hasUnrenderedFieldError(errors)
         ) {
-          setFormError(describeApiError(error));
+          notify({ variant: "error", message: describeApiError(error) });
         }
       } else {
-        setFormError(describeApiError(error));
+        notify({ variant: "error", message: describeApiError(error) });
       }
     } finally {
       setPending(false);
@@ -112,16 +111,6 @@ export function JobImportForm() {
       onSubmit={(event) => void onSubmit(event)}
     >
       <h2>求人票を取り込む</h2>
-      {formError !== null && (
-        <p className="form-alert" role="alert">
-          {formError}
-        </p>
-      )}
-      {successMessage !== null && (
-        <p className="form-success" role="status">
-          {successMessage}
-        </p>
-      )}
       <div className="field">
         <label htmlFor="job-body">求人票本文</label>
         <textarea
