@@ -227,6 +227,56 @@ describe("AuthService", () => {
     });
   });
 
+  it("changes the authenticated user's password after verifying the current one", async () => {
+    const session = await service.register(credentials);
+    const nextPassword = "new correct horse battery staple";
+
+    await service.changePassword(
+      session.user,
+      credentials.password,
+      nextPassword,
+    );
+    expect(connection.db.select().from(userCredentials).get()).toMatchObject({
+      failedAttempts: 0,
+      lockedUntil: null,
+    });
+
+    await expect(
+      service.login({ ...credentials, password: nextPassword }),
+    ).resolves.toMatchObject({ user: session.user });
+    await expect(appErrorCode(service.login(credentials))).resolves.toBe(
+      "AUTHENTICATION_FAILED",
+    );
+  });
+
+  it("does not change the password when the current password is wrong", async () => {
+    await service.register(credentials);
+
+    await expect(
+      appErrorCode(
+        service.changePassword(
+          { id: "not-the-user", loginId: credentials.loginId },
+          credentials.password,
+          "another correct long password",
+        ),
+      ),
+    ).resolves.toBe("NOT_FOUND");
+
+    const session = await service.login(credentials);
+    await expect(
+      appErrorCode(
+        service.changePassword(
+          session.user,
+          "incorrect current password",
+          "another correct long password",
+        ),
+      ),
+    ).resolves.toBe("AUTHENTICATION_FAILED");
+    await expect(service.login(credentials)).resolves.toMatchObject({
+      user: session.user,
+    });
+  });
+
   it("survives a burst of unknown login attempts through the scrypt gate", async () => {
     const results = await Promise.allSettled(
       Array.from({ length: 8 }, (_, index) =>

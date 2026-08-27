@@ -206,6 +206,52 @@ export class AuthService {
       .run();
   }
 
+  async changePassword(
+    user: AuthenticatedUser,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const credential = this.connection.db
+      .select()
+      .from(userCredentials)
+      .where(eq(userCredentials.userId, user.id))
+      .get();
+    if (credential === undefined) {
+      throw new AppError("NOT_FOUND", "User not found", 404);
+    }
+
+    const valid = await verifyPassword(
+      currentPassword,
+      credential.passwordHash,
+    );
+    if (!valid) {
+      throw new AppError(
+        "AUTHENTICATION_FAILED",
+        "Current password is incorrect",
+        401,
+      );
+    }
+    if (currentPassword === newPassword) {
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "New password must be different from current password",
+        400,
+      );
+    }
+
+    const newHash = await hashPassword(newPassword);
+    this.connection.db
+      .update(userCredentials)
+      .set({
+        passwordHash: newHash,
+        failedAttempts: 0,
+        lockedUntil: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(userCredentials.userId, user.id))
+      .run();
+  }
+
   private newSession(userId: string, loginId: string): AuthSession {
     const now = this.now();
     return {

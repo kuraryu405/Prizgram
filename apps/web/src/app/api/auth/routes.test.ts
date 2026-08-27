@@ -11,6 +11,7 @@ process.env.APP_ORIGIN = "https://prizgram.test";
 import { getDatabase } from "@/server/database";
 import { scryptGate } from "@/server/auth";
 import { POST as loginPost } from "./login/route";
+import { POST as passwordPost } from "./password/route";
 import { POST as registerPost } from "./register/route";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,7 @@ function authRequest(
   path: string,
   body: Record<string, string>,
   origin = ORIGIN,
+  cookie?: string,
 ): Request {
   return new Request(`${ORIGIN}${path}`, {
     method: "POST",
@@ -36,6 +38,7 @@ function authRequest(
       host: "prizgram.test",
       origin,
       "content-type": "application/json",
+      ...(cookie === undefined ? {} : { cookie }),
     },
     body: JSON.stringify(body),
   });
@@ -111,6 +114,45 @@ describe("authentication routes", () => {
       ok: true,
       data: { user: { loginId: "route.user.one" } },
     });
+  });
+
+  it("changes a password through the authenticated HTTP boundary", async () => {
+    const credentials = {
+      loginId: "route.user.password-change",
+      password: "correct horse battery staple",
+    };
+    const nextPassword = "new correct horse battery staple";
+    const registered = await registerPost(
+      authRequest("/api/auth/register", credentials),
+    );
+    const cookie = registered.headers.get("set-cookie")?.split(";", 1)[0];
+    expect(cookie).toBeDefined();
+
+    const changed = await passwordPost(
+      authRequest(
+        "/api/auth/password",
+        { currentPassword: credentials.password, newPassword: nextPassword },
+        ORIGIN,
+        cookie,
+      ),
+    );
+    expect(changed.status).toBe(200);
+    await expect(changed.json()).resolves.toMatchObject({
+      ok: true,
+      data: { updated: true },
+    });
+
+    await expect(
+      loginPost(authRequest("/api/auth/login", credentials)),
+    ).resolves.toMatchObject({ status: 401 });
+    await expect(
+      loginPost(
+        authRequest("/api/auth/login", {
+          loginId: credentials.loginId,
+          password: nextPassword,
+        }),
+      ),
+    ).resolves.toMatchObject({ status: 200 });
   });
 
   it("keeps unknown logins a generic 401", async () => {
