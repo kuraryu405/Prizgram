@@ -74,17 +74,25 @@ export function LandingMotion() {
       gsap.utils
         .toArray<HTMLElement>(".lp-stack-card")
         .forEach((card, index) => {
-          gsap.to(card, {
-            filter: index === 5 ? "brightness(1)" : "brightness(0.9)",
-            scale: index === 5 ? 1 : 0.965,
-            ease: "none",
-            scrollTrigger: {
-              trigger: card,
-              start: "top 13%",
-              end: "bottom top",
-              scrub: true,
+          if (index === 5) return;
+
+          // JourneyCard already owns scale/y through Framer Motion. Keep GSAP
+          // responsible for brightness only, and give the filter an explicit
+          // starting value so CSSPlugin does not interpolate from `none` as 0.
+          gsap.fromTo(
+            card,
+            { filter: "brightness(1)" },
+            {
+              filter: "brightness(0.9)",
+              ease: "none",
+              scrollTrigger: {
+                trigger: card,
+                start: "top 13%",
+                end: "bottom top",
+                scrub: true,
+              },
             },
-          });
+          );
         });
     });
 
