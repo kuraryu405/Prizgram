@@ -1,51 +1,91 @@
 # Golden Journey handoff
 
-Updated: 2026-08-28 JST
+Updated: 2026-08-28 10:22 JST
 
 ## Repository state
 
-- `origin/main`: `9764c7c525ed629be5cfc49ba8c8bb5780c70057`
-- HEAD before this handoff update: `ba12a052c9eac3285ec6782bfec747662e191d30`
-- Working branch: `fix/300-303-non-ui-review` (based on PR #304 head `1392a8c`)
-- The branch must track `origin/fix/300-303-non-ui`, not the temporary local `origin/pr-304` ref.
+- Prizgram `origin/main`: `d1948a1083ed19d2b7c69cde9575d566f970ba85` (currently deployed production release)
+- Working branch: `fix/305-interview-ai-schema`
+- Code HEAD before this HANDOFF commit: `173fb468e61a9b73a371f6a722559127dcf7a894`
+- Code commits already pushed:
+  - `436c44d90c6bb5805dac052a6e2afb4870086a37` — `fix(interview-ai): normalize structured generation output`
+  - `173fb468e61a9b73a371f6a722559127dcf7a894` — `test(persona-update): make re-evaluation order deterministic`
 
-## Golden Journey progress
+## Golden Journey current step
 
-- Current step: preflight; production Golden Journey has **not started**.
-- First blocking error: `git pull --ff-only` failed because the local branch was configured to merge `refs/heads/pr-304`, which does not exist on `origin`.
-- Classification: local Git tracking configuration. It is neither an E2E failure, a Prizgram runtime failure, nor an infrastructure failure.
+- Steps **01--07 pass** on production.
+- Step **08c: interview follow-up generation** is the current first failing operation.
+- The exact request is `POST /api/applications/:id/interview-followup`.
+- The next production Golden must start at Step 01 so that the final evidence remains one continuous video.
 
-## Completed work
+## Error summary and classification
 
-- Reviewed PR #304. Its #300 scoring-schema hardening is appropriate; it deliberately does not speculate about a #301 infrastructure fix.
-- Fixed the PR's typecheck failure by replacing unsupported `toHaveTextContent` matchers in `apps/web/src/components/applications/application-update-form.test.tsx`.
-- Validation already completed on the identical PR checkout: `pnpm typecheck`, 539 tests, Prettier, and lint all passed.
+- Browser: Cloudflare HTML `502 Bad gateway` after the E2E helper's three bounded retries for a side-effect-free generation call.
+- Origin correlation: every retry logged `UPSTREAM_INVALID_RESPONSE`, caused by `LlmClientError SCHEMA_VALIDATION_FAILED: The normalized content did not match its domain schema`.
+- `prizgram-web.service` and `cloudflared-prizgram.service` both had `NRestarts=0`; web cgroup `oom=0`, `oom_kill=0`.
+- Classification: **Prizgram body defect**, not E2E or infra. The Cloudflare HTML response masks the origin 502 body.
 
-## Changed files and commits
+## This phase's fix
 
-- `apps/web/src/components/applications/application-update-form.test.tsx`
-- `ba12a05 test(applications): use supported text assertion matcher`
+- `apps/web/src/server/interview-ai/schemas.ts`
+  - Adds provider-side cardinality limits compatible with OpenAI strict JSON Schema.
+  - Normalizes provider text before domain validation: trim, drop blank list items, cap list sizes and text lengths, omit blank optional STAR fields.
+  - Preserves domain validation and the existing persona-grounded evidence guard.
+- `apps/web/src/server/interview-ai/schemas.test.ts`
+  - Adds provider-to-domain and OpenAI-schema regression coverage.
+- `apps/web/src/server/persona-update/service.test.ts`
+  - Makes pre-existing re-evaluation ordering fixture timestamps deterministic; no runtime/UI behavior changed.
+- No UI components, styles, or client flow code changed.
+
+## Verification completed
+
+- `pnpm typecheck` — passed.
+- `pnpm test` — 55 files / 542 tests passed.
+- pre-push `pnpm build` — passed.
+- Prettier and ESLint pre-commit checks — passed.
 
 ## Prizgram issues
 
-- #300: scoring `SCHEMA_VALIDATION_FAILED` (addressed by PR #304)
-- #301: Cloudflare HTML 502 investigation (not changed by PR #304)
-- #302: entry save/submit ordering (addressed by PR #304)
-- #303: application update success state (addressed by PR #304)
+- **#305** — interview AI structured-output schema failure; this branch implements the fix: https://github.com/kuraryu405/Prizgram/issues/305
+- #301 is infra-only fallback for a future Cloudflare HTML 502 without a matching application error.
+- #300 / merged PR #304 fixed the analogous scoring problem.
 
-## Required next commands
+## Unresolved items
+
+1. Create and merge the PR for `fix/305-interview-ai-schema` into `main` (user authorized merge).
+2. Verify CD deploys a main SHA newer than `d1948a1` before touching production Golden.
+3. Run the full production Golden. Its evidence screenshots/MP4 are the UI-regression proof; inspect all 14 steps rather than assuming backend-only edits cannot affect visible behavior.
+4. If Golden finds another Prizgram-body defect, create/update its issue rather than hiding it in E2E.
+5. Remove the temporary E2E production-Golden workflow only after a complete passing run.
+
+## Next commands
 
 ```bash
-git branch --set-upstream-to=origin/fix/300-303-non-ui
-git push -u origin HEAD:fix/300-303-non-ui
+gh pr create --base main --head fix/305-interview-ai-schema \
+  --title "fix(interview-ai): normalize structured generation output" \
+  --body "Fixes #305"
+gh pr merge <PR-number> --merge --delete-branch
+
+# Wait for CD, then from Prizgram-E2E-test:
 git pull --ff-only
-E2E_BASE_URL=https://prizgram.kuraryu.jp E2E_ALLOW_MUTATION=true E2E_ALLOW_PRODUCTION=true pnpm test:golden
+pnpm typecheck
+E2E_BASE_URL=https://prizgram.kuraryu.jp \
+E2E_ALLOW_MUTATION=true \
+E2E_ALLOW_PRODUCTION=true \
+pnpm test:golden
 ```
 
-If `pnpm test:golden` is unavailable in this repository, locate the Golden Journey package/script before changing code; do not substitute a different test command.
+## If the next run fails, inspect these first
 
-## If the next run fails
+- Step 08: `apps/web/src/server/interview-ai/schemas.ts`, `apps/web/src/server/interview-ai/service.ts`, `apps/web/src/server/llm/client.ts`, and #305.
+- A Cloudflare HTML 502 lacking an origin app error: #301, then production web/tunnel journals and cgroup OOM counters.
+- Step 10: E2E `src/support/applications.ts`.
+- Step 11--12: E2E `src/support/persona-update.ts` and the corresponding service/routes.
+- Step 13: E2E `src/support/dashboard.ts`.
+- Step 14: E2E `tests/acceptance/golden-journey.spec.ts` and account/session helpers.
 
-- Confirm the E2E script location and its environment guards first (`package.json`, workspace configuration, CI workflow, or the separate Prizgram-E2E-test checkout).
-- For an app JSON 502, inspect `apps/web/src/server/scoring/service.ts`, `apps/web/src/server/llm/client.ts`, and issue #300.
-- For Cloudflare HTML 502, do not change Prizgram application code; capture `CF-Ray` and production web/cloudflared/systemd logs, then update issue #301.
+## Required cycle
+
+`run -> diagnose first failure -> smallest safe fix -> typecheck -> commit/push -> update HANDOFF.md -> rerun`
+
+Do not leave uncommitted changes while starting a new investigation.
