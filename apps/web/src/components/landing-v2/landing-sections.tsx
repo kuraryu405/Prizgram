@@ -721,53 +721,50 @@ const JOURNEY = [
 ] as const;
 
 function JourneyCard({ item }: { item: (typeof JOURNEY)[number] }) {
-  const cardRef = useRef<HTMLElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: cardRef,
     offset: ["start end", "start start"],
   });
-  const scale = useTransform(scrollYProgress, [0, 1], [0.965, 1]);
   const y = useTransform(scrollYProgress, [0, 1], [36, 0]);
 
   return (
-    <motion.article
-      ref={cardRef}
-      className="lp-stack-card"
-      style={{ scale, y }}
-    >
-      <div className="lp-stack-head">
-        <span className="lp-stack-num">{item.n} / 06</span>
-        <h3 className="lp-stack-title">{item.title}</h3>
-      </div>
-      <div className="lp-stack-grid">
-        <div className="lp-stack-copy">
-          <p>{item.desc}</p>
-          <ul className="lp-stack-list">
-            {item.bullets.map((bullet) => (
-              <li key={bullet}>{bullet}</li>
-            ))}
-          </ul>
+    <motion.div ref={cardRef} className="lp-stack-card-frame" style={{ y }}>
+      <article className="lp-stack-card">
+        <div className="lp-stack-head">
+          <span className="lp-stack-num">{item.n} / 06</span>
+          <h3 className="lp-stack-title">{item.title}</h3>
         </div>
-        <div className="lp-stack-visual" aria-hidden="true">
-          <span className="lp-stack-visual-kicker">
-            {item.n} — {item.title}
-          </span>
-          <div className="lp-stack-visual-title">
-            {item.title}のコンテキストが、次のステップへ
+        <div className="lp-stack-grid">
+          <div className="lp-stack-copy">
+            <p>{item.desc}</p>
+            <ul className="lp-stack-list">
+              {item.bullets.map((bullet) => (
+                <li key={bullet}>{bullet}</li>
+              ))}
+            </ul>
           </div>
-          <div className="lp-stack-visual-rule" />
-          <div className="lp-stack-visual-copy">
-            Persona / Job / Application / Deadline
-            が同じ記憶に接続されています。
-          </div>
-          <div className="lp-context-tags">
-            <span>Persona</span>
-            <span>Job</span>
-            <span>Application</span>
+          <div className="lp-stack-visual" aria-hidden="true">
+            <span className="lp-stack-visual-kicker">
+              {item.n} — {item.title}
+            </span>
+            <div className="lp-stack-visual-title">
+              {item.title}のコンテキストが、次のステップへ
+            </div>
+            <div className="lp-stack-visual-rule" />
+            <div className="lp-stack-visual-copy">
+              Persona / Job / Application / Deadline
+              が同じ記憶に接続されています。
+            </div>
+            <div className="lp-context-tags">
+              <span>Persona</span>
+              <span>Job</span>
+              <span>Application</span>
+            </div>
           </div>
         </div>
-      </div>
-    </motion.article>
+      </article>
+    </motion.div>
   );
 }
 
