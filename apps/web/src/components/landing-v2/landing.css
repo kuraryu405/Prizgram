@@ -1847,14 +1847,18 @@
     gap: 0;
   }
 
-  .lp-stack-card {
+  .lp-stack-card-frame {
     position: sticky;
     top: 5.5rem;
   }
 
-  .lp-stack-card + .lp-stack-card {
+  .lp-stack-card-frame + .lp-stack-card-frame {
     margin-top: 1.2rem;
   }
+}
+
+.lp-stack-card-frame {
+  width: 100%;
 }
 
 .lp-stack-card {
@@ -1865,6 +1869,8 @@
   display: grid;
   gap: 1.2rem;
   box-shadow: 0 16px 40px rgba(10, 10, 10, 0.06);
+  transform-origin: top center;
+  will-change: filter, transform;
 }
 
 .lp-stack-head {
@@ -3127,6 +3133,7 @@ html.lenis body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .lp-stack-card-frame,
   .lp-stack-card {
     filter: none !important;
     transform: none !important;

@@ -76,14 +76,15 @@ export function LandingMotion() {
         .forEach((card, index) => {
           if (index === 5) return;
 
-          // JourneyCard already owns scale/y through Framer Motion. Keep GSAP
-          // responsible for brightness only, and give the filter an explicit
-          // starting value so CSSPlugin does not interpolate from `none` as 0.
+          // Framer Motion owns the wrapper's entrance translation. GSAP owns
+          // the card's stack depth so both animation systems compose without
+          // overwriting the same transform property.
           gsap.fromTo(
             card,
-            { filter: "brightness(1)" },
+            { filter: "brightness(1)", scale: 1 },
             {
               filter: "brightness(0.9)",
+              scale: 0.965,
               ease: "none",
               scrollTrigger: {
                 trigger: card,
