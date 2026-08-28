@@ -556,8 +556,13 @@ describe("PersonaUpdateService.reEvaluateAll", () => {
     for (let index = 0; index < count; index += 1) {
       const jobId = `job-${index}`;
       connection.sqlite
-        .prepare("insert into jobs (id, user_id) values (?, ?)")
-        .run(jobId, userA.id);
+        .prepare(
+          "insert into jobs (id, user_id, created_at, updated_at) values (?, ?, ?, ?)",
+        )
+        // Keep the batch order independent of millisecond timing in the
+        // fixture. `job-a` receives the default current timestamp, so these
+        // explicitly older rows must be selected first.
+        .run(jobId, userA.id, index + 1, index + 1);
       // Ensure each job has a latest version for freshness checks (#160)
       connection.sqlite
         .prepare(
