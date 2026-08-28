@@ -38,6 +38,12 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
   },
   {
+    // Deployment helpers run directly under Node.js and are intentionally
+    // outside the TypeScript project graph.
+    files: ["packages/db/scripts/**/*.{js,mjs}"],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
     files: ["**/*.config.{js,mjs,ts}", "eslint.config.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
   },
