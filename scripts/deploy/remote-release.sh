@@ -10,6 +10,7 @@ current_link="$DEPLOY_ROOT/current"
 shared_directory="$DEPLOY_ROOT/shared"
 environment_file="$shared_directory/.env"
 database_file="$shared_directory/data/prizgram.sqlite"
+sqlite_backup_helper="$release_directory/packages/db/scripts/sqlite-backup.mjs"
 service_directory="$HOME/.config/systemd/user"
 service_file="$service_directory/prizgram-web.service"
 cloudflared_service_file="$service_directory/cloudflared-prizgram.service"
@@ -34,6 +35,10 @@ pnpm_binary="${PNPM_BINARY:-$HOME/.local/bin/pnpm}"
 }
 [[ -f "$release_directory/deploy/prizgram-web.service" ]] || {
   echo "Missing systemd unit in release: $release_directory/deploy/prizgram-web.service" >&2
+  exit 1
+}
+[[ -f "$sqlite_backup_helper" ]] || {
+  echo "Missing SQLite backup helper in release: $sqlite_backup_helper" >&2
   exit 1
 }
 
@@ -87,7 +92,7 @@ if [[ -f "$database_file" ]]; then
     backup_file="${backup_file%.sqlite}-$(date +%s%N).sqlite"
   fi
   echo "Creating pre-deploy snapshot: $backup_file"
-  if ! sqlite3 "$database_file" ".backup '$backup_file'"; then
+  if ! "$node_binary" "$sqlite_backup_helper" "$database_file" "$backup_file"; then
     echo "Backup failed; aborting deploy before migration" >&2
     rm -f "$backup_file" || true
     if [[ "$service_was_active" == "true" ]]; then
@@ -97,19 +102,8 @@ if [[ -f "$database_file" ]]; then
     fi
     exit 1
   fi
-  # No WAL/SHM sidecar copy — .backup already produces a consistent snapshot (#178)
-  integrity="$(sqlite3 "$backup_file" "PRAGMA integrity_check;" 2>&1 || true)"
-  if [[ "$integrity" != "ok" ]]; then
-    echo "Backup integrity_check failed: $integrity" >&2
-    rm -f "$backup_file" || true
-    if [[ "$service_was_active" == "true" ]]; then
-      echo "Restarting previous service after integrity failure..." >&2
-      systemctl --user daemon-reload || true
-      systemctl --user restart prizgram-web.service || true
-    fi
-    exit 1
-  fi
-  echo "Backup verified: $backup_file"
+  # The helper uses SQLite's backup API and validates integrity_check, so no
+  # WAL/SHM sidecar copy is needed (#178, #216).
 else
   echo "No existing database; skipping backup"
 fi

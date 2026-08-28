@@ -1,72 +1,85 @@
 # Golden Journey handoff
 
-Updated: 2026-08-28 10:22 JST
+Updated: 2026-08-28 10:52 JST
 
 ## Repository state
 
-- Prizgram `origin/main`: `d1948a1083ed19d2b7c69cde9575d566f970ba85` (currently deployed production release)
-- Working branch: `fix/305-interview-ai-schema`
-- Code HEAD before this HANDOFF commit: `173fb468e61a9b73a371f6a722559127dcf7a894`
-- Code commits already pushed:
-  - `436c44d90c6bb5805dac052a6e2afb4870086a37` — `fix(interview-ai): normalize structured generation output`
-  - `173fb468e61a9b73a371f6a722559127dcf7a894` — `test(persona-update): make re-evaluation order deterministic`
+- Prizgram Git `origin/main`: `0c292c7bff55c17adfcc29d381cef6109b119ea3` (merged #306 / closed #305)
+- Deployed production release: `d1948a1083ed19d2b7c69cde9575d566f970ba85` (unchanged; healthy)
+- Working branch: `fix/307-sqlite-backup`
+- Code HEAD before this HANDOFF commit: `59458b12fa0774a109d6683474b3e0a957d3f796`
 
 ## Golden Journey current step
 
-- Steps **01--07 pass** on production.
-- Step **08c: interview follow-up generation** is the current first failing operation.
-- The exact request is `POST /api/applications/:id/interview-followup`.
-- The next production Golden must start at Step 01 so that the final evidence remains one continuous video.
+- Steps 01--07 passed in prior production runs.
+- Step 08c `POST /api/applications/:id/interview-followup` failed because of the now-fixed #305 structured-output boundary.
+- #306 fixes #305, but production Golden must not be rerun until the safe manual deployment path is repaired and the new release is active.
 
-## Error summary and classification
+## Latest error summary
 
-- Browser: Cloudflare HTML `502 Bad gateway` after the E2E helper's three bounded retries for a side-effect-free generation call.
-- Origin correlation: every retry logged `UPSTREAM_INVALID_RESPONSE`, caused by `LlmClientError SCHEMA_VALIDATION_FAILED: The normalized content did not match its domain schema`.
-- `prizgram-web.service` and `cloudflared-prizgram.service` both had `NRestarts=0`; web cgroup `oom=0`, `oom_kill=0`.
-- Classification: **Prizgram body defect**, not E2E or infra. The Cloudflare HTML response masks the origin 502 body.
+Attempting canonical manual deployment of merged #306 (`0c292c7...`) stopped at the pre-deploy SQLite snapshot step:
+
+```text
+scripts/deploy/remote-release.sh: line 90: sqlite3: command not found
+Backup failed; aborting deploy before migration
+Restarting previous service after backup failure...
+```
+
+Safety verification after abort:
+
+- No migration ran and `current` did not change.
+- Existing web service restarted successfully and is `active/running`.
+- `http://127.0.0.1:3000/api/health` returned 200 / `status: ok`.
+
+## Classification
+
+- E2E-origin: **No**.
+- Prizgram body-origin: **#305 fixed in merged #306 but not yet deployed**.
+- Infra/deployment-origin: **Yes for the deployment blocker**. The production host lacks the `sqlite3` CLI that the backup shell script required.
 
 ## This phase's fix
 
-- `apps/web/src/server/interview-ai/schemas.ts`
-  - Adds provider-side cardinality limits compatible with OpenAI strict JSON Schema.
-  - Normalizes provider text before domain validation: trim, drop blank list items, cap list sizes and text lengths, omit blank optional STAR fields.
-  - Preserves domain validation and the existing persona-grounded evidence guard.
-- `apps/web/src/server/interview-ai/schemas.test.ts`
-  - Adds provider-to-domain and OpenAI-schema regression coverage.
-- `apps/web/src/server/persona-update/service.test.ts`
-  - Makes pre-existing re-evaluation ordering fixture timestamps deterministic; no runtime/UI behavior changed.
-- No UI components, styles, or client flow code changed.
+- `packages/db/scripts/sqlite-backup.mjs`
+  - New Node helper uses the already installed `better-sqlite3` SQLite backup API and checks `PRAGMA integrity_check` before returning success.
+- `scripts/deploy/remote-release.sh`
+  - Uses the helper instead of the unavailable `sqlite3` CLI.
+  - Retains the existing backup-failure cleanup and previous-service restart guard; it does not bypass the backup.
+- `eslint.config.mjs`
+  - Disables type-aware lint only for the direct Node deployment helper outside the TypeScript project graph.
+- No UI code, CSS, components, database schema, migration, or production state changed in this phase.
 
 ## Verification completed
 
-- `pnpm typecheck` — passed.
-- `pnpm test` — 55 files / 542 tests passed.
-- pre-push `pnpm build` — passed.
-- Prettier and ESLint pre-commit checks — passed.
+- Local real SQLite integration: create source DB → helper snapshot → `integrity_check` → read backed-up row, passed.
+- `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test` (55 files / 542 tests), and `pnpm build`, passed.
+- `bash -n scripts/deploy/remote-release.sh` and `node --check packages/db/scripts/sqlite-backup.mjs`, passed.
 
-## Prizgram issues
+## Commits and issues
 
-- **#305** — interview AI structured-output schema failure; this branch implements the fix: https://github.com/kuraryu405/Prizgram/issues/305
-- #301 is infra-only fallback for a future Cloudflare HTML 502 without a matching application error.
-- #300 / merged PR #304 fixed the analogous scoring problem.
+- `59458b12fa0774a109d6683474b3e0a957d3f796` — `fix(deploy): remove sqlite3 CLI backup dependency`; pushed to `origin/fix/307-sqlite-backup`.
+- **#307** — deployment backup prerequisite failure: https://github.com/kuraryu405/Prizgram/issues/307
+- #305 is closed by merged #306; #301 remains an infra fallback only for unmatched Cloudflare HTML 502 errors.
 
 ## Unresolved items
 
-1. Create and merge the PR for `fix/305-interview-ai-schema` into `main` (user authorized merge).
-2. Verify CD deploys a main SHA newer than `d1948a1` before touching production Golden.
-3. Run the full production Golden. Its evidence screenshots/MP4 are the UI-regression proof; inspect all 14 steps rather than assuming backend-only edits cannot affect visible behavior.
-4. If Golden finds another Prizgram-body defect, create/update its issue rather than hiding it in E2E.
-5. Remove the temporary E2E production-Golden workflow only after a complete passing run.
+1. Create and merge a PR from `fix/307-sqlite-backup` to `main`.
+2. Re-deploy the resulting `main` SHA through the canonical script. Require a verified SQLite snapshot before migration or symlink switch.
+3. Verify `current` points to the deployed SHA and `/api/health` is 200.
+4. Run the complete production Golden Journey and inspect final screenshots/MP4 for UI regression. If a first failure remains, follow the required cycle.
 
 ## Next commands
 
 ```bash
-gh pr create --base main --head fix/305-interview-ai-schema \
-  --title "fix(interview-ai): normalize structured generation output" \
-  --body "Fixes #305"
+gh pr create --base main --head fix/307-sqlite-backup \
+  --title "fix(deploy): remove sqlite3 CLI backup dependency" \
+  --body "Fixes #307"
 gh pr merge <PR-number> --merge --delete-branch
 
-# Wait for CD, then from Prizgram-E2E-test:
+# Upload the merged SHA, then only run the canonical release script:
+DEPLOY_ROOT=/home/prizgram-deploy/prizgram DEPLOY_SHA=<merged-sha> \
+bash /home/prizgram-deploy/prizgram/releases/<merged-sha>/scripts/deploy/remote-release.sh
+
+# After health/release verification, from Prizgram-E2E-test:
 git pull --ff-only
 pnpm typecheck
 E2E_BASE_URL=https://prizgram.kuraryu.jp \
@@ -77,12 +90,10 @@ pnpm test:golden
 
 ## If the next run fails, inspect these first
 
-- Step 08: `apps/web/src/server/interview-ai/schemas.ts`, `apps/web/src/server/interview-ai/service.ts`, `apps/web/src/server/llm/client.ts`, and #305.
-- A Cloudflare HTML 502 lacking an origin app error: #301, then production web/tunnel journals and cgroup OOM counters.
-- Step 10: E2E `src/support/applications.ts`.
-- Step 11--12: E2E `src/support/persona-update.ts` and the corresponding service/routes.
-- Step 13: E2E `src/support/dashboard.ts`.
-- Step 14: E2E `tests/acceptance/golden-journey.spec.ts` and account/session helpers.
+- Before release switch: `packages/db/scripts/sqlite-backup.mjs`, `scripts/deploy/remote-release.sh`, backup path, and `PRAGMA integrity_check` output.
+- Step 08 after deployment: `apps/web/src/server/interview-ai/schemas.ts`, `apps/web/src/server/interview-ai/service.ts`, and #305 / #306 history.
+- A Cloudflare HTML 502 without matching origin error: #301 and production web/tunnel journals.
+- Step 10--14: use the E2E repository's `HANDOFF.md` routing map.
 
 ## Required cycle
 
