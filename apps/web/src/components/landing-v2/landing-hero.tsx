@@ -14,7 +14,6 @@ export function LandingHero() {
     <header className="lp-hero" aria-labelledby="lp-hero-title">
       <div className="lp-hero-inner">
         <div className="lp-hero-copy">
-          <p className="lp-eyebrow">School Hackathon Project · 2026</p>
           <h1 id="lp-hero-title" className="lp-hero-title">
             <span>あなたの就活に、</span>
             <span>もうひとりの相棒を。</span>
