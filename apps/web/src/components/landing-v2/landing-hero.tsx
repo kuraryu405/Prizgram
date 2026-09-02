@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 
 const HERO_SCREENS = [
   { label: "求人", src: "/brand/prizgram-jobs-mobile-real-v2.png" },
@@ -26,27 +27,21 @@ export function LandingHero() {
             <span className="lp-api-notice-icon" aria-hidden="true">
               !
             </span>
-            <div>
-              <strong>現在、AI機能はご利用いただけません</strong>
-              <p>
-                学校提供のLLM
-                APIが停止しているためです。以下では、ハッカソンで実装した画面とプロダクトの構想をご覧いただけます。
-              </p>
-            </div>
+            <strong>現在、LLMは利用できません</strong>
           </aside>
 
           <div className="lp-hero-actions">
-            <a href="#product" className="lp-btn-primary">
-              スマホ画面を見る <span aria-hidden="true">↓</span>
-            </a>
-            <a href="#about" className="lp-btn-ghost">
-              できることを見る
-            </a>
+            <Link href="/register" className="lp-btn-primary">
+              Prizgramをはじめる <span aria-hidden="true">→</span>
+            </Link>
+            <Link href="/login" className="lp-btn-ghost">
+              ログイン
+            </Link>
           </div>
           <div className="lp-hero-meta" aria-label="プロジェクト情報">
             <span>Hackathon Prototype</span>
             <span>UI実装済み</span>
-            <span>LLM API停止中</span>
+            <span>登録・ログイン可能</span>
           </div>
         </div>
 

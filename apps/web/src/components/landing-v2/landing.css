@@ -1345,6 +1345,20 @@
     transform 150ms ease;
 }
 
+.lp-nav-login {
+  color: var(--lp-fg-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.55rem 0.35rem;
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.lp-nav-login:hover {
+  color: var(--lp-fg);
+}
+
 .lp-nav-cta:hover {
   background: var(--lp-brand-dark);
 }
@@ -3131,6 +3145,10 @@ html.lenis body {
   .lp-hero-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .lp-nav-login {
+    display: none;
   }
 
   .lp-hero-actions > * {
