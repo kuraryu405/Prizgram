@@ -22,13 +22,6 @@ export function LandingHero() {
             Prizgramは、応募・ES・面接・結果・振り返りをひとつの文脈につなぎ、選考を重ねるたびにあなたへの理解を深めていく就活パーソナルエージェントです。
           </p>
 
-          <aside className="lp-api-notice" aria-label="現在の利用状況">
-            <span className="lp-api-notice-icon" aria-hidden="true">
-              !
-            </span>
-            <strong>現在、LLMは利用できません</strong>
-          </aside>
-
           <div className="lp-hero-actions">
             <Link href="/register" className="lp-btn-primary">
               Prizgramをはじめる <span aria-hidden="true">→</span>
