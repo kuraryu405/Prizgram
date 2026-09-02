@@ -63,9 +63,9 @@ export function LandingNav() {
         </div>
 
         <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
-          <Link href="/register" className="lp-nav-cta">
-            はじめる
-          </Link>
+          <a href="#product" className="lp-nav-cta">
+            デモを見る
+          </a>
           <details className="lp-mobile-details">
             <summary
               aria-label="メニューを開く／閉じる"
@@ -124,9 +124,9 @@ export function LandingNav() {
                   ))}
                   <a href="/login">ログイン</a>
                 </nav>
-                <Link href="/register" className="lp-mobile-cta">
-                  Prizgramをはじめる →
-                </Link>
+                <a href="#product" className="lp-mobile-cta">
+                  スマホ画面を見る →
+                </a>
               </div>
             </div>
           </details>

@@ -644,6 +644,191 @@
   }
 }
 
+/* V5 — hackathon availability notice and above-the-fold mobile demo */
+.lp-api-notice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem;
+  max-width: 42rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(166, 101, 0, 0.24);
+  border-radius: 14px;
+  background: #fff7e8;
+  color: #5d3d08;
+}
+
+.lp-api-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.08rem;
+  border-radius: 50%;
+  background: #9a650b;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lp-api-notice strong {
+  display: block;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.lp-api-notice p {
+  margin-top: 0.15rem;
+  color: #78551b;
+  font-size: 0.77rem;
+  line-height: 1.7;
+}
+
+.lp-hero-visual.lp-hero-demo {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  aspect-ratio: 0.96 / 1;
+  margin: 0;
+  padding: 1.2rem 1.2rem 1rem;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(8, 122, 85, 0.2), transparent 45%),
+    linear-gradient(145deg, #fdfefd 0%, #e7efe9 100%);
+}
+
+.lp-hero-demo-head {
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--lp-brand-dark);
+  font-family: ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.lp-hero-demo-head small {
+  color: var(--lp-fg-muted);
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.lp-hero-phones {
+  position: relative;
+  min-height: 0;
+}
+
+.lp-hero-phone {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40%;
+  transform: translate(-50%, -50%);
+}
+
+.lp-hero-phone > span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--lp-fg-soft);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.lp-hero-phone-frame {
+  position: relative;
+  overflow: hidden;
+  border: clamp(5px, 0.6vw, 8px) solid #202320;
+  border-radius: clamp(20px, 2.6vw, 34px);
+  background: #f8f8f6;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 24px 55px rgba(10, 10, 10, 0.22);
+}
+
+.lp-hero-phone-frame::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0.35rem;
+  left: 50%;
+  width: 27%;
+  height: 2.2%;
+  min-height: 8px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #171917;
+}
+
+.lp-hero-phone-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.lp-hero-phone-0 {
+  z-index: 1;
+  left: 25%;
+  width: 34%;
+  transform: translate(-50%, -48%) rotate(-6deg);
+}
+
+.lp-hero-phone-1 {
+  z-index: 3;
+}
+
+.lp-hero-phone-2 {
+  z-index: 2;
+  left: 75%;
+  width: 34%;
+  transform: translate(-50%, -48%) rotate(6deg);
+}
+
+.lp-hero-demo-note {
+  z-index: 4;
+  color: var(--lp-fg-muted);
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .lp-hero-visual.lp-hero-demo {
+    aspect-ratio: 1 / 0.88;
+    min-height: 410px;
+  }
+
+  .lp-hero-phone {
+    width: min(41%, 190px);
+  }
+
+  .lp-hero-phone-0,
+  .lp-hero-phone-2 {
+    width: min(34%, 158px);
+  }
+}
+
+@media (max-width: 480px) {
+  .lp-api-notice {
+    padding: 0.8rem;
+  }
+
+  .lp-hero-visual.lp-hero-demo {
+    min-height: 350px;
+    padding: 1rem 0.7rem 0.8rem;
+  }
+
+  .lp-hero-demo-head small {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero-phone-frame {
+    transition: none;
+  }
+}
+
 @media (max-width: 480px) {
   .lp-nav-logo {
     width: 136px;
@@ -3328,5 +3513,33 @@ html.lenis body {
   }
   .lp-nav {
     padding-left: 0.8rem;
+  }
+}
+
+/* Keep the product UI peeking into the first mobile viewport. */
+@media (max-width: 860px) {
+  .lp-hero-copy .lp-hero-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .lp-hero-copy .lp-hero-actions > * {
+    min-width: 0;
+    padding-inline: 0.75rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .lp-hero-copy .lp-hero-meta {
+    display: none;
+  }
+
+  .lp-hero-inner {
+    gap: 2rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .lp-hero-copy .lp-hero-actions {
+    grid-template-columns: 1fr;
   }
 }
