@@ -1535,6 +1535,7 @@
 .lp-btn-primary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   background: var(--lp-brand);
   color: #fff;
@@ -1557,6 +1558,7 @@
 .lp-btn-ghost {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: var(--lp-surface);
   color: var(--lp-fg);
