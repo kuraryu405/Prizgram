@@ -749,7 +749,7 @@ function JourneyCard({ item }: { item: (typeof JOURNEY)[number] }) {
               {item.n} — {item.title}
             </span>
             <div className="lp-stack-visual-title">
-              {item.title}のコンテキストが、次のステップへ
+              このステップで蓄積したコンテキストが、次のステップへ
             </div>
             <div className="lp-stack-visual-rule" />
             <div className="lp-stack-visual-copy">

@@ -38,11 +38,6 @@ export function LandingHero() {
               ログイン
             </Link>
           </div>
-          <div className="lp-hero-meta" aria-label="プロジェクト情報">
-            <span>Hackathon Prototype</span>
-            <span>UI実装済み</span>
-            <span>登録・ログイン可能</span>
-          </div>
         </div>
 
         <figure className="lp-hero-visual lp-hero-demo">
