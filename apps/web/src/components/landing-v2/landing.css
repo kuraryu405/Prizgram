@@ -644,7 +644,45 @@
   }
 }
 
-/* V5 — above-the-fold mobile demo */
+/* V5 — hackathon availability notice and above-the-fold mobile demo */
+.lp-api-notice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem;
+  max-width: 42rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(166, 101, 0, 0.24);
+  border-radius: 14px;
+  background: #fff7e8;
+  color: #5d3d08;
+}
+
+.lp-api-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.08rem;
+  border-radius: 50%;
+  background: #9a650b;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lp-api-notice strong {
+  display: block;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.lp-api-notice p {
+  margin-top: 0.15rem;
+  color: #78551b;
+  font-size: 0.77rem;
+  line-height: 1.7;
+}
+
 .lp-hero-visual.lp-hero-demo {
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -771,6 +809,10 @@
 }
 
 @media (max-width: 480px) {
+  .lp-api-notice {
+    padding: 0.8rem;
+  }
+
   .lp-hero-visual.lp-hero-demo {
     min-height: 350px;
     padding: 1rem 0.7rem 0.8rem;
