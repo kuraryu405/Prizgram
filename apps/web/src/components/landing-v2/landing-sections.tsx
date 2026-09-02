@@ -890,13 +890,13 @@ export function ProductPreviewSection() {
       <div className={`lp-inner lp-reveal${visible ? " is-visible" : ""}`}>
         <div className="lp-product-real-head">
           <div>
-            <p className="lp-eyebrow">Product — Current MVP</p>
+            <p className="lp-eyebrow">Product — UI Demo</p>
             <h2 id="lp-preview-title" className="lp-h2">
-              これが、いま動いているPrizgram。
+              これが、実装したPrizgram。
             </h2>
           </div>
           <p className="lp-lead">
-            コンセプト画像ではなく、ローカルで稼働中の実装済み画面です。タブを切り替えて、現在のMVPを確認できます。
+            コンセプト画像ではなく、ハッカソンで実際に制作した画面です。現在AI機能は停止中ですが、タブを切り替えてMVPのUIを確認できます。
           </p>
         </div>
 
@@ -917,7 +917,7 @@ export function ProductPreviewSection() {
             aria-label="実装済み画面"
           >
             <span className="lp-product-live">
-              <i /> LIVE MVP
+              <i /> UI DEMO
             </span>
             {PRODUCT_SCREENS.map((item, index) => (
               <label key={item.label} htmlFor={`lp-product-${index}`}>
@@ -951,7 +951,7 @@ export function ProductPreviewSection() {
                 <span>{item.description}</span>
               </div>
             ))}
-            <Link href="/register">自分のPrizgramをはじめる →</Link>
+            <a href="#about">プロダクトの構想を見る →</a>
           </div>
         </div>
       </div>
