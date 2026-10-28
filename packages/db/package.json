@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@next/env": "16.4.2",
+    "@next/env": "16.4.3",
     "@prizgram/shared": "workspace:*",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.4",
